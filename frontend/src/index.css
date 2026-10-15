@@ -6917,6 +6917,66 @@ button.th-client-group:hover {
   border-radius: 999px;
   background: var(--th-ring-track);
 }
+/* Client profile → Analytics: both charts one height, period and legend in
+   the card head, the attention table's counts as bars on a shared scale. */
+.th-cp-chart {
+  height: 220px;
+}
+.th-cp-chart-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--th-text-muted);
+  white-space: nowrap;
+}
+.th-cp-chart-meta > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.th-cp-attn {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 3.5ch;
+  align-items: center;
+  gap: 12px;
+  max-width: 280px;
+}
+.th-cp-attn strong {
+  font-weight: 600;
+  text-align: right;
+  color: var(--th-text-primary);
+}
+@media (max-width: 639px) {
+  /* Phones: the counts alone, under their headings. */
+  .th-cp-attn {
+    display: block;
+  }
+  .th-cp-attn .th-cp-meter-track {
+    display: none;
+  }
+}
+.th-cp-rank {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--th-text-muted);
+  background: var(--th-chip-bg);
+}
+.th-cp-attn-table th:first-child,
+.th-cp-attn-table td:first-child {
+  padding-left: 20px;
+}
+.th-cp-attn-table th:last-child,
+.th-cp-attn-table td:last-child {
+  padding-right: 20px;
+}
 .th-cp-meter:hover .th-cp-meter-track {
   filter: brightness(1.15);
 }

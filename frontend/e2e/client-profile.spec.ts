@@ -164,6 +164,9 @@ for (const theme of ["dark", "light"] as const) {
     await expect(page.getByText("NW-SRV-01").first()).toBeVisible();
     await page.getByRole("tab", { name: /Analytics/ }).click();
     await expect(page.getByRole("heading", { name: "Availability" })).toBeVisible();
+    // Every figure names its period, and the bar chart carries its legend.
+    await expect(page.getByText(/^Alerts opened · \d+ days$/)).toBeVisible();
+    await expect(page.locator(".th-cp-chart-meta", { hasText: "Resolved" })).toBeVisible();
     await page.screenshot({ path: test.info().outputPath(`profile-analytics-${theme}.png`), fullPage: true });
     await expect(page.getByRole("tab", { name: /Tickets/ })).toBeDisabled();
   });
@@ -268,6 +271,8 @@ test("activity shows who connected where, for how long, and filters by type and 
   page.on("request", (r) => r.url().includes("/clients/1/activity?") && requests.push(r.url()));
   await page.getByRole("radio", { name: "Terminal & SSH" }).click();
   await expect.poll(() => requests.some((u) => u.includes("kind=terminal"))).toBe(true);
+  // Twenty entries a page.
+  expect(requests.every((u) => u.includes("limit=20&offset=0"))).toBe(true);
   await page.locator(".th-cp-meter", { hasText: "mario" }).click();
   await expect.poll(() => requests.some((u) => u.includes("operator=mario"))).toBe(true);
   await expect(page.getByRole("button", { name: "Remove operator filter mario" })).toBeVisible();

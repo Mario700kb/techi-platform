@@ -70,8 +70,10 @@ export function AvailabilityChart({ series }: { series: { date: string; availabi
   if (values.length === 0) {
     return <ChartEmpty chartRef={ref} message="No status history yet." />;
   }
-  // Change-over-time line: a focused domain shows the dips that matter near 100%.
-  const floor = Math.max(0, Math.min(95, Math.floor((Math.min(...values) - 1) / 5) * 5));
+  // Change-over-time line: a focused domain shows the dips that matter near
+  // 100%. Steps of 10 near the top and 20 below keep the middle tick round.
+  const low = Math.min(...values) - 1;
+  const floor = Math.max(0, Math.min(90, low >= 80 ? Math.floor(low / 10) * 10 : Math.floor(low / 20) * 20));
   const y = (v: number) => PAD.top + plotH - ((v - floor) / (100 - floor)) * plotH;
   const step = plotW / Math.max(series.length - 1, 1);
   const x = (i: number) => PAD.left + i * step;
@@ -172,7 +174,7 @@ export function AlertFlowChart({ series }: { series: { date: string; opened: num
   const niceMax = max <= 4 ? 4 : Math.ceil(max / 4) * 4;
   const y = (v: number) => PAD.top + plotH - (v / niceMax) * plotH;
   const band = plotW / Math.max(series.length, 1);
-  const barW = Math.min(14, (band - 10) / 2);
+  const barW = Math.min(18, (band - 10) / 2);
   const hovered = index != null ? series[index] : null;
 
   const bar = (cx: number, v: number, cls: string) => {

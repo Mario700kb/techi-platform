@@ -8,6 +8,7 @@ import {
   BellRing,
   BookOpen,
   Box,
+  CheckCircle2,
   FileText,
   KeyRound,
   ExternalLink,
@@ -23,6 +24,7 @@ import {
   SquareTerminal,
   Ticket,
   Timer,
+  TrendingUp,
   Users,
   Wifi,
   X,
@@ -43,7 +45,15 @@ import {
   getGroups,
 } from "../api/clients";
 import { CONNECT_REFRESH_EVENT, ConnectRowStatus, getConnectStatuses } from "../api/connect";
-import { Device, DeviceStats, getDevice, getDevices, getDeviceTableDetails, getFleetInsights } from "../api/devices";
+import {
+  Device,
+  DeviceStats,
+  FleetInsights,
+  getDevice,
+  getDevices,
+  getDeviceTableDetails,
+  getFleetInsights,
+} from "../api/devices";
 import { getConnectUrl } from "../api/remoteSupport";
 import AlertKindIcon from "../components/AlertKindIcon";
 import {
@@ -66,6 +76,7 @@ import PlatformIcon from "../components/PlatformIcon";
 import { Button, ConnectButton, EmptyState, TablePagination } from "../components/ui";
 import { useAppData } from "../contexts/AppDataContext";
 import { useCachedQuery } from "../hooks/useCachedQuery";
+import { appCache } from "../store/appCache";
 import { useFavorites } from "../hooks/useFavorites";
 import { DESKTOP_QUERY, useMediaQuery } from "../hooks/useMediaQuery";
 import { useNow } from "../hooks/useNow";
@@ -93,7 +104,7 @@ type StatusFilter = "all" | "online" | "stale" | "offline";
 type Tab = "overview" | "devices" | "alerts" | "activity" | "analytics" | "documents";
 
 const DEVICE_PAGE_SIZES = [20, 50];
-const ACTIVITY_PAGE_SIZE = 50;
+const ACTIVITY_PAGE_SIZE = 20;
 
 function initials(name: string): string {
   const words = name
@@ -285,6 +296,15 @@ export default function ClientProfilePage() {
     }
   }, [latestEvent, clientId, reloadProfile]);
   useEffect(() => () => window.clearTimeout(profileRefreshTimer.current), []);
+
+  // Analytics costs the server 1–3 s the first time a client is measured;
+  // start it once the profile is on screen so the tab opens with its data.
+  const profileShown = profile != null;
+  useEffect(() => {
+    if (!valid || !profileShown || appCache.peek(insightsKey(clientId))) return;
+    const timer = window.setTimeout(() => void loadInsights(clientId).catch(() => undefined), 600);
+    return () => window.clearTimeout(timer);
+  }, [valid, profileShown, clientId]);
 
   if (!valid || (profileQuery.error && !profile)) {
     return (
@@ -1925,36 +1945,117 @@ function ActivityTab({ clientId, onOpenDevice }: { clientId: number; onOpenDevic
 
 // ─── Analytics ───────────────────────────────────────────────────────────────
 
-function AnalyticsTab({ clientId, onOpenDevice }: { clientId: number; onOpenDevice: (id: number) => void }) {
-  const { data, loading, error } = useCachedQuery(`page.client.${clientId}.insights`, () =>
-    getFleetInsights(30, clientId),
-  );
-  const figures = useMemo(() => {
-    if (!data) return [];
-    return [
-      {
-        label: "Availability, 30 days",
-        value: data.availability.overall_pct == null ? "—" : `${data.availability.overall_pct.toFixed(1)}%`,
-      },
-      { label: "Alerts opened", value: formatCount(data.alerts.opened_total) },
-      { label: "Alerts resolved", value: formatCount(data.alerts.resolved_total) },
-      {
-        label: "Mean time to resolve",
-        value:
-          data.alerts.mean_time_to_resolve_hours == null
-            ? "—"
-            : `${data.alerts.mean_time_to_resolve_hours.toFixed(1)} h`,
-      },
-    ];
-  }, [data]);
+const insightsKey = (clientId: number) => `page.client.${clientId}.insights`;
+const insightsInFlight = new Map<number, Promise<FleetInsights>>();
 
-  if (loading) {
-    return (
-      <div className="th-onb-card">
-        <PanelSkeleton rows={6} />
+/** One request per client at a time: the background start on the profile and
+ *  the tab opening share it instead of measuring the client twice. */
+function loadInsights(clientId: number): Promise<FleetInsights> {
+  const pending = insightsInFlight.get(clientId);
+  if (pending) return pending;
+  const request = getFleetInsights(30, clientId)
+    .then((value) => {
+      appCache.set(insightsKey(clientId), value);
+      return value;
+    })
+    .finally(() => insightsInFlight.delete(clientId));
+  insightsInFlight.set(clientId, request);
+  return request;
+}
+
+const pctLabel = (value: number | null, digits = 1) => (value == null ? "—" : `${value.toFixed(digits)}%`);
+
+function AnalyticsStat({
+  index,
+  icon: Icon,
+  tone,
+  label,
+  value,
+  hint,
+}: {
+  index: number;
+  icon: typeof Monitor;
+  tone: string;
+  label: string;
+  value: string;
+  hint: string;
+}) {
+  return (
+    <div
+      className="th-onb-card th-onb-stat th-onb-enter th-cp-kpi"
+      style={{ "--i": index, "--onb-tone": tone } as CSSProperties}
+    >
+      <span className="th-onb-icon">
+        <Icon className="h-4 w-4" />
+      </span>
+      <div className="min-w-0">
+        <div className="truncate text-[12px] font-medium" style={{ color: "var(--th-text-muted)" }}>
+          {label}
+        </div>
+        <div className="text-[24px] font-semibold leading-8 tabular-nums" style={{ color: "var(--th-text-primary)" }}>
+          <span key={value} className="th-share-count">
+            {value}
+          </span>
+        </div>
+        <div className="truncate text-[12px]" style={{ color: "var(--th-text-faint)" }}>
+          {hint}
+        </div>
       </div>
-    );
-  }
+    </div>
+  );
+}
+
+/** The tab's own shape while it loads, so nothing moves when the data lands. */
+function AnalyticsSkeleton() {
+  return (
+    <div className="space-y-4" aria-busy="true" aria-label="Loading analytics">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="th-onb-card th-onb-stat th-cp-kpi">
+            <div className="th-alerts-skeleton !m-0 w-full !border-0" />
+          </div>
+        ))}
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        {["Availability", "Alerts opened and resolved"].map((title) => (
+          <section key={title} className="premium-card flex flex-col p-0">
+            <div className="th-panel-head">
+              <h2>{title}</h2>
+            </div>
+            <div className="px-5 pb-4">
+              <div className="th-cp-chart th-alerts-skeleton !m-0 !border-0" />
+            </div>
+          </section>
+        ))}
+      </div>
+      <section className="premium-card flex flex-col p-0">
+        <div className="th-panel-head">
+          <h2>Devices needing attention</h2>
+        </div>
+        <PanelSkeleton rows={5} />
+      </section>
+    </div>
+  );
+}
+
+function AttentionBar({ value, max, tone, index }: { value: number; max: number; tone: string; index: number }) {
+  return (
+    <span className="th-cp-attn">
+      <span className="th-cp-meter-track">
+        <span
+          className="th-share-fill block h-full rounded-full"
+          style={{ width: `${max > 0 ? (value / max) * 100 : 0}%`, background: tone, "--i": index } as CSSProperties}
+        />
+      </span>
+      <strong className="tabular-nums">{formatCount(value)}</strong>
+    </span>
+  );
+}
+
+function AnalyticsTab({ clientId, onOpenDevice }: { clientId: number; onOpenDevice: (id: number) => void }) {
+  const { data, loading, error } = useCachedQuery(insightsKey(clientId), () => loadInsights(clientId));
+
+  if (loading && !data) return <AnalyticsSkeleton />;
   if (!data) {
     return (
       <div className="th-onb-card">
@@ -1967,56 +2068,114 @@ function AnalyticsTab({ clientId, onOpenDevice }: { clientId: number; onOpenDevi
     );
   }
 
+  const { availability, alerts, problem_devices: problems } = data;
+  const alertDays = `${alerts.days} days`;
+  const figures = [
+    {
+      label: `Availability · ${availability.days} days`,
+      value: pctLabel(availability.overall_pct),
+      hint:
+        availability.coverage_pct == null
+          ? "No devices measured"
+          : `${formatCount(availability.device_count)} devices · ${availability.coverage_pct.toFixed(0)}% measured`,
+      icon: TrendingUp,
+      tone: TONE.info,
+    },
+    {
+      label: `Alerts opened · ${alertDays}`,
+      value: formatCount(alerts.opened_total),
+      hint: `${formatCount(Math.round(alerts.opened_total / alerts.days))} a day on average`,
+      icon: BellRing,
+      tone: alerts.opened_total > 0 ? TONE.warning : TONE.online,
+    },
+    {
+      label: `Alerts resolved · ${alertDays}`,
+      value: formatCount(alerts.resolved_total),
+      hint: alerts.open_now > 0 ? `${formatCount(alerts.open_now)} still open` : "Nothing open",
+      icon: CheckCircle2,
+      tone: TONE.online,
+    },
+    {
+      label: `Time to resolve · ${alertDays}`,
+      value: alerts.mean_time_to_resolve_hours == null ? "—" : `${alerts.mean_time_to_resolve_hours.toFixed(1)} h`,
+      hint: "Average, opened to resolved",
+      icon: Timer,
+      tone: TONE.maintenance,
+    },
+  ];
+  const maxOffline = Math.max(0, ...problems.map((d) => d.offline_events));
+  const maxAlerts = Math.max(0, ...problems.map((d) => d.alerts));
+
   return (
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {figures.map((item, index) => (
-          <div
-            key={item.label}
-            className="th-onb-card th-onb-stat th-onb-enter"
-            style={{ "--i": index } as CSSProperties}
-          >
-            <div className="min-w-0">
-              <div className="truncate text-[12px] font-medium" style={{ color: "var(--th-text-muted)" }}>
-                {item.label}
-              </div>
-              <div
-                className="text-[22px] font-semibold leading-8 tabular-nums"
-                style={{ color: "var(--th-text-primary)" }}
-              >
-                {item.value}
-              </div>
-            </div>
-          </div>
+          <AnalyticsStat key={item.label} index={index} {...item} />
         ))}
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
-        <SectionCard title="Availability" index={4}>
+        <SectionCard
+          title="Availability"
+          index={4}
+          action={<span className="th-cp-chart-meta">Daily · last {availability.days} days</span>}
+        >
           <div className="px-5 pb-4">
-            <AvailabilityChart series={data.availability.series} />
+            <div className="th-cp-chart">
+              <AvailabilityChart series={availability.series} />
+            </div>
           </div>
         </SectionCard>
-        <SectionCard title="Alerts opened and resolved" index={5}>
+        <SectionCard
+          title="Alerts opened and resolved"
+          index={5}
+          action={
+            <span className="th-cp-chart-meta">
+              <span>
+                <i className="th-legend-swatch" data-series="1" />
+                Opened
+              </span>
+              <span>
+                <i className="th-legend-swatch" data-series="2" />
+                Resolved
+              </span>
+            </span>
+          }
+        >
           <div className="px-5 pb-4">
-            <AlertFlowChart series={data.alerts.series} />
+            <div className="th-cp-chart">
+              <AlertFlowChart series={alerts.series} />
+            </div>
           </div>
         </SectionCard>
       </div>
-      <SectionCard title="Devices needing attention" index={6}>
-        {data.problem_devices.length === 0 ? (
+      <SectionCard
+        title="Devices needing attention"
+        index={6}
+        action={<span className="th-cp-chart-meta">Last {alertDays} · most affected</span>}
+      >
+        {problems.length === 0 ? (
           <EmptyState icon={<HeartPulse className="h-5 w-5" />} title="Nothing stands out" />
         ) : (
-          <table className="th-alerts-table">
+          <table className="th-alerts-table th-cp-attn-table">
+            <colgroup>
+              {/* Halves like the chart cards above: the counts start under the right card. */}
+              <col className="w-1/2" />
+              <col className="w-[20%]" />
+              <col className="w-[20%]" />
+              <col className="w-[10%] min-w-[110px]" />
+            </colgroup>
             <thead>
               <tr>
                 <th>Device</th>
-                <th className="text-right">Offline events</th>
-                <th className="text-right">Alerts</th>
+                <th>
+                  Offline<span className="max-sm:hidden"> events</span>
+                </th>
+                <th>Alerts</th>
                 <th className="text-right">Status</th>
               </tr>
             </thead>
             <tbody>
-              {data.problem_devices.map((device, index) => (
+              {problems.map((device, index) => (
                 <tr
                   key={device.device_id}
                   className="th-alerts-row cursor-pointer"
@@ -2024,10 +2183,17 @@ function AnalyticsTab({ clientId, onOpenDevice }: { clientId: number; onOpenDevi
                   onClick={() => onOpenDevice(device.device_id)}
                 >
                   <td>
-                    <span className="th-alerts-primary">{device.name}</span>
+                    <span className="flex min-w-0 items-center gap-3">
+                      <span className="th-cp-rank tabular-nums">{index + 1}</span>
+                      <span className="th-alerts-primary truncate">{device.name}</span>
+                    </span>
                   </td>
-                  <td className="text-right tabular-nums">{formatCount(device.offline_events)}</td>
-                  <td className="text-right tabular-nums">{formatCount(device.alerts)}</td>
+                  <td>
+                    <AttentionBar value={device.offline_events} max={maxOffline} tone={TONE.info} index={index} />
+                  </td>
+                  <td>
+                    <AttentionBar value={device.alerts} max={maxAlerts} tone={TONE.warning} index={index} />
+                  </td>
                   <td className="text-right">
                     <span
                       className="th-status-chip capitalize"
