@@ -156,6 +156,12 @@ Tabs (rendered from what the device supports):
     agent reports underneath — the exact model needs a newer agent),
     **Memory**, and **Storage** (total, free and a bar of the share used:
     amber from 80%, red from 90%).
+  - **Assign group**: No group, the six standard groups — Servers, Client
+    PC, Network, Storage, Hypervisors, Other — then the client's own groups.
+    A standard group is made for the client the first time it is chosen, and
+    a device's group decides its Explorer folder (e.g. a Windows Server with
+    Hyper-V put in Hypervisors shows under Hypervisors). Without a group
+    chosen by hand the folder is still automatic (MikroTik → Network, …).
   - **Client assignment**: client, group, **Location** (site and whether a
     rule or a person placed it), and — with the "manage clients" permission —
     **Assign location**: by the rules, one of the client's sites, no location,

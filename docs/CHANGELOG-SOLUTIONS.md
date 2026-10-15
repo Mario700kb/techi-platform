@@ -5,6 +5,34 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-15] STANDARD-GROUPS-2026-10-15 — Network, Storage, Hypervisors and Other as real, selectable groups (`779c883`)
+
+Backend and frontend, no migration, deployed 2026-10-15 23:35–23:39 (Tirana).
+Rollback images `techi-platform-{backend,frontend}:pre-standard-groups-d17a104`.
+Guard passed before and after, `nginx -t` OK, backend ready 6 s after start
+(0 restarts), 146 devices checked in within 90 s, frontend healthy, smoke
+passed, public 200, no errors. Root filesystem 90% (2.4 GB free) after the
+two builds.
+
+The owner saw six folders under a client (Servers, Client PCs, Network,
+Storage, Hypervisors, Other) while production has 76 groups of only two
+names, one "Servers" and one "Client PC" per client; the other four were
+virtual category folders filled only from the platform. The owner asked
+for them to be groups that can also be chosen by hand, hidden when empty.
+
+- Classification: a group named Network, Storage, Hypervisors (or
+  Hypervisor) or Other decides the category, like Servers / Client PC,
+  ahead of platform and OS; without such a group the platform still decides.
+  No production group has these names, so no device changed category.
+- `PUT /devices/{id}/assign-group` takes `group_name` (one of the six); the
+  group is made for the device's client on first use — no empty groups in
+  advance — and the assignment is manual, so the automatic assignment keeps
+  it. A device without a client is refused.
+- `GroupPicker` in both drawers: No group, the six standard groups, then the
+  client's own groups. Empty categories stay hidden in the Explorer.
+
+Pytest 1398 (10 new); Vitest 242; Playwright 133 (new: drawer groups).
+
 ## [2026-10-15] DRAWER-CONNECT-2026-10-15 — split Connect in the drawer header, Windows release and hardware rows, clearer sidebar groups (`a6cb738`)
 
 Frontend only, deployed 2026-10-15 22:59 (Tirana). Rollback image
