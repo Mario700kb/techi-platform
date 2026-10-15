@@ -1140,19 +1140,16 @@ const DevicesTable = memo(function DevicesTable({
       {/* ── Desktop (≥ 768px) — unchanged states/table/footer, now scoped
           to desktop only since Mobile has its own block above ── */}
       {loading ? (
-        <div className="hidden md:block premium-card-soft overflow-hidden">
+        // The same shimmer rows as Alerts, Operators and the client profile,
+        // in the table's own card.
+        <div
+          className="hidden md:block overflow-hidden rounded-xl"
+          style={{ border: "1px solid var(--th-border-card)", background: "var(--th-bg-card)" }}
+          aria-busy="true"
+          aria-label="Loading devices"
+        >
           {Array.from({ length: 8 }).map((_, i) => (
-            <div
-              key={i}
-              className="flex items-center gap-3 border-b px-4 py-3 animate-pulse"
-              style={{ borderColor: "var(--th-border-subtle)", opacity: 1 - i * 0.09 }}
-            >
-              <div className="h-2 w-2 flex-none rounded-full bg-slate-700" />
-              <div className="h-3 w-32 rounded bg-slate-700/80" />
-              <div className="h-3 w-20 rounded bg-slate-700/60 ml-4" />
-              <div className="h-3 w-24 rounded bg-slate-700/50 ml-auto" />
-              <div className="h-3 w-16 rounded bg-slate-700/40" />
-            </div>
+            <div key={i} className="th-alerts-skeleton" style={{ opacity: 1 - i * 0.09 }} />
           ))}
         </div>
       ) : error ? (
