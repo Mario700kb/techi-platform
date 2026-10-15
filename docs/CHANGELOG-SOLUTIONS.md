@@ -5,6 +5,31 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-15] LOCATION-PICKER-2026-10-15 — place a device by hand from its drawer, any time (`caec791`)
+
+Frontend only, deployed 2026-10-15 21:48 (Tirana). Rollback image
+`techi-platform-frontend:pre-location-picker-b429e66`. Guard passed before
+and after, `nginx -t` OK, container healthy (0 restarts), smoke passed,
+public 200, the picker in the served bundle. Root filesystem 88% (2.9 GB
+free).
+
+The owner saw "Location: No location" in a device drawer with no way to set
+it. The picker shipped in CLIENT-LOCATIONS never showed: it was hidden while
+the client had no location, and its sites loaded only on the Management tab
+while the picker sits on Overview (Client assignment), so the list stayed
+empty.
+
+- `LocationPicker` in both drawers (manage_clients): by the rules, a site of
+  the client, no location, or "+ New location…" — creates the site with the
+  shared form and pins the device there. The device's own site stays a
+  choice while the list loads; a device with no client says to assign one.
+- `LocationFormModal`: the create/edit form extracted from the Locations tab
+  and shared with the picker. The Linux drawer takes the permission as a
+  prop, like `canOperate`.
+
+Vitest 236; Playwright 126 (new: create a site from the drawer and pin the
+device).
+
 ## [2026-10-15] DEVICE-TYPE-2026-10-15 — device type under the name in the client's Devices tab (`9863836`)
 
 Frontend only, deployed 2026-10-15 21:09 (Tirana). Rollback image
