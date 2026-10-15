@@ -5,6 +5,28 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-15] EXPLORER-URL-2026-10-15 — the selected Explorer client survives a reload (`6071790`)
+
+Frontend only, deployed 2026-10-15 17:09 (Tirana). Rollback image
+`techi-platform-frontend:pre-explorer-url-1831574`. Guard passed before and
+after, `nginx -t` OK, container healthy (0 restarts), smoke passed, public
+200, the folder-in-URL code in the served Devices chunk. Root filesystem 90%
+(2.5 GB free).
+
+The owner reported that a reload on Devices always showed the whole fleet,
+even while looking at one client's devices: the Explorer selection lived
+only in component state, and `?folder=` was read once and then removed.
+
+- The Explorer folder is kept in the URL (`?folder=client-14`, also
+  `unassigned` and category/platform sub-folders); "All devices" removes it.
+- The table filters start from that folder, so the first request after a
+  reload is already the client's.
+- Folder → filter mapping moved into `treeKeyFilters()`; dashboard links
+  and `?client=` from the client profile work as before.
+
+Vitest 236; Playwright 107 (new: select a client, reload without the cached
+table, same client selected and every device request scoped to it).
+
 ## [2026-10-15] CLIENT-ANALYTICS-2026-10-15 — client Analytics opens fast and reads clearly; Activity 20 a page (`216e2e2`)
 
 Frontend only, deployed 2026-10-15 16:54 (Tirana). Rollback image
