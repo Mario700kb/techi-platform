@@ -4,7 +4,7 @@
 |---|---|
 | **Audience** | Operators using TECHI in production (not developers). |
 | **Scope** | Describes exactly how the platform behaves as implemented, for the live-validation window. |
-| **Version basis** | Backend/frontend of prod branch `stable/phase-2-heartbeat` (Platform Expansion Phases 0–7 deployed). **Agent baseline: 2.1.6** (released 2026-07-09; GPO rollout in progress — mixed fleet until 100%). |
+| **Version basis** | Production as of 2026-10-15: branch `backport/platform-components-92a521c` (see `docs/PROJECT_STATE.md` for the exact SHA). **Agent baseline: 2.1.20** across the fleet. Sections 3–6 and 20c were updated on 2026-10-15; the rest describe the build named in each section. |
 | **Feature flags** | Some features are hidden behind flags (`FEATURE_*`). This manual marks each flag-gated feature with 🚩 and the flag name. **When a flag is OFF, that feature does not appear at all** — the platform behaves exactly as the classic Windows RMM. |
 
 **How to read the flag notes:** Windows management (Dashboard, Devices,
@@ -58,30 +58,44 @@ Structure:
 ```
 All Devices
 No Client
-<Client>                     ← expand
-  ├── Servers                ← Windows servers (device type / OS based)
+<Client>                         ← click: the client's devices; expand
+  ├── Client profile             ← opens /clients/<id>
+  │   — a client WITHOUT locations —
+  ├── Servers / Client PC        ← (and 🚩 Network, Storage, Hypervisors)
   │     └── 🚩 Windows / Linux   (platform sub-folders — FEATURE_LINUX)
-  ├── Client PC              ← Windows workstations
-  │     └── 🚩 Windows / Linux
-  ├── 🚩 Network             ← MikroTik etc.  (FEATURE_MIKROTIK)
-  ├── 🚩 Storage             ← Synology / QNAP (FEATURE_STORAGE)
-  └── 🚩 Hypervisors         ← VMware/Hyper-V/Proxmox (FEATURE_HYPERVISOR)
+  │   — a client WITH locations (see §20c) —
+  ├── <City>                     ← only when the city holds several sites
+  │     ├── <Site>               ← e.g. "Magazina" (the city is not repeated)
+  │     │     ├── Client PCs / Servers
+  │     │     │     └── Windows / Linux
+  ├── <Site in a city of its own> ← e.g. "Durrës – Dega"
+  └── No location                ← laptops on the move, devices no rule matches
 ```
-- "Show empty groups" toggle at the bottom reveals clients/folders with no
-  devices.
+- Every row shows its device count; client, city and site rows a status ring
+  (online / stale / offline share).
+- "Show empty clients" at the bottom reveals clients with no devices.
 - Category and platform sub-folders **appear only when they contain devices**.
-  With all flags off you see only the classic **Servers** and **Client PC**
-  folders — identical to before Platform Expansion.
-- **Automatic placement**: you never choose a folder. The backend classifies each
-  device from its platform and OS/type (see §7).
+- **Automatic placement**: you never choose a category folder. The backend
+  classifies each device from its platform and OS/type (see §7). Sites come
+  from location rules or from placing a device by hand (§20c).
+- **The selection survives a reload**: it is kept in the address
+  (`/devices?folder=…`), so F5, Back and a copied link open the same client,
+  city or site. A reload opens the tree down to the selected folder.
 
 ---
 
 ## 4. Device Catalog
 
-The main device table. Columns: status dot + health, Hostname, Client / Group,
-User, Domain, IP, OS, Agent version, Last Seen, Actions.
+The main device table. Columns: Device (name, type, tags), Status, Health,
+**Client / location**, User / domain, IP address, Agent, Actions.
 
+- **Client / location**: the client, and under it the device's site as
+  `[AL] Durrës · Magazina` (country code, city, site); the tooltip gives the
+  full site name, the country and whether a rule or a person placed it.
+  Devices at no site show their group instead.
+- **Actions**: Connect (Remote Support), a ☆ to add to favourites (shown on
+  hover, always when set), and ⋯ for more.
+- Every column heading lines up with its content.
 - 🚩 A **platform icon** appears before the hostname when `FEATURE_LINUX` is on
   (🪟 Windows, 🐧 Linux, etc.). With the flag off, no icon — the row is unchanged.
 - The **OS cell** shows the OS; for Linux it shows distribution + version, with
@@ -112,18 +126,43 @@ User, Domain, IP, OS, Agent version, Last Seen, Actions.
 
 ---
 
+### Global search (⌘K / Ctrl+K, or the search box in the top bar)
+
+One box for devices, clients, teams, operators, pages and settings:
+- a **device** opens its Drawer;
+- a **client** opens its profile (`/clients/<id>`); operators without the
+  device-viewing permission get the client list;
+- a **team** opens the team;
+- an **operator** opens Operators filtered to that operator.
+
+---
+
 ## 6. Device Drawer (universal workspace)
 
 Click a device to open the **Drawer** — the single workspace for every platform.
 There is no separate "details page" per platform.
 
 Tabs (rendered from what the device supports):
-- **Overview** — identity (hostname, FQDN, domain, IPs, OS), assignment
-  (client/group/source), hardware (CPU/RAM/disk), health, and:
+- **Header** — status, health and **Connect**. Connect is a split button
+  (🚩 `FEATURE_PLATFORM_CORE`): the main part opens Remote Support; the ▾
+  arrow lists the device's other Connect methods (§12). Offline devices
+  disable both parts; a device without a Remote Support ID disables only the
+  main part.
+- **Overview** — identity, assignment, hardware, health, and:
+  - **OS** as the Windows edition and release, e.g. "Windows 11 Pro" with
+    "25H2 · build 26200", or "Windows Server 2019 Standard · Build 17763".
+  - **Hardware** as rows: **CPU** (vendor and processor generation, e.g.
+    "Intel · Skylake-SP / Cascade Lake (Xeon)", with the raw identifier the
+    agent reports underneath — the exact model needs a newer agent),
+    **Memory**, and **Storage** (total, free and a bar of the share used:
+    amber from 80%, red from 90%).
+  - **Client assignment**: client, group, **Location** (site and whether a
+    rule or a person placed it), and — with the "manage clients" permission —
+    **Assign location**: by the rules, one of the client's sites, no location,
+    or **+ New location…** (creates the site and puts the device there). A
+    device placed by hand is never moved by the rules.
   - 🚩 **Kernel / Architecture** rows and a **Capabilities** chip row
-    (`FEATURE_LINUX`) — real data reported by the Linux agent; Windows never
-    reports these, so its Overview is unchanged.
-  - 🚩 **Connect** row with the Connect menu (`FEATURE_PLATFORM_CORE`) — see §12.
+    (`FEATURE_LINUX`) — real data reported by the Linux agent.
 - **Remote Support** — RustDesk connection + self-heal status (Windows).
 - 🚩 **Terminal** (`FEATURE_TERMINAL` **and** the device reports the `terminal`
   capability) — the embedded Web Terminal (see §14).
@@ -716,6 +755,62 @@ deliverable. It does not collect a second copy of fleet data.
   storage, then pruned with their run metadata.
 - With `FEATURE_REPORTING` off, the navigation, route, worker, and endpoints
   are absent/inert; the flag remains the production rollback switch.
+
+---
+
+## 20c. Client Profile & Locations
+
+Open a client from the Clients page, the Explorer ("Client profile") or global
+search. The header shows the client, its status and key figures; tabs:
+
+| Tab | What it shows |
+|---|---|
+| Overview | Fleet status, open alerts, groups, recent activity |
+| Devices | The client's devices: type under the name, status, health, **Location**, user, IPs, agent, Connect |
+| **Locations** | The client's sites (below) |
+| Alerts | The client's open and resolved alerts |
+| Activity | Who connected where and what was done, 20 entries a page, filters by type and operator |
+| Analytics | Availability (30 days), alerts opened/resolved (7 days), time to resolve, devices needing attention — loaded in the background when the profile opens |
+| Documentation | The client's text pages (network, procedures, contacts…) |
+| Tickets | Coming with HubSpot |
+
+### Locations (sites)
+
+A **location** is one of the client's sites: head office, branch, shop,
+warehouse, data centre. Each has a name (convention `City – Point`, e.g.
+"Tiranë – Magazina"), a country and city, and optionally an address, local
+contact and notes.
+
+**How devices get there — rules.** A site has one or more rules:
+- its **public IP** (the site's internet line) — the usual case;
+- a **LAN network** (e.g. `10.130.50.0/24`) — when several sites share one
+  internet line, e.g. branches over a VPN;
+- or **both**.
+
+The most specific rule wins (IP + network, then network, then IP). The rules
+run when a site is created or edited, on **Re-apply rules**, and every 15
+minutes in the background, so new PCs and devices whose address changed reach
+their site on their own. A device **placed by hand** (from its Drawer) stays
+where it was put. A device that moves to another client leaves its old site.
+
+**The Locations tab**
+- **Suggestions** list public IPs that several unplaced devices share, with
+  the networks behind each: **Create location** makes one site for the IP;
+  a network chip (`+ 10.170.2.0/24`) makes one site for that network only.
+  Rules are per client — two clients behind one IP keep their own sites.
+- **Site cards**: devices, online/offline bar, Client PCs and Servers, how
+  many were placed by hand, rules, contact; **Open in Devices**, edit, delete.
+  Deleting a site never deletes devices: they go to another rule or to no
+  location.
+- **Search**: name, city, country (code or name), address, contact, notes,
+  type, and rule IPs or networks; several words must all match. Esc clears.
+- The cards scroll in their own area; the profile above stays in place.
+- "**N devices at no location**" lists laptops on the move and devices no rule
+  recognises yet.
+
+Who may change sites: operators with the "manage clients" permission. Anyone
+who can open the profile sees them. Every change is in the audit log and the
+client's Activity.
 
 ---
 

@@ -1,5 +1,11 @@
 # Architecture
 
+> **Scope of this document.** The diagrams and layer maps below describe the
+> core as built in spring 2026 and remain accurate for it (heartbeat pipeline,
+> realtime flow, drawer). Later layers are summarised in
+> [Additions since May 2026](#additions-since-may-2026); the deploy-by-deploy
+> detail is in [../CHANGELOG-SOLUTIONS.md](../CHANGELOG-SOLUTIONS.md).
+
 ## System Overview
 
 ```
@@ -221,11 +227,15 @@ agent/
 
 ## Database
 
-- **Engine:** SQLite (`backend/techi.db`, gitignored)
+- **Production:** PostgreSQL 15 in Docker (`techi-platform-postgres-1`, loopback only), application
+  role `techi_app` (no superuser), tuned in `docker-compose.yml` for the 2 GB host (shared_buffers
+  256 MB, max_connections 100, jit off, pg_stat_statements). Request pool 30 + 50 overflow with a
+  statement timeout; a separate maintenance pool (2 + 2) for the nightly cleanup and reports.
+- **Dev / tests:** SQLite (`backend/techi.db`, in-memory in tests)
 - **ORM:** SQLAlchemy (sync sessions)
-- **Migrations:** Alembic (`backend/alembic/versions/`)
+- **Migrations:** Alembic (`backend/alembic/versions/`), one head
 - **Session factory:** `backend/app/db/session.py` → `get_db()` FastAPI dependency
-- **No Docker required** for dev
+- **Conventions:** see [rules.md](rules.md) → Database conventions
 
 ---
 
@@ -237,3 +247,20 @@ api_router.include_router(agent.router,        prefix="/agent",      tags=["agen
 api_router.include_router(devices.router,      prefix="/devices",    tags=["devices"])
 api_router.include_router(deployments.router,  prefix="/deployments",tags=["deployments"])
 ```
+
+---
+
+## Additions since May 2026
+
+Summaries only; each line names where to look.
+
+| Area | Backend | Frontend |
+|---|---|---|
+| Authentication | Cookie sessions with refresh rotation, 2FA, operator roles and team permissions (`core/auth.py`, `services/permission_service.py`, team scopes) | `auth/AuthContext.tsx`, `routes/guards.tsx` |
+| Client profile | `endpoints/clients.py` (`/clients/{id}/profile`, `/activity`, `/documents`, `/locations`) | `pages/ClientProfile.tsx`, `components/ClientDocuments.tsx`, `components/ClientLocations.tsx` |
+| Client locations | Tables `client_locations`, `client_location_rules`; `devices.location_id` / `location_source` ("rule" or "manual"); `services/location_service.py` (RuleMatcher: IP+LAN > LAN > IP, suggestions, apply, assign); `sweep_location_rules` every 15 min from `main.py`; overview `tree_counts.locations` / `by_client_location`; device filter `location_ids` (-1 = none) | Explorer site levels in `components/DeviceTree.tsx` (tree keys `client-N-loc-<id>[-cat[-platform]]`, `client-N-locs-<ids>`), `utils/location.ts`, `SiteLine`, `CountryTag`, `LocationFormModal`, `LocationPicker` |
+| Fleet insights | `services/fleet_insights_service.py` (availability from status history, alert trend, problem devices; SWR cache 30 min) | `components/InsightCharts.tsx`, Dashboard and the profile's Analytics |
+| SQL helpers | `db/sql.py` → `id_in()` (`= ANY($1)` on PostgreSQL) | — |
+| Retention | `tasks/cleanup.py`, nightly 03:00 | — |
+| Device presentation | Device schema carries `location_*`, `os_build`, `windows_product_type` | `utils/system.ts` (OS release from build, CPU microarchitecture from `PROCESSOR_IDENTIFIER`, storage share), drawer split Connect via `ConnectMenu` `onMain` |
+

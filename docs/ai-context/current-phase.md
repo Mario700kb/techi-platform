@@ -1,71 +1,53 @@
 # Current Phase
 
-**Branch:** `stable/phase-2-heartbeat`
-**Phase:** 3 — Device Detail Drawer + Live Activity Timeline
-**Status:** Complete
+**Updated:** 2026-10-15
+**Production branch:** `backport/platform-components-92a521c` (rdp.techi.com.al, API on api-rdp.techi.com.al)
+**Status:** in production, changed in small deploys, each one recorded
 
----
+This file is a short orientation for whoever (or whichever AI) picks up the
+work. It does not hold the state itself:
 
-## What Was Built (Phase 3)
+| What | Where |
+|---|---|
+| What runs in production now (SHAs, schema version, risks) | [../PROJECT_STATE.md](../PROJECT_STATE.md) |
+| What changed, when, why, and how it was verified | [../CHANGELOG-SOLUTIONS.md](../CHANGELOG-SOLUTIONS.md) |
+| Open and approved work | [../IMPLEMENTATION-ROADMAP.md](../IMPLEMENTATION-ROADMAP.md) |
+| How to work in this repository | [rules.md](rules.md) |
 
-### Device Detail Drawer
-- Slide-over panel opened by clicking any device row in the Devices table
-- Shows: hostname, online/offline state, current user, RustDesk ID, OS/platform, local/public IP, last heartbeat timestamp, heartbeat freshness indicator, RustDesk sync state, install/runtime status
-- Realtime connectivity indicator (Live / Connecting / Polling) tied to WS status
-- Smooth CSS slide animation (translate-x, 300ms ease-out)
-- ESC key closes drawer, click on backdrop closes drawer
-- Drawer device data auto-updates from `allDevices` via `useMemo` — no manual sync needed
-- Mobile-responsive (max-w-[480px], full height, scrollable body)
+## The product today
 
-### Live Activity Timeline
-- Inside the drawer, shows newest-first activity stream
-- Event types: `heartbeat_received`, `device_online`, `device_offline`, `rustdesk_updated`, `sync_failed`, `device_updated`, `reconnect_detected`
-- Initial load via REST: `GET /api/v1/devices/{device_id}/activity`
-- Realtime prepend: incoming WS events matching `device.id` are prepended instantly via `useDeviceActivity` hook
-- Deduplication: `seenIds` ref prevents duplicate entries from REST + WS overlap
-- Capped at 60 events in memory
+TECHI Connect is the internal RMM console of TECHI's staff (about ten
+people) for ~930 managed devices, almost all Windows, on one 1 vCPU / 2 GB
+server. Main areas: Dashboard, Devices (Explorer, catalogue, device drawer),
+client profiles, Alerts, Reports, Onboarding (packages, tokens, installer),
+Operators and Teams (scoped permissions, 2FA), Credential Vault, Remote
+Support (branded RustDesk) and the Windows agent (2.1.20 in production).
 
-### Backend Activity Layer
-- `GET /api/v1/devices/{device_id}/activity?limit=40` — new endpoint
-- `DeviceActivityService` merges `device_heartbeats` + `device_status_history` into unified feed
-- No new tables — reuses existing data
-- Sorted newest-first, limited server-side
+## Recently finished (2026-10-13 → 15)
 
----
+- **Client profile** `/clients/:id`: Overview, Devices, Locations, Alerts,
+  Activity (20 a page), Analytics (loaded in the background), Documentation;
+  Tickets wait for HubSpot (INIT-CLIENT-003).
+- **Client locations (sites):** per-client sites with IP/LAN rules, the most
+  specific rule wins, manual placement, suggestions from shared public IPs,
+  a 15-minute placement sweep; Explorer client → city → site → category;
+  "Client / location" column; Locations tab with search and its own scroll;
+  location picker (with "+ New location…") in the device drawer.
+- **Global search (⌘K):** a client opens its profile, an operator opens
+  Operators narrowed to them, a device opens its drawer.
+- **Devices:** the Explorer selection lives in the URL (`?folder=`), so a
+  reload keeps it; one heading-alignment standard checked on ten tables;
+  split Connect in the drawer header; OS release and CPU / memory / storage
+  rows in the drawer.
+- **Database review:** id lists as one array parameter (`id_in`), 38
+  redundant indexes dropped, pg_stat_statements reset, `max_connections`
+  100, `jit` off.
 
-## Files Changed in Phase 3
+## Working agreements with the owner
 
-### New backend files
-- `backend/app/schemas/activity.py`
-- `backend/app/services/device_activity_service.py`
-
-### Modified backend files
-- `backend/app/repositories/device_heartbeat_repository.py` — added `get_recent_by_device()`
-- `backend/app/repositories/device_status_history_repository.py` — added `get_recent_by_device()`
-- `backend/app/api/v1/endpoints/devices.py` — added activity endpoint
-
-### New frontend files
-- `frontend/src/types/activity.ts`
-- `frontend/src/api/activity.ts`
-- `frontend/src/hooks/useDeviceActivity.ts`
-- `frontend/src/components/ActivityTimeline.tsx`
-- `frontend/src/components/DeviceDrawer.tsx`
-
-### Modified frontend files
-- `frontend/src/components/DevicesTable.tsx` — clickable rows, `onDeviceSelect` prop, removed unused imports
-- `frontend/src/pages/Devices.tsx` — drawer state, `wsStatus` capture, `latestEvent` threading
-
----
-
-## Verified Working (Phase 3)
-
-```bash
-# Activity endpoint responds with real data
-curl http://localhost:8000/api/v1/devices/8/activity | python3 -m json.tool
-
-# TypeScript compiles clean (zero errors)
-cd ~/techi-platform/frontend && npx tsc --noEmit
-
-# Backend imports resolve
-python -c "from app.schemas.activity import ActivityEvent; print('OK')"
-```
+- Every production deploy needs the owner's explicit go-ahead; the
+  sequence (guard, dump when the database changes, rollback images, bounded
+  steps, smoke, changelog) is in [rules.md](rules.md).
+- Size advice to the real load: ten users, one small server. No scale-out
+  architecture.
+- The owner writes in Albanian; the console's UI text is English.

@@ -9,8 +9,8 @@ These rules govern all AI-assisted development on this project. Read before maki
 ### Repository
 - Work ONLY in `~/techi-platform/` (main repo)
 - Do NOT touch `copilot-worktree*`, `techi-platform.worktrees/*`, or any temporary worktrees
-- Do NOT auto-commit. Only commit when explicitly asked.
-- Current branch: `stable/phase-2-heartbeat`
+- Do NOT auto-commit. Only commit when explicitly asked (an approved deploy includes its commits).
+- Production branch: `backport/platform-components-92a521c` (see [../PROJECT_STATE.md](../PROJECT_STATE.md)); `stable/phase-2-heartbeat` and `main` are not production.
 
 ### Architecture Preservation
 - Do NOT rewrite or redesign the existing architecture
@@ -33,12 +33,12 @@ These rules govern all AI-assisted development on this project. Read before maki
 - No fake/mock data. All data must come from real backend state.
 - No hardcoded device IDs or placeholder values in production code
 
-### Forbidden Features (not yet scoped)
-- Auth implementation (no login, sessions, JWT)
-- Deployment execution (no script running on remote devices)
-- Remote shell / terminal
-- File transfer
-- WebSocket channel redesign
+### Features that need the owner's approval first
+
+The May list of "forbidden" features is history: authentication (cookie
+sessions, 2FA), the web terminal and deployment exist now. Still not to be
+started without the owner: file transfer, and the WebSocket agent-channel
+redesign (INIT-RT-001, deferred 2026-10-12).
 
 ---
 
@@ -95,14 +95,50 @@ These rules govern all AI-assisted development on this project. Read before maki
 ## Alembic Migrations
 
 When adding a new database model or column:
-1. Create the model in `backend/app/models/`
-2. Import it in `backend/app/models/__init__.py`
-3. Generate migration: `cd backend && alembic revision --autogenerate -m "description"`
-4. Review the generated migration file in `backend/alembic/versions/`
-5. Apply: `alembic upgrade head`
-6. Verify the table exists before proceeding
+1. Create the model in `backend/app/models/` and import it (and list it in `__all__`) in `backend/app/models/__init__.py`
+2. Write the migration in `backend/alembic/versions/` (autogenerate as a draft at most; read every line); one head only
+3. Nullable new columns without defaults on large tables (no rewrite); indexes on large or busy tables
+   (`devices`, `device_alerts`, `device_status_history`, heartbeats, telemetry) are created or dropped
+   `CONCURRENTLY` inside `op.get_context().autocommit_block()`
+4. Prove it on PostgreSQL before production: `upgrade head`, `downgrade -1`, `upgrade head` on a scratch database
+5. Tests that build their own table lists must include any table a joined relationship needs
 
 Do NOT modify existing migration files.
+
+## Database conventions (2026-10-15 review)
+
+- Never `index=True` on a primary key, a column with a unique constraint, or a column that leads a
+  composite index — PostgreSQL already has that index; the duplicates were dropped in `j0k1l2m3n4o5`.
+- Lists of ids in hot queries go through `app.db.sql.id_in()` (`= ANY($1)` on PostgreSQL): an `IN`
+  list is a new statement for every length and once filled pg_stat_statements with 356 MB of text.
+- Times are stored as naive UTC (`utcnow_naive`); JSON as text unless it must be queried.
+- Retention lives in `app/tasks/cleanup.py` (nightly 03:00): heartbeats/telemetry, resolved alerts
+  90 days, enrollment audit 180 days, and others; a new high-volume table needs its own rule there.
+- `platform_core` (classification) is imported only by the approved modules
+  (`tests/test_platform_core.py` enforces it); category counts go through the repository.
+
+## UI conventions
+
+- Colours only through `--th-*` tokens; components from `components/ui` (`Button`, `Select`,
+  `SelectField`, `Modal`, `ConfirmationModal`, `EmptyState`) and the shared pieces
+  (`SiteLine`, `CountryTag`, `LocationFormModal`, `LocationPicker`, `useFillHeight`).
+- Table headings line up with what their cells show, on the side they are aligned to;
+  `e2e/table-alignment.spec.ts` measures ten tables — add a new table to it.
+- Loaders: the shared shimmer rows (`th-alerts-skeleton`); a reload keeps the full-screen
+  preloader until the page's chunk arrives.
+- State that should survive a reload or a shared link lives in the URL (e.g. Devices `?folder=`).
+- Cache keys must include every filter that changes the rows (`deviceTableCacheKey`).
+- Check every visual change in dark and light, desktop and phone (Playwright screenshots).
+
+## Production deploys
+
+Only on the owner's explicit word ("deploy", "po" to a deploy question). Sequence: `techi-deploy-guard`;
+`pg_dumpall` to `/opt/backups/techi/pre-<name>-<ts>.sql.gz` verified with `gzip -t` when the database or
+backend changes; `docker tag … :pre-<name>-<sha>` rollback images; `git pull --ff-only`; build only the
+changed service; `nginx -t` in a new frontend image; migrations with the new image while the old backend
+serves; `up -d --no-deps` one service at a time; readiness polled from inside the backend container; guard
+and `scripts/smoke.sh`; then the changelog entry and the `PROJECT_STATE.md` rows, committed, pushed and
+pulled on the server. Wrap server steps in `timeout`; watch free disk (root ~87–88%).
 
 ---
 

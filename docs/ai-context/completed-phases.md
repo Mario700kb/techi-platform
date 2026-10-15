@@ -1,6 +1,13 @@
 # Completed Phases
 
-All phases listed here are verified working on branch `stable/phase-2-heartbeat`.
+> **Archive (May 2026).** The phases below are the project's first months on
+> `stable/phase-2-heartbeat`. Everything since — authentication, Platform
+> Expansion, the agent rollouts, the client profile, locations and the database
+> work — is recorded deploy by deploy in
+> [../CHANGELOG-SOLUTIONS.md](../CHANGELOG-SOLUTIONS.md); the current state is in
+> [../PROJECT_STATE.md](../PROJECT_STATE.md).
+
+All phases listed here were verified working on branch `stable/phase-2-heartbeat`.
 
 ---
 
