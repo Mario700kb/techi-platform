@@ -263,3 +263,31 @@ test("the Devices table shows each device's site as country, city and site", asy
     .first()
     .screenshot({ path: test.info().outputPath("table-sites.png") });
 });
+
+test("the client's Devices tab shows each device's type under its name and its site", async ({ page }) => {
+  desktopOnly();
+  await northwindProfile(page);
+  const sited = DEVICES.map((d) =>
+    d.client_id === 1
+      ? { ...d, location_id: 12, location_name: "Durrës – Magazina", location_city: "Durrës", location_country: "AL" }
+      : d,
+  );
+  await page.route(/\/api\/v1\/devices\/\?/, (route) =>
+    route.fulfill({ json: { devices: sited, total: sited.length } }),
+  );
+  await page.goto("/clients/1");
+  await page.getByRole("tab", { name: /^Devices/ }).click();
+  const server = page.getByRole("row", { name: /NW-SRV-01/ });
+  await expect(server.locator("td").first()).toContainText("Server");
+  await expect(
+    page
+      .getByRole("row", { name: /NW-RECEPTION-01/ })
+      .locator("td")
+      .first(),
+  ).toContainText("Client PC");
+  await expect(server.locator(".th-site-line")).toContainText("Durrës · Magazina");
+  await page
+    .getByRole("tabpanel")
+    .locator("table")
+    .screenshot({ path: test.info().outputPath("profile-devices.png") });
+});

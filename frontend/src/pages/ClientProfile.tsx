@@ -88,7 +88,8 @@ import { useTabIndicator } from "../hooks/useTabIndicator";
 import { DeviceRealtimeEvent } from "../services/deviceRealtime";
 import { buildRustDeskFallbackUrlFromTechiUrl, isValidRustDeskId, launchConnect } from "../services/rustdeskLaunch";
 import { ALERT_KIND_LABELS, ALERT_SEVERITY_TONE, AlertKind } from "../types/alert";
-import { deviceDisplayName } from "../utils/deviceLabel";
+import { deviceTypeLabel } from "../utils/deviceBadges";
+import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
 import {
   DEVICE_PATCH_EVENTS,
   freshnessTone,
@@ -1100,7 +1101,13 @@ function DevicesTab({
                         </span>
                         <span className="min-w-0">
                           <span className="th-alerts-primary">{deviceDisplayName(device)}</span>
-                          <span className="th-alerts-secondary font-mono">{device.hostname}</span>
+                          {/* Its type, as on the Devices page; the hostname only when it differs from the name. */}
+                          <span className="th-alerts-secondary">
+                            {deviceTypeLabel(device)}
+                            {deviceHostnameSubtitle(device) && (
+                              <span className="font-mono"> · {deviceHostnameSubtitle(device)}</span>
+                            )}
+                          </span>
                         </span>
                       </div>
                     </td>
