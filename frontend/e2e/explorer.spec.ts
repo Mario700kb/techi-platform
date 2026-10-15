@@ -58,3 +58,29 @@ test("a folder with several platforms keeps one row per platform", async ({ page
   await expect(explorer.getByRole("button", { name: /^Windows/ })).toBeVisible();
   await expect(explorer.getByRole("button", { name: /^Linux/ })).toBeVisible();
 });
+
+test("the selected client survives a reload", async ({ page }) => {
+  await page.goto("/devices");
+  const explorer = page.getByRole("complementary", { name: "Device explorer" });
+  await explorer.getByRole("button", { name: /Northwind Clinic/ }).click();
+  await expect(page).toHaveURL(/folder=client-1(&|$)/);
+
+  // After the reload (without the cached table) the first device request is
+  // already the client's, not the whole fleet's.
+  const requests: string[] = [];
+  page.on("request", (r) => /\/api\/v1\/devices\/\?/.test(r.url()) && requests.push(r.url()));
+  await page.evaluate(() => window.sessionStorage.clear());
+  await page.reload();
+  await expect(
+    page.getByRole("complementary", { name: "Device explorer" }).getByRole("button", { name: /Northwind Clinic/ }),
+  ).toHaveAttribute("aria-current", "true");
+  await expect.poll(() => requests.length).toBeGreaterThan(0);
+  expect(requests.every((u) => u.includes("client_id=1"))).toBe(true);
+
+  // "All devices" clears it from the address.
+  await page
+    .getByRole("complementary", { name: "Device explorer" })
+    .getByRole("button", { name: /All devices/ })
+    .click();
+  await expect(page).not.toHaveURL(/folder=/);
+});

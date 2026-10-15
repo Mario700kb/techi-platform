@@ -72,6 +72,45 @@ function quickFilterToApiFilters(qf: QuickFilter, favoriteIds: number[]): Partia
   return { quick_filter: qf as DeviceQuickFilter };
 }
 
+const TREE_CATEGORIES = "servers|clientpc|network|storage|hypervisors|other";
+
+/** The table filters an Explorer folder stands for; the status filters in `base` are kept. */
+function treeKeyFilters(key: string, base: DeviceFilters): DeviceFilters {
+  const next: DeviceFilters = {
+    status: base.status,
+    freshness_state: base.freshness_state,
+    maintenance_state: base.maintenance_state,
+    duplicate_candidates: base.duplicate_candidates,
+    smart_folder: undefined,
+  };
+  if (key === "unassigned") {
+    next.client_id = -1;
+    next.group_id = undefined;
+  } else if (key.startsWith("client-")) {
+    // Platform sub-folder: client-N-<category>-<platform> (Platform Expansion).
+    const platformMatch = key.match(new RegExp(`^client-(\\d+)-(${TREE_CATEGORIES})-([a-z0-9]+)$`));
+    if (platformMatch) {
+      // Leaf: cumulative client AND category AND platform. Category uses the
+      // SAME classification as the tree counts, so the result matches the
+      // sub-folder badge (fixes servers→windows returning the wrong set).
+      const [, cid, cat, plat] = platformMatch;
+      next.client_id = Number(cid);
+      next.group_id = undefined;
+      next.category = cat;
+      next.platform = plat;
+    } else {
+      const match = key.match(new RegExp(`^client-(\\d+)(?:-(${TREE_CATEGORIES}))?$`));
+      if (match) {
+        next.client_id = Number(match[1]);
+        next.group_id = undefined;
+        // Parent category node: same category classification as its count.
+        if (match[2]) next.category = match[2];
+      }
+    }
+  }
+  return next;
+}
+
 export default function Devices() {
   const { can, user } = useAuth();
   const platformFeatures = usePlatformFeatures();
@@ -140,7 +179,10 @@ export default function Devices() {
 
   const [clients, setClients] = useState<Client[]>(() => appCache.peek<Client[]>(CACHE_KEYS.clientsList) ?? []);
   const [groups, setGroups] = useState<DeviceGroup[]>(() => appCache.peek<DeviceGroup[]>(CACHE_KEYS.groupsList) ?? []);
-  const [filters, setFilters] = useState<DeviceFilters>({});
+  // The Explorer folder lives in the URL (?folder=), so a reload, Back or a
+  // shared link keeps the client being looked at instead of the whole fleet.
+  const [selectedTreeKey, setSelectedTreeKey] = useState(() => searchParams.get("folder") || "all");
+  const [filters, setFilters] = useState<DeviceFilters>(() => treeKeyFilters(selectedTreeKey, {}));
 
   // Two-tier search: immediate (input display) vs. debounced (API trigger)
   const [searchQuery, setSearchQuery] = useState(searchParams.get("q") || "");
@@ -148,7 +190,6 @@ export default function Devices() {
   const searchTimerRef = useRef<number | undefined>();
   const treeSelectTimerRef = useRef<number | undefined>();
 
-  const [selectedTreeKey, setSelectedTreeKey] = useState("all");
   const [hideOldOffline, setHideOldOffline] = useState(false);
   const [explorerOpen, setExplorerOpen] = useState(() => {
     try {
@@ -606,45 +647,14 @@ export default function Devices() {
     setSelectedTreeKey(key);
     window.clearTimeout(treeSelectTimerRef.current);
     treeSelectTimerRef.current = window.setTimeout(() => {
-      const nextFilters: DeviceFilters = {
-        status: filters.status,
-        freshness_state: filters.freshness_state,
-        maintenance_state: filters.maintenance_state,
-        duplicate_candidates: filters.duplicate_candidates,
-        smart_folder: undefined,
-      };
-      if (key === "unassigned") {
-        nextFilters.client_id = -1;
-        nextFilters.group_id = undefined;
-      } else if (key.startsWith("client-")) {
-        const CATS = "servers|clientpc|network|storage|hypervisors|other";
-        // Platform sub-folder: client-N-<category>-<platform> (Platform Expansion).
-        const platformMatch = key.match(new RegExp(`^client-(\\d+)-(${CATS})-([a-z0-9]+)$`));
-        if (platformMatch) {
-          // Leaf: cumulative client AND category AND platform. Category uses the
-          // SAME classification as the tree counts, so the result matches the
-          // sub-folder badge (fixes servers→windows returning the wrong set).
-          const [, cid, cat, plat] = platformMatch;
-          nextFilters.client_id = Number(cid);
-          nextFilters.group_id = undefined;
-          nextFilters.category = cat;
-          nextFilters.platform = plat;
-        } else {
-          const match = key.match(new RegExp(`^client-(\\d+)(?:-(${CATS}))?$`));
-          if (match) {
-            nextFilters.client_id = Number(match[1]);
-            nextFilters.group_id = undefined;
-            // Parent category node: same category classification as its count.
-            if (match[2]) nextFilters.category = match[2];
-          }
-        }
-      }
-      setFilters(nextFilters);
-      // Reset to page 1 when tree selection changes
+      setFilters((prev) => treeKeyFilters(key, prev));
+      // Page 1 for the new folder; the folder itself goes into the URL.
       setSearchParams(
         (prev) => {
           const next = new URLSearchParams(prev);
           next.delete("page");
+          if (key === "all") next.delete("folder");
+          else next.set("folder", key);
           return next;
         },
         { replace: true },
@@ -652,19 +662,12 @@ export default function Devices() {
     }, 200);
   };
 
-  // ?folder=unassigned | client-<id> opens that explorer folder (dashboard links).
-  const urlFolder = searchParams.get("folder");
+  // ?folder=unassigned | client-<id> opens that explorer folder: a reload,
+  // dashboard links, and a link followed while the page is already open.
+  const urlFolder = searchParams.get("folder") || "all";
   useEffect(() => {
-    if (!urlFolder) return;
+    if (urlFolder === selectedTreeKey) return;
     handleTreeSelect(urlFolder);
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        next.delete("folder");
-        return next;
-      },
-      { replace: true },
-    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlFolder]);
 
