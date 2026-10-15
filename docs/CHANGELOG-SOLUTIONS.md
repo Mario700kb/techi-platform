@@ -5,6 +5,54 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-15] CLIENT-LOCATIONS-2026-10-15 — client sites: rules, Explorer levels, Locations tab (`1549520`)
+
+Backend, database and frontend, deployed 2026-10-15 20:21–20:28 (Tirana).
+Dump `/opt/backups/techi/pre-client-locations-2026-10-15_20-21.sql.gz`
+(144 MB, `gzip -t` OK); rollback images
+`techi-platform-{backend,frontend}:pre-client-locations-17f4abe`. Migration
+`h8i9j0k1l2m3` → `i9j0k1l2m3n4` run with the new image while the old backend
+served (two new empty tables, two nullable columns on devices, no rewrite);
+validated beforehand on PostgreSQL 16 up/down/up and the new queries checked
+there. Backend ready 9 s after start, 0 restarts; 297 devices checked in
+within the first minute; frontend healthy; guard and smoke passed; new
+endpoints 401 unauthenticated; public 200. No location exists yet, so no
+device moved. Root filesystem 86% (3.4 GB free).
+
+The owner asked how to manage clients with several sites (SLH in several
+countries, others in several Albanian cities, several points in one city).
+Read-only in production: 22 of 38 clients sit behind more than one public
+IP; groups are only "Servers"/"Client PC"; Vasgroup has 94 devices behind
+one IP on several LANs; one IP is shared by two clients.
+
+- Locations per client (name `City – Point`, type, country, city, address,
+  contact, notes) with rules: public IP, LAN network, or both; the most
+  specific wins; a device placed by hand is never moved; a device that
+  changes client leaves its site. Reads follow team scope, writes need
+  `manage_clients`, every change audited.
+- Suggestions: public IPs several unlocated devices share, with their LANs
+  (virtual adapters ignored), to create one site per IP or per network.
+- Explorer: client → city (when it holds several sites) → site → Client PCs
+  / Servers → platform, and "No location"; `location_ids` filter through
+  list, counts and quick counts; the device table cache key now includes it
+  (a city and a site inside it shared one key in testing).
+- Client profile Locations tab; site shown on table rows, phone cards and
+  device pages; drawer picker (by rules / a site / no location).
+- A sweep every 15 minutes (first 2 minutes after start) places new and
+  moved devices for clients that have sites; audited only when something
+  moved. Manual "Re-apply rules" audited too.
+
+Before deploy the work was checked against `docs/ai-context/rules.md` at the
+owner's request; the gaps fixed then: no automatic placement of new devices
+(the sweep), country picker showing Albania for other codes, unaudited
+re-apply, site missing on phone views. Open, not blocking: queries for
+locations live in the service and router rather than a repository; the
+Explorer's site branch repeats the category/platform rendering; the form
+takes IPv4 only while the API also takes IPv6; no Operator Manual section.
+
+Pytest 1386 (11 new); Vitest 236; Playwright 113 (4 new: Explorer levels and
+filter, Locations tab dark/light with form checks, phone layout).
+
 ## [2026-10-15] BOOT-PRELOADER-2026-10-15 — a reload keeps the full-screen preloader until the page loads (`aaf2ce0`)
 
 Frontend only, deployed 2026-10-15 17:38 (Tirana). Rollback image
