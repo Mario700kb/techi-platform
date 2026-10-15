@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Layers, Link2, Loader2, RefreshCcw, Save, StickyNote, Wrench, X } from "lucide-react";
 
 import { Client, DeviceGroup } from "../api/clients";
-import { assignDeviceClient, assignDeviceGroup, Device, updateDevice } from "../api/devices";
+import { assignDeviceClient, Device, updateDevice } from "../api/devices";
 import { queueDeviceAction, ActionType } from "../api/actions";
 import { DeviceInventory, getDeviceInventory } from "../api/inventory";
 import { createDeviceNote, DeviceNote, getDeviceNotes } from "../api/notes";
@@ -22,6 +22,7 @@ import ActivityTimeline from "./ActivityTimeline";
 import ComponentStatesPanel from "./ComponentStatesPanel";
 import ConfirmationModal from "./ConfirmationModal";
 import ConnectMenu from "./ConnectMenu";
+import GroupPicker from "./GroupPicker";
 import HealthBadge from "./HealthBadge";
 import LocationPicker from "./LocationPicker";
 import PlatformIcon from "./PlatformIcon";
@@ -755,26 +756,15 @@ function Overview({
                 ))}
               </SelectField>
             </label>
-            <label className="block">
+            <div className="block">
               <span className="premium-kicker mb-1 block">Assign group</span>
-              <SelectField
-                value={device.group_id ?? "none"}
+              <GroupPicker
+                device={device}
+                groups={availableGroups}
                 disabled={!device.client_id}
-                onChange={async (e) => {
-                  const value = e.target.value === "none" ? null : Number(e.target.value);
-                  const updated = await assignDeviceGroup(device.id, value);
-                  onDeviceUpdated?.(updated);
-                }}
-                className="w-full"
-              >
-                <option value="none">{TERMS.noGroup}</option>
-                {availableGroups.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name}
-                  </option>
-                ))}
-              </SelectField>
-            </label>
+                onDeviceUpdated={onDeviceUpdated}
+              />
+            </div>
             {canManageLocations && (
               <div>
                 <span className="premium-kicker mb-1 block">Assign location</span>

@@ -1,4 +1,5 @@
 import { fetchJson } from "./client";
+import type { StandardGroup } from "../types/groups";
 import type { PatchStatus } from "./inventory";
 import type { DeviceHealthSummary } from "../types/telemetry";
 
@@ -540,6 +541,14 @@ export async function assignDeviceClient(deviceId: number, clientId: number | nu
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ client_id: clientId }),
+  });
+}
+
+export async function assignDeviceStandardGroup(deviceId: number, name: StandardGroup): Promise<Device> {
+  return fetchJson<Device>(`/api/v1/devices/${deviceId}/assign-group`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ group_name: name }),
   });
 }
 

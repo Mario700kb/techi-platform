@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -332,8 +332,15 @@ class DeviceClientAssignment(BaseModel):
     client_id: Optional[int] = None
 
 
+# The groups every client can have; one is created for the client the first
+# time a device is put in it.
+StandardGroupName = Literal["Servers", "Client PC", "Network", "Storage", "Hypervisors", "Other"]
+
+
 class DeviceGroupAssignment(BaseModel):
     group_id: Optional[int] = None
+    # Instead of group_id: one of the client's standard groups, made if missing.
+    group_name: Optional[StandardGroupName] = None
 
 
 class MaintenanceEnterRequest(BaseModel):

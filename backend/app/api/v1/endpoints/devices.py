@@ -545,7 +545,12 @@ def assign_device_group(
     payload: DeviceGroupAssignment,
 ):
     try:
-        updated = DeviceService(db).assign_group(device.id, payload.group_id)
+        service = DeviceService(db)
+        updated = (
+            service.assign_standard_group(device.id, payload.group_name)
+            if payload.group_name
+            else service.assign_group(device.id, payload.group_id)
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     if not updated:

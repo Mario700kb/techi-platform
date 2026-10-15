@@ -104,6 +104,13 @@ _NON_AGENT_CATEGORY: dict[str, str] = {
 # smart-folder / resolution sets exactly).
 _SERVER_GROUP_NAMES = frozenset({"servers", "server"})
 _CLIENT_GROUP_NAMES = frozenset({"client pc", "client pcs", "workstation", "workstations"})
+# The other standard groups an operator may put a device in by hand (e.g. a
+# Windows Server running Hyper-V → Hypervisors). Like Servers / Client PC, a
+# device's own group outranks what its platform would say.
+_NETWORK_GROUP_NAMES = frozenset({"network"})
+_STORAGE_GROUP_NAMES = frozenset({"storage"})
+_HYPERVISOR_GROUP_NAMES = frozenset({"hypervisors", "hypervisor"})
+_OTHER_GROUP_NAMES = frozenset({"other"})
 
 # Server OS signal (matches the pre-expansion overview classifier verbatim).
 _SERVER_OS_MARKER = "windows server"
@@ -217,7 +224,8 @@ def _nonagent_sql(category: str):
 
 
 # The single ordered rule list. Order == owner precedence:
-#   1 Existing DB Group (standard) · 2 Windows/structural (non-agent platform
+#   1 Existing DB Group (standard: Servers, Client PC, Network, Storage,
+#   Hypervisors) · 2 Windows/structural (non-agent platform
 #   class) · 3 OS heuristic · 4 Other (custom group) · default clientpc.
 #
 # NOTE: category answers *what kind of device* this is — it is intentionally
@@ -235,6 +243,19 @@ _CATEGORY_RULES: tuple[_Rule, ...] = (
         py=lambda r: r._group_norm in _CLIENT_GROUP_NAMES,
         sql=or_(*[DeviceGroup.name.ilike(name) for name in sorted(_CLIENT_GROUP_NAMES)]),
         result=CATEGORY_CLIENTPC,
+    ),
+    *(
+        _Rule(
+            py=lambda r, names=names: r._group_norm in names,
+            sql=or_(*[DeviceGroup.name.ilike(name) for name in sorted(names)]),
+            result=category,
+        )
+        for names, category in (
+            (_NETWORK_GROUP_NAMES, CATEGORY_NETWORK),
+            (_STORAGE_GROUP_NAMES, CATEGORY_STORAGE),
+            (_HYPERVISOR_GROUP_NAMES, CATEGORY_HYPERVISORS),
+            (_OTHER_GROUP_NAMES, CATEGORY_OTHER),
+        )
     ),
     _Rule(py=_nonagent_py(CATEGORY_NETWORK), sql=_nonagent_sql(CATEGORY_NETWORK), result=CATEGORY_NETWORK),
     _Rule(py=_nonagent_py(CATEGORY_STORAGE), sql=_nonagent_sql(CATEGORY_STORAGE), result=CATEGORY_STORAGE),

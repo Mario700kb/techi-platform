@@ -10,6 +10,7 @@ from app.models.device import Device, DeviceFreshnessState, DeviceStatus, Device
 from app.repositories.client_repository import ClientRepository
 from app.repositories.device_group_repository import DeviceGroupRepository
 from app.repositories.device_repository import HEALTH_INDEX_FILTERS, DeviceRepository
+from app.schemas.device_group import DeviceGroupCreate
 from app.schemas.device import DeviceCreate, DeviceUpdate, MaintenanceEnterRequest
 from app.services.device_activity_event_service import DeviceActivityEventService
 from app.services.device_assignment_service import DeviceAssignmentService
@@ -345,6 +346,19 @@ class DeviceService:
                 dedupe_key=f"device_updated:{resolved.id}:assignment",
             )
         return resolved
+
+    def assign_standard_group(self, device_id: int, name: str) -> Optional[Device]:
+        """Put the device in one of its client's standard groups, making the
+        group the first time it is used (no empty groups made in advance)."""
+        device = self.repository.get(device_id)
+        if not device:
+            return None
+        if not device.client_id:
+            raise ValueError("Assign a client first; groups belong to a client")
+        group = self.groups.get_by_client_and_name(device.client_id, name) or self.groups.create(
+            DeviceGroupCreate(client_id=device.client_id, name=name)
+        )
+        return self.assign_group(device_id, group.id)
 
     def assign_group(self, device_id: int, group_id: Optional[int]) -> Optional[Device]:
         device = self.repository.get(device_id)

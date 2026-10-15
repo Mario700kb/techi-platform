@@ -40,7 +40,6 @@ import { Client, DeviceGroup } from "../api/clients";
 import {
   archiveDevice,
   assignDeviceClient,
-  assignDeviceGroup,
   clearDeviceMaintenance,
   Device,
   DeviceOfflineAnalysis,
@@ -92,6 +91,7 @@ import AlertKindIcon from "./AlertKindIcon";
 import ActivityTimeline from "./ActivityTimeline";
 import ComponentStatesPanel from "./ComponentStatesPanel";
 import ConfirmationModal from "./ConfirmationModal";
+import GroupPicker from "./GroupPicker";
 import HealthBadge from "./HealthBadge";
 import LocationPicker from "./LocationPicker";
 import ResourceBar from "./ResourceBar";
@@ -1427,26 +1427,15 @@ export default function DeviceDrawer({
                   </div>
                 )}
                 {canOperate && (
-                  <label className="col-span-2 block">
+                  <div className="col-span-2 block">
                     <span className="premium-kicker mb-1 block">Assign group</span>
-                    <SelectField
-                      value={device.group_id ?? "none"}
+                    <GroupPicker
+                      device={device}
+                      groups={availableGroups}
                       disabled={!assignmentClientId}
-                      onChange={async (event) => {
-                        const value = event.target.value === "none" ? null : Number(event.target.value);
-                        const updated = await assignDeviceGroup(device.id, value);
-                        onDeviceUpdated?.(updated);
-                      }}
-                      className="w-full"
-                    >
-                      <option value="none">{TERMS.noGroup}</option>
-                      {availableGroups.map((group) => (
-                        <option key={group.id} value={group.id}>
-                          {group.name}
-                        </option>
-                      ))}
-                    </SelectField>
-                  </label>
+                      onDeviceUpdated={onDeviceUpdated}
+                    />
+                  </div>
                 )}
               </div>
             </section>
