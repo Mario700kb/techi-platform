@@ -5,6 +5,29 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-15] BOOT-PRELOADER-2026-10-15 — a reload keeps the full-screen preloader until the page loads (`aaf2ce0`)
+
+Frontend only, deployed 2026-10-15 17:38 (Tirana). Rollback image
+`techi-platform-frontend:pre-boot-preloader-db2e2f1`. Guard passed before
+and after, `nginx -t` OK, container healthy (0 restarts), smoke passed,
+public 200; the served main bundle (`index-v2-BNFHUS3y.js`) is byte-for-byte
+the local build of `aaf2ce0`. Root filesystem 83% (4.1 GB free) after the
+owner-approved build-cache prune at 17:25 (`docker builder prune -f
+--keep-storage 1GB`, ~1.95 GB freed, 90% → 82%). The owner chose to keep
+every database dump; nothing else was removed.
+
+The owner reported that a reload on Devices showed an empty shell with a
+thin coral line near the top instead of the app's preloader. After a
+reload the shell drew at once while the page's own chunk (Devices is the
+largest) was still loading, so the route Suspense fallback — the inline
+bar — showed. Until the first page has shown, the fallback is now the
+full-screen preloader the boot screen started (same animation phase, so it
+simply stays); navigations inside the app keep the in-page bar.
+
+Vitest 236; Playwright 109 (new `preloader.spec.ts`: reload with the
+Devices chunk held shows the full-screen preloader and no inline bar;
+navigating to a held Alerts chunk shows the inline bar).
+
 ## [2026-10-15] DEVICES-LOADER-2026-10-15 — Devices table loader matches the rest of the app (`cd3f8d7`)
 
 Frontend only, deployed 2026-10-15 17:18 (Tirana). Rollback image
