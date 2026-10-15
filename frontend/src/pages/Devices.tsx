@@ -134,7 +134,7 @@ function treeKeyFilters(key: string, base: DeviceFilters): DeviceFilters {
 }
 
 export default function Devices() {
-  const { can, user } = useAuth();
+  const { can, hasPermission, user } = useAuth();
   const platformFeatures = usePlatformFeatures();
   const { fleetOverview, latestEvent, realtimeStatus, refreshFleetOverview, alerts } = useAppData();
   const { favorites, toggle: toggleFavorite } = useFavorites();
@@ -1102,6 +1102,7 @@ export default function Devices() {
             clients={clients}
             groups={groups}
             canOperate={can("operator")}
+            canManageLocations={hasPermission("manage_clients")}
             onDeviceUpdated={handleDeviceUpdated}
             initialTab={drawerInitialTab}
           />

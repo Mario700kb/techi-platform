@@ -291,3 +291,63 @@ test("the client's Devices tab shows each device's type under its name and its s
     .locator("table")
     .screenshot({ path: test.info().outputPath("profile-devices.png") });
 });
+
+test("a device is placed by hand from its drawer, even at a site made on the spot", async ({ page }) => {
+  desktopOnly();
+  // Northwind has no location yet.
+  await page.route("**/api/v1/clients/1/locations", async (route) => {
+    if (route.request().method() === "POST") {
+      await route.fulfill({
+        status: 201,
+        json: { ...LOCATION_LIST.locations[1], id: 21, name: "Durrës – Magazina", city: "Durrës", rules: [] },
+      });
+      return;
+    }
+    await route.fulfill({ json: { locations: [], unlocated: stats(3, 2) } });
+  });
+  let assigned: unknown = null;
+  await page.route("**/api/v1/clients/1/locations/assign", async (route) => {
+    assigned = route.request().postDataJSON();
+    await route.fulfill({ json: { assigned: 1, cleared: 0 } });
+  });
+  let placed = false;
+  await page.route(/\/api\/v1\/devices\/1$/, (route) =>
+    route.fulfill({
+      json: placed
+        ? {
+            ...DEVICES[0],
+            location_id: 21,
+            location_name: "Durrës – Magazina",
+            location_city: "Durrës",
+            location_country: "AL",
+            location_source: "manual",
+          }
+        : DEVICES[0],
+    }),
+  );
+
+  await page.goto("/devices");
+  await page.locator("tr", { hasText: "NW-RECEPTION-01" }).getByText("NW-RECEPTION-01").first().click();
+  // Overview → Client assignment, where the device's client and group are set.
+  const picker = page.getByRole("combobox", { name: "Assign location" });
+  await expect(picker).toBeVisible();
+  await picker.click();
+  await expect(page.getByRole("option")).toHaveText([
+    "By the rules (automatic)",
+    "No location (keep it here)",
+    "+ New location…",
+  ]);
+  await page.getByRole("option", { name: "+ New location…" }).click();
+  const dialog = page.getByRole("dialog", { name: "New location" });
+  await dialog.getByRole("textbox", { name: "Name" }).fill("Durrës – Magazina");
+  await dialog.getByRole("combobox", { name: "City" }).fill("Durrës");
+  placed = true;
+  await dialog.getByRole("button", { name: "Create location" }).click();
+
+  await expect(dialog).toHaveCount(0);
+  await expect.poll(() => assigned).toEqual({ device_ids: [1], location_id: 21, mode: "manual" });
+  await expect(page.getByText("Durrës – Magazina · Durrës, Albania · placed by hand").first()).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Assign location" })).toContainText("Durrës – Magazina");
+  await page.getByRole("combobox", { name: "Assign location" }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: test.info().outputPath("drawer-location.png") });
+});

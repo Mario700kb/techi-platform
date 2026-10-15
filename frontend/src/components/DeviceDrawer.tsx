@@ -36,7 +36,7 @@ import {
   regenerateRemoteSupportPassword,
   RemoteSupportDevice,
 } from "../api/remoteSupport";
-import { assignDeviceLocation, Client, DeviceGroup, getClientLocations } from "../api/clients";
+import { Client, DeviceGroup } from "../api/clients";
 import {
   archiveDevice,
   assignDeviceClient,
@@ -45,7 +45,6 @@ import {
   Device,
   DeviceOfflineAnalysis,
   enterDeviceMaintenance,
-  getDevice,
   getDeviceOfflineAnalysis,
   updateDevice,
 } from "../api/devices";
@@ -94,6 +93,7 @@ import ActivityTimeline from "./ActivityTimeline";
 import ComponentStatesPanel from "./ComponentStatesPanel";
 import ConfirmationModal from "./ConfirmationModal";
 import HealthBadge from "./HealthBadge";
+import LocationPicker from "./LocationPicker";
 import ResourceBar from "./ResourceBar";
 import { deviceSite } from "../utils/location";
 import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
@@ -561,21 +561,6 @@ export default function DeviceDrawer({
 
   const assignmentClientId = device.client_id ?? device.resolved_client_id ?? null;
   const availableGroups = groups.filter((group) => group.client_id === assignmentClientId);
-  // The client's sites, for the Management tab's location picker (only once it is opened).
-  const locationClientId = device.client_id ?? null;
-  const siteList = useCachedQuery(
-    activeTab === "management" && locationClientId ? `page.client.${locationClientId}.locations` : null,
-    () => getClientLocations(locationClientId as number),
-  );
-  const sites = siteList.data?.locations ?? [];
-  const setLocation = async (value: string) => {
-    if (!locationClientId) return;
-    if (value === "auto") await assignDeviceLocation(locationClientId, [device.id], null, "auto");
-    else if (value === "none") await assignDeviceLocation(locationClientId, [device.id], null, "manual");
-    else await assignDeviceLocation(locationClientId, [device.id], Number(value), "manual");
-    onDeviceUpdated?.(await getDevice(device.id));
-    void siteList.reload();
-  };
 
   const syncColor = device.rustdesk_conflict_detected
     ? "text-red-400"
@@ -1372,23 +1357,15 @@ export default function DeviceDrawer({
                     </SelectField>
                   </label>
                 )}
-                {hasPermission("manage_clients") && locationClientId && sites.length > 0 && (
-                  <label className="col-span-2 block">
+                {hasPermission("manage_clients") && (
+                  <div className="col-span-2">
                     <span className="premium-kicker mb-1 block">Assign location</span>
-                    <SelectField
-                      value={device.location_source === "manual" ? String(device.location_id ?? "none") : "auto"}
-                      onChange={(event) => void setLocation(event.target.value)}
-                      className="w-full"
-                    >
-                      <option value="auto">By the rules (automatic)</option>
-                      {sites.map((site) => (
-                        <option key={site.id} value={site.id}>
-                          {site.name}
-                        </option>
-                      ))}
-                      <option value="none">No location (keep it here)</option>
-                    </SelectField>
-                  </label>
+                    <LocationPicker
+                      device={device}
+                      active={activeTab === "overview"}
+                      onDeviceUpdated={onDeviceUpdated}
+                    />
+                  </div>
                 )}
                 {canOperate && (
                   <label className="col-span-2 block">

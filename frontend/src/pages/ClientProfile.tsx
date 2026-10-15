@@ -602,6 +602,7 @@ export default function ClientProfilePage() {
             clients={org.data?.[0] ?? []}
             groups={org.data?.[1] ?? []}
             canOperate={can("operator")}
+            canManageLocations={hasPermission("manage_clients")}
             onDeviceUpdated={handleDeviceUpdated}
           />
         ) : (

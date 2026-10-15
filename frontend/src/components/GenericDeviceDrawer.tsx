@@ -23,6 +23,7 @@ import ComponentStatesPanel from "./ComponentStatesPanel";
 import ConfirmationModal from "./ConfirmationModal";
 import ConnectMenu from "./ConnectMenu";
 import HealthBadge from "./HealthBadge";
+import LocationPicker from "./LocationPicker";
 import PlatformIcon from "./PlatformIcon";
 import ResourceBar from "./ResourceBar";
 import VersionBadge from "./VersionBadge";
@@ -44,6 +45,8 @@ interface Props {
   groups?: DeviceGroup[];
   latestEvent?: DeviceRealtimeEvent | null;
   canOperate?: boolean;
+  /** May place the device at one of its client's locations (manage_clients). */
+  canManageLocations?: boolean;
   onDeviceUpdated?: (device: Device) => void;
   // Deep-link tab (e.g. the Device Catalog's Connect ▸ Embedded Terminal
   // opens the drawer directly on the Terminal tab).
@@ -73,6 +76,7 @@ export default function GenericDeviceDrawer({
   clients,
   groups,
   canOperate,
+  canManageLocations = false,
   onDeviceUpdated,
   initialTab,
 }: Props) {
@@ -348,6 +352,7 @@ export default function GenericDeviceDrawer({
                     clients={clients ?? []}
                     groups={groups ?? []}
                     canOperate={operate}
+                    canManageLocations={canManageLocations}
                     onDeviceUpdated={onDeviceUpdated}
                     onOpenTerminal={openTerminal}
                     onRemoteSupport={meta.remote_support ? () => setTab("remote_support") : undefined}
@@ -608,6 +613,7 @@ function Overview({
   clients,
   groups,
   canOperate,
+  canManageLocations,
   onDeviceUpdated,
   onOpenTerminal,
   onRemoteSupport,
@@ -620,6 +626,7 @@ function Overview({
   clients: Client[];
   groups: DeviceGroup[];
   canOperate: boolean;
+  canManageLocations: boolean;
   onDeviceUpdated?: (device: Device) => void;
   onOpenTerminal?: () => void;
   onRemoteSupport?: () => void;
@@ -768,6 +775,12 @@ function Overview({
                 ))}
               </SelectField>
             </label>
+            {canManageLocations && (
+              <div>
+                <span className="premium-kicker mb-1 block">Assign location</span>
+                <LocationPicker device={device} active onDeviceUpdated={onDeviceUpdated} />
+              </div>
+            )}
           </div>
         )}
       </Section>
