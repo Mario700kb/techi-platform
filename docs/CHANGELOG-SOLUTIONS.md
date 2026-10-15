@@ -5,6 +5,23 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-15] DEVICES-LOADER-2026-10-15 — Devices table loader matches the rest of the app (`cd3f8d7`)
+
+Frontend only, deployed 2026-10-15 17:18 (Tirana). Rollback image
+`techi-platform-frontend:pre-devices-loader-30041af`. Guard passed before and
+after, `nginx -t` OK, container healthy (0 restarts), smoke passed, public
+200, no `bg-slate-700` left in the served Devices chunk. Root filesystem 90%
+(2.4 GB free).
+
+The owner noticed the Devices page loader looked different from the other
+pages. The desktop table still had its own pulsing bars in fixed slate
+colours (off-theme in light mode); it now shows the shared shimmer rows
+(`th-alerts-skeleton`) used by Alerts, Operators and the client profile,
+inside the table's card. Compared side by side with Alerts in screenshots,
+dark and light. The phone list already used the shared rows.
+
+Vitest 236; Playwright 107.
+
 ## [2026-10-15] EXPLORER-URL-2026-10-15 — the selected Explorer client survives a reload (`6071790`)
 
 Frontend only, deployed 2026-10-15 17:09 (Tirana). Rollback image
