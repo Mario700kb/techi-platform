@@ -19,10 +19,16 @@ services:
     # - random_page_cost 1.1: SSD storage, so index scans are not penalised;
     # - pg_stat_statements: per-query totals, read with
     #   SELECT * FROM pg_stat_statements ORDER BY total_exec_time DESC;
-    # - log statements over 500 ms, lock waits and temp files.
+    # - log statements over 500 ms, lock waits and temp files;
+    # - max_connections 100 (was 200): the backend's request pool reaches 80
+    #   (30 + 50 overflow) and maintenance 4, plus backups and admin; 12 are
+    #   in use day to day, and each idle slot still reserves memory;
+    # - jit off: compiling a plan costs more than it saves on one vCPU for
+    #   this OLTP load.
     command: >
       postgres
-      -c max_connections=200
+      -c max_connections=100
+      -c jit=off
       -c shared_buffers=256MB
       -c effective_cache_size=768MB
       -c work_mem=8MB
