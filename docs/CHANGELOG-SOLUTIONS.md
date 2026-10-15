@@ -33,6 +33,12 @@ for them to be groups that can also be chosen by hand, hidden when empty.
 
 Pytest 1398 (10 new); Vitest 242; Playwright 133 (new: drawer groups).
 
+Afterwards, with the owner's approval: the ten rollback tags of the 13–14
+Oct deploys removed (every 15 Oct deploy keeps its set), build cache pruned
+to 1 GB (644 MB), dangling images pruned. Root filesystem 90% → 87% (3.1 GB
+free); containers healthy throughout. Database dumps untouched, as the owner
+decided.
+
 ## [2026-10-15] DRAWER-CONNECT-2026-10-15 — split Connect in the drawer header, Windows release and hardware rows, clearer sidebar groups (`a6cb738`)
 
 Frontend only, deployed 2026-10-15 22:59 (Tirana). Rollback image
