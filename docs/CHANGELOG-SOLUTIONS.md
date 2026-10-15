@@ -5,6 +5,21 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-15] DEVICE-TYPE-2026-10-15 — device type under the name in the client's Devices tab (`9863836`)
+
+Frontend only, deployed 2026-10-15 21:09 (Tirana). Rollback image
+`techi-platform-frontend:pre-device-type-5e40e52`. Guard passed before and
+after, `nginx -t` OK, container healthy (0 restarts), smoke passed, public
+200; the served `ClientProfile` chunk is the local build of `9863836`. Root
+filesystem 87% (3.1 GB free).
+
+With the profile's Group column turned into Location, the owner asked to
+see again whether a device is a Client PC or a Server. The name's second
+line gives the type (from the classification, as on the Devices page) and
+the hostname only when it differs from the name, instead of repeating it.
+
+Vitest 236; Playwright 125 (new: type and site on the profile's Devices tab).
+
 ## [2026-10-15] SITE-COLUMN-2026-10-15 — one alignment standard for tables; Client / location column (`754113e`)
 
 Backend and frontend, no migration, deployed 2026-10-15 20:52–20:55 (Tirana).
