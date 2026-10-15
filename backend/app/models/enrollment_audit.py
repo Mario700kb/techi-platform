@@ -13,7 +13,7 @@ class EnrollmentAudit(Base):
         Index("ix_enrollment_audit_result", "result"),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     created_at = Column(DateTime, default=utcnow, nullable=False)
     token_id = Column(Integer, nullable=True)
     token_name = Column(String(160), nullable=True)

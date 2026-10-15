@@ -9,7 +9,7 @@ from app.core.time import utcnow_naive
 class DeviceNote(Base):
     __tablename__ = "device_notes"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     device_id = Column(Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, index=True)
     note = Column(Text, nullable=False)
     created_by = Column(String(128), nullable=True)

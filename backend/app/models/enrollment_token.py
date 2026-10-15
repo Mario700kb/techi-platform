@@ -53,22 +53,22 @@ class EnrollmentToken(Base):
         Index("ix_enrollment_tokens_client_group", "client_id", "group_id"),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     name = Column(String(160), nullable=False)
     token_hash = Column(String(64), nullable=False, unique=True, index=True)
-    status = Column(EnrollmentTokenStatusType(), default=EnrollmentTokenStatus.ACTIVE, nullable=False, index=True)
+    status = Column(EnrollmentTokenStatusType(), default=EnrollmentTokenStatus.ACTIVE, nullable=False)
     created_at = Column(DateTime, default=utcnow_naive, nullable=False)
     expires_at = Column(DateTime, nullable=True, index=True)
     used_at = Column(DateTime, nullable=True)
     max_uses = Column(Integer, default=1, nullable=False)
     use_count = Column(Integer, default=0, nullable=False)
-    client_id = Column(Integer, ForeignKey("clients.id"), nullable=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
     group_id = Column(Integer, ForeignKey("device_groups.id"), nullable=True, index=True)
     is_default = Column(Boolean, default=False, nullable=False)
     token_prefix = Column(String(12), nullable=True)
     token_ciphertext = Column(Text, nullable=True)
     is_internal = Column(Boolean, default=False, nullable=False, index=True)
-    internal_kind = Column(String(32), nullable=True, index=True)
+    internal_kind = Column(String(32), nullable=True)
 
     @property
     def has_recoverable_token(self) -> bool:

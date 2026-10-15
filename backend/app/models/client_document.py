@@ -10,7 +10,7 @@ class ClientDocument(Base):
 
     __tablename__ = "client_documents"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True)
     title = Column(String(200), nullable=False)
     category = Column(String(40), nullable=False, default="general")

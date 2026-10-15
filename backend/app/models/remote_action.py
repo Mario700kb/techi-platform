@@ -56,7 +56,7 @@ EXPIRABLE_STATUSES = {
 class RemoteAction(Base):
     __tablename__ = "remote_actions"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     device_id = Column(Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, index=True)
     action_type = Column(String(64), nullable=False)
     payload = Column(Text, nullable=True)  # JSON-encoded dict

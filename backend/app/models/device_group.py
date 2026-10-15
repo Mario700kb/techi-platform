@@ -8,7 +8,7 @@ from app.core.time import utcnow_naive
 class DeviceGroup(Base):
     __tablename__ = "device_groups"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     name = Column(String(120), nullable=False, index=True)
     description = Column(String(255), nullable=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)

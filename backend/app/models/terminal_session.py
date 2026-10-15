@@ -31,7 +31,7 @@ class TerminalSession(Base):
 
     __tablename__ = "terminal_sessions"
 
-    id = Column(String(64), primary_key=True, index=True)  # uuid4 hex
+    id = Column(String(64), primary_key=True)  # uuid4 hex
     device_id = Column(Integer, ForeignKey("devices.id"), nullable=False, index=True)
     operator_id = Column(Integer, ForeignKey("operators.id"), nullable=True, index=True)
     operator_username = Column(String(128), nullable=True)

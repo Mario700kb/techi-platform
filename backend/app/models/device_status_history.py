@@ -13,7 +13,7 @@ class DeviceStatusHistory(Base):
     # device_id-only index, which is its prefix.
     __table_args__ = (Index("ix_device_status_history_device_created", "device_id", "created_at"),)
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     device_id = Column(Integer, ForeignKey("devices.id"), nullable=False)
     previous_status = Column(SQLEnum(DeviceStatus), nullable=True)
     new_status = Column(SQLEnum(DeviceStatus), nullable=False)

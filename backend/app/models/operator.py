@@ -15,9 +15,9 @@ class OperatorRole(str, Enum):
 class Operator(Base):
     __tablename__ = "operators"
 
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String(80), unique=True, nullable=False, index=True)
-    email = Column(String(120), unique=True, nullable=False, index=True)
+    id = Column(Integer, primary_key=True)
+    username = Column(String(80), unique=True, nullable=False)
+    email = Column(String(120), unique=True, nullable=False)
     display_name = Column(String(255), nullable=True)
     hashed_password = Column(String(255), nullable=False)
     role = Column(String(32), default=OperatorRole.READONLY.value, nullable=False, index=True)

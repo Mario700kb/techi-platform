@@ -28,7 +28,7 @@ class DeviceFreshnessState(str, Enum):
 class Device(Base):
     __tablename__ = "devices"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     rustdesk_id = Column(String(64), unique=True, nullable=True, index=True)
     agent_id = Column(String(80), unique=True, nullable=True, index=True)
     hostname = Column(String(128), nullable=True)

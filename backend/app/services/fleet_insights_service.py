@@ -23,6 +23,7 @@ from app.core.config import settings
 from app.core.scope import AllowedScope
 from app.core.swr_cache import SWRCache, scope_cache_key
 from app.core.time import _zone, utcnow
+from app.db.sql import id_in
 from app.models.alert import DeviceAlert
 from app.models.client import Client
 from app.models.device import Device, DeviceStatus
@@ -89,6 +90,7 @@ def _add_segment(start: datetime, end: datetime, is_online: bool, bounds: list[d
 class FleetInsightsService:
     def __init__(self, db: Session):
         self.db = db
+        self._dialect = db.get_bind().dialect.name
 
     def get_insights(self, scope: Optional[AllowedScope] = None, days: int = 30) -> dict:
         days = max(7, min(days, 60))
@@ -188,7 +190,7 @@ class FleetInsightsService:
             .correlate(Device)
             .scalar_subquery()
         )
-        newest_ids = select(newest_before).select_from(Device).where(Device.id.in_(ids))
+        newest_ids = select(newest_before).select_from(Device).where(id_in(Device.id, ids, self._dialect))
         return dict(
             self.db.query(DeviceStatusHistory.device_id, DeviceStatusHistory.new_status)
             .filter(DeviceStatusHistory.id.in_(newest_ids))
@@ -220,7 +222,7 @@ class FleetInsightsService:
         rows = (
             self.db.query(DeviceStatusHistory.device_id, DeviceStatusHistory.created_at,
                           DeviceStatusHistory.new_status, DeviceStatusHistory.previous_status)
-            .filter(DeviceStatusHistory.device_id.in_([d.id for d in devices]),
+            .filter(id_in(DeviceStatusHistory.device_id, [d.id for d in devices], self._dialect),
                     DeviceStatusHistory.created_at >= window_start,
                     DeviceStatusHistory.created_at <= end)
             .order_by(DeviceStatusHistory.device_id, DeviceStatusHistory.created_at)
@@ -249,7 +251,7 @@ class FleetInsightsService:
             for device_id, at, new_status, previous_status in (
                 self.db.query(DeviceStatusHistory.device_id, DeviceStatusHistory.created_at,
                               DeviceStatusHistory.new_status, DeviceStatusHistory.previous_status)
-                .filter(DeviceStatusHistory.device_id.in_(ids),
+                .filter(id_in(DeviceStatusHistory.device_id, ids, self._dialect),
                         DeviceStatusHistory.created_at >= window_start,
                         DeviceStatusHistory.created_at <= end)
                 .order_by(DeviceStatusHistory.device_id, DeviceStatusHistory.created_at)
@@ -328,7 +330,7 @@ class FleetInsightsService:
         elif ids:
             rows = (
                 self.db.query(DeviceAlert.created_at, DeviceAlert.resolved_at, DeviceAlert.state)
-                .filter(DeviceAlert.device_id.in_(ids),
+                .filter(id_in(DeviceAlert.device_id, ids, self._dialect),
                         or_(DeviceAlert.created_at >= window_start, DeviceAlert.resolved_at >= window_start,
                             DeviceAlert.state == "open"))
                 .all()
@@ -401,14 +403,14 @@ class FleetInsightsService:
         window_start = (now - timedelta(days=days)).replace(tzinfo=None)
         offline_events = dict(
             self.db.query(DeviceStatusHistory.device_id, func.count(DeviceStatusHistory.id))
-            .filter(DeviceStatusHistory.device_id.in_(ids), DeviceStatusHistory.created_at >= window_start,
+            .filter(id_in(DeviceStatusHistory.device_id, ids, self._dialect), DeviceStatusHistory.created_at >= window_start,
                     DeviceStatusHistory.new_status == DeviceStatus.OFFLINE)
             .group_by(DeviceStatusHistory.device_id)
             .all()
         )
         alert_counts = dict(
             self.db.query(DeviceAlert.device_id, func.count(DeviceAlert.id))
-            .filter(DeviceAlert.device_id.in_(ids), DeviceAlert.created_at >= window_start)
+            .filter(id_in(DeviceAlert.device_id, ids, self._dialect), DeviceAlert.created_at >= window_start)
             .group_by(DeviceAlert.device_id)
             .all()
         )

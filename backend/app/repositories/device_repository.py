@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, List, Mapping, Optional, Sequence
 from sqlalchemy.orm import Session, aliased, defer, joinedload
 from sqlalchemy import and_, case, false, func, not_, or_, select
 
+from app.db.sql import id_in
 from app.models.alert import DeviceAlert
 from app.models.client import Client
 from app.models.device import Device, DeviceFreshnessState, DeviceStatus, DeviceType, freshness_for
@@ -280,9 +281,11 @@ class DeviceRepository:
         stale_cutoff = now - STALE_WINDOW
         is_online = Device.last_seen >= online_cutoff
 
+        dialect = self.db.get_bind().dialect.name
+
         def ids_where(predicate):
             ids = [device_id for device_id, entry in health_index.items() if predicate(entry)]
-            return Device.id.in_(ids) if ids else false()
+            return id_in(Device.id, ids, dialect) if ids else false()
 
         if key == "online":
             return is_online

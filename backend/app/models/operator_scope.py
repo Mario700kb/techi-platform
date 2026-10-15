@@ -15,12 +15,11 @@ class ScopeType(str, Enum):
 class OperatorScope(Base):
     __tablename__ = "operator_scopes"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     operator_id = Column(
         Integer,
         ForeignKey("operators.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
     scope_type = Column(String(16), nullable=False)   # 'client' | 'group' | 'device'
     scope_id = Column(Integer, nullable=False)

@@ -55,7 +55,7 @@ class NotificationChannel(Base):
 
     __tablename__ = "notification_channels"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     name = Column(String(160), nullable=False)
     channel_type = Column(String(24), nullable=False, index=True)  # NotificationChannelType
     enabled = Column(Boolean, nullable=False, default=True)
@@ -75,7 +75,7 @@ class NotificationRule(Base):
 
     __tablename__ = "notification_rules"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     event_type = Column(String(64), nullable=False, index=True)  # free string — new event types need no migration
     scope_type = Column(String(16), nullable=False, default=NotificationScopeType.GLOBAL.value, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True, index=True)
@@ -96,7 +96,7 @@ class NotificationDelivery(Base):
 
     __tablename__ = "notification_deliveries"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     rule_id = Column(Integer, ForeignKey("notification_rules.id", ondelete="SET NULL"), nullable=True, index=True)
     channel_id = Column(Integer, ForeignKey("notification_channels.id", ondelete="CASCADE"), nullable=False, index=True)
     event_type = Column(String(64), nullable=False, index=True)

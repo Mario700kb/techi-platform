@@ -50,7 +50,7 @@ class VaultCredential(Base):
 
     __tablename__ = "vault_credentials"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     name = Column(String(160), nullable=False)
     credential_type = Column(String(32), nullable=False)  # VaultCredentialType values
     scope_type = Column(String(16), nullable=False, default=VaultScopeType.GLOBAL.value, index=True)
@@ -85,7 +85,7 @@ class VaultCredentialUsage(Base):
 
     __tablename__ = "vault_credential_usage"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     credential_id = Column(Integer, ForeignKey("vault_credentials.id"), nullable=False, index=True)
     operator_username = Column(String(128), nullable=True)
     device_id = Column(Integer, nullable=True)
@@ -103,7 +103,7 @@ class VaultCredentialAssignment(Base):
 
     __tablename__ = "vault_credential_assignments"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     credential_id = Column(Integer, ForeignKey("vault_credentials.id", ondelete="CASCADE"), nullable=False, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True, index=True)
     device_id = Column(Integer, ForeignKey("devices.id"), nullable=True, index=True)

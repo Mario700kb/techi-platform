@@ -26,7 +26,7 @@ class ReportRunStatus(str, Enum):
 class ReportSchedule(Base):
     __tablename__ = "report_schedules"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     name = Column(String(160), nullable=False)
     client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True)
     report_format = Column(String(8), nullable=False, default=ReportFormat.PDF.value)
@@ -50,7 +50,7 @@ class ReportRun(Base):
         CheckConstraint("(scope_type = 'client' AND client_id IS NOT NULL AND device_id IS NULL) OR (scope_type = 'device' AND device_id IS NOT NULL)", name="ck_report_runs_target"),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     schedule_id = Column(Integer, ForeignKey("report_schedules.id", ondelete="SET NULL"), nullable=True, index=True)
     client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=True, index=True)
     client_name = Column(String(160), nullable=False)

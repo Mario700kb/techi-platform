@@ -38,8 +38,8 @@ class DeviceAlert(Base):
         Index("ix_device_alerts_device_kind_created", "device_id", "kind", "created_at"),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
-    device_id = Column(Integer, ForeignKey("devices.id"), nullable=False, index=True)
+    id = Column(Integer, primary_key=True)
+    device_id = Column(Integer, ForeignKey("devices.id"), nullable=False)
     kind = Column(SQLEnum(AlertKind, native_enum=False, create_constraint=False, values_callable=lambda x: [e.value for e in x]), nullable=False, index=True)
     severity = Column(SQLEnum(AlertSeverity, native_enum=False, create_constraint=False, values_callable=lambda x: [e.value for e in x]), nullable=False)
     state = Column(SQLEnum(AlertState, native_enum=False, create_constraint=False, values_callable=lambda x: [e.value for e in x]), default=AlertState.OPEN, nullable=False, index=True)

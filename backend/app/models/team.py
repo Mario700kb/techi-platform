@@ -8,7 +8,7 @@ from app.core.time import utcnow_naive
 class Team(Base):
     __tablename__ = "teams"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     name = Column(String(128), nullable=False, unique=True)
     description = Column(String(512), nullable=True)
     color = Column(String(16), nullable=True, default="#f97316")
@@ -19,8 +19,8 @@ class Team(Base):
 class TeamMember(Base):
     __tablename__ = "team_members"
 
-    id = Column(Integer, primary_key=True, index=True)
-    team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False, index=True)
+    id = Column(Integer, primary_key=True)
+    team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
     operator_id = Column(Integer, ForeignKey("operators.id", ondelete="CASCADE"), nullable=False, index=True)
 
     __table_args__ = (UniqueConstraint("team_id", "operator_id", name="uq_team_member"),)
@@ -29,8 +29,8 @@ class TeamMember(Base):
 class TeamClientAccess(Base):
     __tablename__ = "team_client_access"
 
-    id = Column(Integer, primary_key=True, index=True)
-    team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False, index=True)
+    id = Column(Integer, primary_key=True)
+    team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
     client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False)
 
     __table_args__ = (UniqueConstraint("team_id", "client_id", name="uq_team_client"),)
@@ -39,8 +39,8 @@ class TeamClientAccess(Base):
 class TeamGroupAccess(Base):
     __tablename__ = "team_group_access"
 
-    id = Column(Integer, primary_key=True, index=True)
-    team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False, index=True)
+    id = Column(Integer, primary_key=True)
+    team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
     group_id = Column(Integer, ForeignKey("device_groups.id", ondelete="CASCADE"), nullable=False)
 
     __table_args__ = (UniqueConstraint("team_id", "group_id", name="uq_team_group"),)
@@ -49,8 +49,8 @@ class TeamGroupAccess(Base):
 class TeamDeviceAccess(Base):
     __tablename__ = "team_device_access"
 
-    id = Column(Integer, primary_key=True, index=True)
-    team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False, index=True)
+    id = Column(Integer, primary_key=True)
+    team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
     device_id = Column(Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False)
 
     __table_args__ = (UniqueConstraint("team_id", "device_id", name="uq_team_device"),)

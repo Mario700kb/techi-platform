@@ -12,7 +12,7 @@ class ClientLocation(Base):
 
     __tablename__ = "client_locations"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(120), nullable=False)
     kind = Column(String(20), nullable=False, default="office")
@@ -41,7 +41,7 @@ class ClientLocationRule(Base):
 
     __tablename__ = "client_location_rules"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     location_id = Column(Integer, ForeignKey("client_locations.id", ondelete="CASCADE"), nullable=False, index=True)
     public_ip = Column(String(45), nullable=True)
     lan_cidr = Column(String(49), nullable=True)
