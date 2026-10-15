@@ -13,6 +13,7 @@ import {
 } from "../api/connect";
 import { clickProtocolUrl } from "../services/rustdeskLaunch";
 import { detectOperatorOS } from "../utils/operatorOs";
+import { ConnectButton } from "./ui";
 
 const EmbeddedSSHModal = lazy(() => import("./EmbeddedSSHModal"));
 
@@ -65,6 +66,14 @@ interface Props {
   disabledReason?: string | null;
   onOpenTerminal?: () => void;
   onRemoteSupport?: () => void;
+  // The main segment's own action (the Windows drawer header: Remote
+  // Support); the arrow still opens the method menu. Without it the main
+  // segment launches the saved default method or opens the menu.
+  onMain?: () => void;
+  // Disables the main segment alone (its reason as the tooltip); the arrow
+  // stays usable while the device is online.
+  mainDisabledReason?: string | null;
+  mainHint?: string;
 }
 
 const METHOD_CREDENTIAL_TYPE: Record<string, string> = { ssh: "ssh_password", winbox: "winbox", webfig: "webfig" };
@@ -132,6 +141,9 @@ export default function ConnectMenu({
   disabledReason = null,
   onOpenTerminal,
   onRemoteSupport,
+  onMain,
+  mainDisabledReason = null,
+  mainHint,
 }: Props) {
   const navigate = useNavigate();
   const [platform, setPlatform] = useState<string | null>(null);
@@ -205,7 +217,15 @@ export default function ConnectMenu({
   // No methods available at all (e.g. device reports no relevant
   // capability) → nothing to connect with; render nothing rather than an
   // empty menu (drawer variant only — a lazy row hasn't fetched yet).
-  if (!lazyLoad && methods !== null && methods.length === 0) return null;
+  if (!lazyLoad && methods !== null && methods.length === 0) {
+    return onMain ? (
+      <ConnectButton
+        disabled={!!disabledReason || !!mainDisabledReason}
+        onClick={onMain}
+        title={disabledReason ?? mainDisabledReason ?? mainHint}
+      />
+    ) : null;
+  }
 
   const ensureLoaded = async (): Promise<LoadedData | null> => {
     if (methods !== null) return { methods, configured: configuredPreferenceId };
@@ -545,9 +565,9 @@ export default function ConnectMenu({
       <div className="th-connect-group">
         <button
           type="button"
-          onClick={() => void onMainClick()}
-          disabled={!!disabledReason}
-          title={disabledReason ?? mainTitle}
+          onClick={() => (onMain ? onMain() : void onMainClick())}
+          disabled={!!disabledReason || !!mainDisabledReason}
+          title={disabledReason ?? mainDisabledReason ?? mainHint ?? mainTitle}
           className="th-connect"
           data-size={isRow ? "sm" : "md"}
           data-tone={connectTone}

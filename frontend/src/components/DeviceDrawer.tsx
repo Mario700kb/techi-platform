@@ -96,6 +96,7 @@ import HealthBadge from "./HealthBadge";
 import LocationPicker from "./LocationPicker";
 import ResourceBar from "./ResourceBar";
 import { deviceSite } from "../utils/location";
+import { cpuView, osView, storageView } from "../utils/system";
 import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
 
 interface DeviceDrawerProps {
@@ -126,7 +127,18 @@ const drawerTabs: Array<{ id: DrawerTab; label: string }> = [
 // bundle and the flag-off experience are unchanged.
 const DeviceTerminal = lazy(() => import("./DeviceTerminal"));
 
-function DetailRow({ label, value, mono = false }: { label: string; value?: string | null; mono?: boolean }) {
+function DetailRow({
+  label,
+  value,
+  mono = false,
+  hint,
+}: {
+  label: string;
+  value?: string | null;
+  mono?: boolean;
+  /** A muted second line, e.g. the OS release and build. */
+  hint?: string | null;
+}) {
   return (
     <div>
       <p className="premium-kicker mb-1">{label}</p>
@@ -135,7 +147,52 @@ function DetailRow({ label, value, mono = false }: { label: string; value?: stri
       >
         {value || "—"}
       </p>
+      {hint && (
+        <p className="text-[11px] leading-4" style={{ color: "var(--th-text-muted)" }}>
+          {hint}
+        </p>
+      )}
     </div>
+  );
+}
+
+/** CPU, memory and storage as labelled rows; storage with how full it is. */
+function HardwareRows({ device }: { device: Device }) {
+  const cpu = cpuView(device.cpu);
+  const disk = storageView(device.storage);
+  return (
+    <dl className="th-hw">
+      <dt>CPU</dt>
+      <dd>
+        <span>{cpu?.name ?? "—"}</span>
+        {cpu?.raw && <small className="font-mono">{cpu.raw}</small>}
+      </dd>
+      <dt>Memory</dt>
+      <dd>
+        <span>{device.ram || "—"}</span>
+      </dd>
+      <dt>Storage</dt>
+      <dd>
+        {disk ? (
+          <>
+            <span>
+              {disk.totalGb} GB · {disk.freeGb} GB free
+            </span>
+            <span
+              className="th-hw-bar"
+              role="img"
+              aria-label={`${disk.usedPct}% used`}
+              title={`${disk.usedPct}% used`}
+              data-tone={disk.usedPct >= 90 ? "critical" : disk.usedPct >= 80 ? "warning" : undefined}
+            >
+              <i style={{ width: `${disk.usedPct}%` }} />
+            </span>
+          </>
+        ) : (
+          <span>{device.storage || "—"}</span>
+        )}
+      </dd>
+    </dl>
   );
 }
 
@@ -758,12 +815,29 @@ export default function DeviceDrawer({
                 Maintenance
               </span>
             )}
-            <ConnectButton
-              className="ml-auto"
-              disabled={!canConnectRs}
-              onClick={() => void connectRemoteSupport()}
-              title={connectRsTitle}
-            />
+            {platformFeatures.FEATURE_PLATFORM_CORE ? (
+              // One split button: Connect opens Remote Support as before; the
+              // arrow lists the device's other Connect methods.
+              <div className="ml-auto">
+                <ConnectMenu
+                  deviceId={device.id}
+                  hostname={device.hostname}
+                  disabledReason={offline ? OFFLINE_CONNECT_REASON : null}
+                  onMain={() => void connectRemoteSupport()}
+                  mainDisabledReason={canConnectRs ? null : connectRsTitle}
+                  mainHint={connectRsTitle}
+                  onRemoteSupport={() => void connectRemoteSupport()}
+                  onOpenTerminal={hasTerminal ? () => setActiveTab("terminal") : undefined}
+                />
+              </div>
+            ) : (
+              <ConnectButton
+                className="ml-auto"
+                disabled={!canConnectRs}
+                onClick={() => void connectRemoteSupport()}
+                title={connectRsTitle}
+              />
+            )}
           </div>
 
           <div
@@ -1256,8 +1330,8 @@ export default function DeviceDrawer({
                   )}
                 </div>
                 <DetailRow label="Domain" value={device.domain} />
-                <DetailRow label="OS" value={device.os_name} />
-                <DetailRow label="Platform" value={device.platform} />
+                <DetailRow label="OS" value={osView(device).name} hint={osView(device).detail} />
+                <DetailRow label="Platform" value={humanize(device.platform || device.os_name || "")} />
                 {platformFeatures.FEATURE_LINUX && device.kernel_version && (
                   <DetailRow label="Kernel" value={device.kernel_version} mono />
                 )}
@@ -1266,23 +1340,8 @@ export default function DeviceDrawer({
                 )}
                 {(device.cpu || device.ram || device.storage) && (
                   <div className="col-span-2">
-                    <p className="premium-kicker mb-1">Hardware</p>
-                    <p className="text-xs font-medium leading-5 text-slate-200">
-                      {[device.cpu, device.ram, device.storage].filter(Boolean).join(" · ")}
-                    </p>
-                  </div>
-                )}
-                {/* Connect Framework (Phase 7): a single capability-driven Connect
-                  menu. Gated by FEATURE_PLATFORM_CORE so the flag-off drawer is
-                  unchanged; the dropdown is generated from connect-methods. */}
-                {platformFeatures.FEATURE_PLATFORM_CORE && (
-                  <div className="col-span-2 flex items-center justify-between">
-                    <p className="premium-kicker">Connect</p>
-                    <ConnectMenu
-                      deviceId={device.id}
-                      hostname={device.hostname}
-                      disabledReason={offline ? OFFLINE_CONNECT_REASON : null}
-                    />
+                    <p className="premium-kicker mb-1.5">Hardware</p>
+                    <HardwareRows device={device} />
                   </div>
                 )}
                 {/* Capabilities — capability-driven, real data reported by the

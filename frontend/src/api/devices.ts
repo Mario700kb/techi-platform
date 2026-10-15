@@ -38,6 +38,10 @@ export interface Device {
   os_name?: string;
   os_version?: string;
   os_caption?: string | null;
+  // Windows: "10.0.26200"; with os_caption it names the release (25H2).
+  os_build?: string | null;
+  // Windows ProductType: 1 workstation, 2 domain controller, 3 server.
+  windows_product_type?: number | null;
   platform?: string;
   // Platform Expansion: capabilities reported by platform-aware agents
   // (Linux+). Absent for Windows. UI renders capability-gated surfaces.

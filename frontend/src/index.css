@@ -94,6 +94,8 @@
   --th-sidebar-nav-active-bg: #3a1a14;
   --th-sidebar-nav-active-shadow: none;
   --th-sidebar-divider: rgba(255, 255, 255, 0.06);
+  /* Between nav groups when the sidebar is collapsed: the only sign of a group. */
+  --th-sidebar-group-rule: rgba(255, 255, 255, 0.2);
   --th-sidebar-label: #85858f;
 
   /* Accent — coral */
@@ -213,6 +215,7 @@ html.light {
   --th-sidebar-nav-active-bg: rgba(232, 90, 60, 0.08);
   --th-sidebar-nav-active-shadow: none;
   --th-sidebar-divider: rgba(0, 0, 0, 0.08);
+  --th-sidebar-group-rule: rgba(0, 0, 0, 0.2);
   --th-sidebar-label: #73737d;
 
   --th-accent: #b6432b;
@@ -2246,11 +2249,15 @@ textarea:focus-visible,
   line-height: 18px;
   white-space: nowrap;
 }
+/* Collapsed sidebar: with no group titles, a short centred rule under each
+   icon column says where a group starts. */
 .th-nav-section-rule {
   display: block;
-  width: 100%;
-  margin: 0 8px;
-  border-top: 1px solid var(--th-sidebar-divider);
+  width: 24px;
+  height: 2px;
+  margin: 0 auto;
+  border-radius: 1px;
+  background: var(--th-sidebar-group-rule);
 }
 .th-nav-item:hover {
   background: var(--th-sidebar-nav-hover);
@@ -6931,6 +6938,58 @@ button.th-client-group:hover {
   border-radius: 999px;
   background: var(--th-ring-track);
 }
+/* Device drawer → Identity → Hardware: CPU, memory and storage as labelled
+   rows; storage with a bar of the share used. */
+.th-hw {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px 12px;
+  margin: 0;
+}
+.th-hw dt {
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--th-text-muted);
+}
+.th-hw dd {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+  color: var(--th-text-primary);
+}
+.th-hw dd small {
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 14px;
+  color: var(--th-text-faint);
+  overflow-wrap: anywhere;
+}
+.th-hw-bar {
+  display: block;
+  height: 4px;
+  max-width: 240px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--th-ring-track);
+}
+.th-hw-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--th-status-online);
+}
+.th-hw-bar[data-tone="warning"] > i {
+  background: var(--th-status-warning);
+}
+.th-hw-bar[data-tone="critical"] > i {
+  background: var(--th-status-critical);
+}
+
 /* A country as its ISO code, and a device's site line: [AL] Durrës · Magazina. */
 .th-country {
   display: inline-flex;
