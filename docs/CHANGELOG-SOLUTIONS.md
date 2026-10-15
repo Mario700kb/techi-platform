@@ -5,6 +5,37 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-15] DRAWER-CONNECT-2026-10-15 — split Connect in the drawer header, Windows release and hardware rows, clearer sidebar groups (`a6cb738`)
+
+Frontend only, deployed 2026-10-15 22:59 (Tirana). Rollback image
+`techi-platform-frontend:pre-drawer-connect-d65c30a`. Guard passed before and
+after, `nginx -t` OK, container healthy (0 restarts), smoke passed, public
+200, the new code in the served bundle. Root filesystem 88% (3.0 GB free).
+
+Three owner requests:
+
+- **Connect:** the "Connect options" arrow sat on a Connect row in the
+  Overview tab, apart from the header's Connect. The header now holds one
+  split button: Connect opens Remote Support as before; the arrow lists the
+  other methods (ConnectMenu takes `onMain` and a main-only disabled
+  reason). The Overview row is gone. Offline disables both segments; a
+  missing Remote Support ID only the main one; a device with no other
+  method keeps Connect alone.
+- **Identity:** OS showed "windows". Now "Windows 11 Pro" with "25H2 · build
+  26200", from the caption and build every agent reports (927 of 927);
+  Platform capitalised. Hardware, one line before, is now CPU / Memory /
+  Storage rows: the CPU's vendor and microarchitecture decoded from
+  PROCESSOR_IDENTIFIER (921 of 926 agents send only that), the raw id
+  underneath; storage total and free with a used-share bar (amber from 80%,
+  red from 90%). The exact CPU model needs the agent to read
+  ProcessorNameString — a future agent change.
+- **Sidebar:** collapsed group rules used the 6%/8% divider tint; they now
+  have their own token (20% in both themes), 24 px and centred under the
+  icons.
+
+Vitest 242 (6 new); Playwright 132 (new: drawer Connect, drawer identity,
+sidebar group rules in both themes).
+
 ## [2026-10-15] LOCATIONS-SEARCH-2026-10-15 — Locations scroll in their own area, one grid, search (`be44835`)
 
 Frontend only, deployed 2026-10-15 22:34 (Tirana). Rollback image
