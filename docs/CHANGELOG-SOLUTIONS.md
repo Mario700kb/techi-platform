@@ -5,6 +5,31 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-15] LOCATIONS-SEARCH-2026-10-15 — Locations scroll in their own area, one grid, search (`be44835`)
+
+Frontend only, deployed 2026-10-15 22:34 (Tirana). Rollback image
+`techi-platform-frontend:pre-locations-search-e99e469`. Guard passed before
+and after, `nginx -t` OK, container healthy (0 restarts), smoke passed,
+public 200, the search in the served bundle. Root filesystem 87% (3.1 GB
+free).
+
+The owner asked for the sites to scroll among themselves rather than the
+whole page, and for a search. SLH (one site per city) also showed each card
+alone on a full row.
+
+- Sites and suggestions scroll inside their own area under the toolbar;
+  `useFillHeight` sizes it so the page ends at the window bottom (content
+  below and the page padding counted; re-measured on resize and when a
+  notice appears; at least 240 px); phones keep the page scroll.
+- One grid sorted by country, city and name; country tag, city and address
+  on each card instead of a header row per city.
+- Toolbar search: name, city, country code or name, address, contact,
+  notes, kind, rule IPs and networks; all words must match; suggestions
+  filtered by IP, networks and hostnames; "x of y sites match"; no-match
+  state with Clear search; Escape clears.
+
+Vitest 236; Playwright 128 (new: inner scroll with 14 sites, search).
+
 ## [2026-10-15] PG-RESTART-2026-10-15 — PostgreSQL max_connections 100, jit off (`5b3272c`)
 
 Configuration only, PostgreSQL container recreated 2026-10-15 22:15:48
