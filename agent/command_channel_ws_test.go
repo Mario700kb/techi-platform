@@ -130,7 +130,7 @@ func TestChannelObservesEnrolmentWithoutRestart(t *testing.T) {
 }
 
 func TestRunCommandChannelTakesAPathNotAStruct(t *testing.T) {
-	src := readAgentFile(t, "command_channel_linux.go")
+	src := readAgentFile(t, "command_channel.go")
 	if !strings.Contains(src, "func runCommandChannel(ctx context.Context, configPath string)") {
 		t.Fatal("the loop must take the config path so it can reload after enrolment")
 	}

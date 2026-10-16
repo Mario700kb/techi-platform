@@ -13,7 +13,13 @@ function usageTone(percent: number | undefined): string {
 function Meter({ percent }: { percent: number | undefined }) {
   const value = Math.max(0, Math.min(100, percent ?? 0));
   return (
-    <div className="th-onb-meter !h-1.5 !w-full" role="progressbar" aria-valuenow={Math.round(value)} aria-valuemin={0} aria-valuemax={100}>
+    <div
+      className="th-onb-meter !h-1.5 !w-full"
+      role="progressbar"
+      aria-valuenow={Math.round(value)}
+      aria-valuemin={0}
+      aria-valuemax={100}
+    >
       <i
         className="transition-[width] duration-700"
         style={{ width: `${value}%`, "--meter-tone": usageTone(percent) } as React.CSSProperties}
@@ -128,7 +134,7 @@ function Body({ snap, paused }: { snap: LiveSnapshot; paused: boolean }) {
         <Tile
           icon={User}
           label="Signed in"
-          value={snap.current_user ? snap.current_user.split("\\").pop() ?? snap.current_user : "Nobody"}
+          value={snap.current_user ? (snap.current_user.split("\\").pop() ?? snap.current_user) : "Nobody"}
           detail={`Up ${formatUptime(snap.uptime_seconds)}${snap.user_session_state ? ` · ${snap.user_session_state}` : ""}`}
         />
       </div>
@@ -172,10 +178,17 @@ function Body({ snap, paused }: { snap: LiveSnapshot; paused: boolean }) {
             <tbody>
               {processes.map((p) => (
                 <tr key={p.pid} style={{ borderTop: "1px solid var(--th-border-subtle)" }}>
-                  <td className="max-w-0 truncate py-1 pr-2" style={{ color: "var(--th-text-primary)" }} title={`${p.name} (PID ${p.pid})`}>
+                  <td
+                    className="max-w-0 truncate py-1 pr-2"
+                    style={{ color: "var(--th-text-primary)" }}
+                    title={`${p.name} (PID ${p.pid})`}
+                  >
                     {p.name}
                   </td>
-                  <td className="py-1 text-right" style={{ color: usageTone(p.cpu_percent >= 50 ? p.cpu_percent : undefined) }}>
+                  <td
+                    className="py-1 text-right"
+                    style={{ color: usageTone(p.cpu_percent >= 50 ? p.cpu_percent : undefined) }}
+                  >
                     {p.cpu_percent.toFixed(1)}%
                   </td>
                   <td className="py-1 text-right" style={{ color: "var(--th-text-secondary)" }}>
