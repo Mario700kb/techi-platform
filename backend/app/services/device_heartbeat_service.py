@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import secrets
 import time
 from collections import OrderedDict
 from datetime import datetime, timedelta
@@ -79,6 +80,19 @@ def _note_unverified_device_id_resolution(payload, device) -> None:
         device.id,
         getattr(payload, "hostname", None),
     )
+
+
+def _proves_identity(payload, device) -> bool:
+    """True when the heartbeat carries the agent_id stored on this device.
+
+    Only such a heartbeat may change the device's identity. Both sides must be
+    non-empty, so a caller that omits agent_id never matches a device without one.
+    """
+    if device is None:
+        return False
+    provided = (getattr(payload, "agent_id", None) or "").strip()
+    stored = (getattr(device, "agent_id", None) or "").strip()
+    return bool(provided) and bool(stored) and secrets.compare_digest(provided, stored)
 
 
 def _cache_agent_device(agent_id: str, device_id: int) -> None:
@@ -167,6 +181,9 @@ class DeviceHeartbeatService:
             if cached and time.monotonic() - cached[1] < _AGENT_ID_CACHE_TTL:
                 _AGENT_ID_CACHE.move_to_end(payload.agent_id)
                 device = self.device_repo.get(cached[0])  # PK lookup — faster than agent_id scan
+                if not _proves_identity(payload, device):
+                    _AGENT_ID_CACHE.pop(payload.agent_id, None)
+                    device = None
             elif cached:
                 _AGENT_ID_CACHE.pop(payload.agent_id, None)
         if device is None and payload.agent_id:
@@ -184,7 +201,13 @@ class DeviceHeartbeatService:
             _note_unverified_device_id_resolution(payload, device)
         if device is None and has_valid_rustdesk_id:
             device = self.device_repo.get_by_rustdesk_id(normalized_rustdesk_id)
-        if device is not None and payload.agent_id:
+        # A heartbeat that does not carry the device's own agent_id may report
+        # status and inventory, but must not change who the device is: no
+        # agent_id, rustdesk_id or client/group from it. Overwriting agent_id
+        # from such a heartbeat let anyone unlock the device's Remote Support
+        # password and pending actions with one request per device_id.
+        verified = _proves_identity(payload, device)
+        if verified:
             _cache_agent_device(payload.agent_id, device.id)
         if device is not None:
             device = self.maintenance_service.expire_if_needed(device)
@@ -192,18 +215,18 @@ class DeviceHeartbeatService:
         prev_user = device.current_user if device else None
         prev_repair_count = device.rustdesk_repair_count if device else 0
         if device:
-            update_data = payload.model_dump(exclude_unset=True, exclude={"device_id", "rustdesk_id"})
+            update_data = payload.model_dump(exclude_unset=True, exclude={"device_id", "rustdesk_id", "agent_id"})
             self._drop_stale_repair_counter(update_data, now)
             for field in ("rustdesk_install_status", "rustdesk_status", "rustdesk_version", "rustdesk_install_path"):
                 update_data.pop(field, None)
             # Capabilities are normalized + persisted in side effects only
             update_data.pop("capabilities", None)
-            if has_valid_rustdesk_id and normalized_rustdesk_id != device.rustdesk_id:
+            if verified and has_valid_rustdesk_id and normalized_rustdesk_id != device.rustdesk_id:
                 conflict = self.device_repo.get_conflicting_rustdesk_id(normalized_rustdesk_id, exclude_device_id=device.id)
                 if conflict is None:
                     update_data["rustdesk_id"] = normalized_rustdesk_id
             manual_locked = DeviceAssignmentService.is_manual_locked(device.assignment_source)
-            if manual_locked:
+            if manual_locked or not verified:
                 for field in ("client_id", "group_id", "assignment_source", "auto_assigned"):
                     update_data.pop(field, None)
             update_data["device_type"] = device_type
@@ -212,7 +235,8 @@ class DeviceHeartbeatService:
             # would let reconcile re-assign it, undoing the operator's placement
             # (invariant: heartbeat must never undo a manual assignment).
             if (
-                not manual_locked
+                verified
+                and not manual_locked
                 and device.device_type != device_type
                 and device_type in (DeviceType.SERVER, DeviceType.CLIENT)
             ):
@@ -226,37 +250,40 @@ class DeviceHeartbeatService:
             device = self.device_repo.update(device, DeviceUpdate(**update_data))
         else:
             device = self._resolve_via_fingerprint(payload, device_type, now)
+            verified = _proves_identity(payload, device)
 
         device = self.status_service.mark_online_from_heartbeat(device)
-        device = self.rustdesk_service.apply_heartbeat_sync(
-            device,
-            reported_rustdesk_id=payload.rustdesk_id,
-            install_status=payload.rustdesk_install_status,
-            rustdesk_status=payload.rustdesk_status,
-            version=payload.rustdesk_version,
-            install_path=payload.rustdesk_install_path,
-            hostname=payload.hostname,
-            local_ip=payload.local_ip,
-            public_ip=payload.public_ip,
-            now=now,
-        )
+        if verified:
+            device = self.rustdesk_service.apply_heartbeat_sync(
+                device,
+                reported_rustdesk_id=payload.rustdesk_id,
+                install_status=payload.rustdesk_install_status,
+                rustdesk_status=payload.rustdesk_status,
+                version=payload.rustdesk_version,
+                install_path=payload.rustdesk_install_path,
+                hostname=payload.hostname,
+                local_ip=payload.local_ip,
+                public_ip=payload.public_ip,
+                now=now,
+            )
 
         before_assignment = (device.client_id, device.group_id, device.assignment_source)
-        device = self.assignment_service.reconcile_trusted_domain_assignment(
-            device,
-            signal=AssignmentSignal(
-                hostname=payload.hostname,
-                domain=payload.domain,
-                public_ip=payload.public_ip,
-                os_name=payload.os_name,
-                os_version=payload.os_version,
-                os_caption=payload.os_caption,
-                os_build=payload.os_build,
-                windows_product_type=payload.windows_product_type,
-                platform=payload.platform,
-                device_type=device.device_type,
-            ),
-        )
+        if verified:
+            device = self.assignment_service.reconcile_trusted_domain_assignment(
+                device,
+                signal=AssignmentSignal(
+                    hostname=payload.hostname,
+                    domain=payload.domain,
+                    public_ip=payload.public_ip,
+                    os_name=payload.os_name,
+                    os_version=payload.os_version,
+                    os_caption=payload.os_caption,
+                    os_build=payload.os_build,
+                    windows_product_type=payload.windows_product_type,
+                    platform=payload.platform,
+                    device_type=device.device_type,
+                ),
+            )
         if before_assignment != (device.client_id, device.group_id, device.assignment_source):
             DeviceActivityEventService(self.db).record(
                 device_id=device.id,
@@ -538,7 +565,7 @@ class DeviceHeartbeatService:
         """
         update_data = payload.model_dump(
             exclude_unset=True,
-            exclude={"device_id", "rustdesk_id", "capabilities"},
+            exclude={"device_id", "rustdesk_id", "agent_id", "capabilities"},
         )
         self._drop_stale_repair_counter(update_data, now)
 
@@ -550,11 +577,16 @@ class DeviceHeartbeatService:
         for field in ("is_archived", "archived_at", "archived_by"):
             update_data.pop(field, None)
 
-        # Attempt rustdesk_id update only when no other device already holds that ID
+        # Attempt rustdesk_id update only when no other device already holds that ID,
+        # and only for the agent the device belongs to (a fingerprint is not proof).
         has_valid_rustdesk_id, normalized_rustdesk_id, _ = RustDeskIdentityService.validate_rustdesk_id(
             payload.rustdesk_id or ""
         )
-        if has_valid_rustdesk_id and normalized_rustdesk_id != existing.rustdesk_id:
+        if (
+            _proves_identity(payload, existing)
+            and has_valid_rustdesk_id
+            and normalized_rustdesk_id != existing.rustdesk_id
+        ):
             conflict = self.device_repo.get_conflicting_rustdesk_id(
                 normalized_rustdesk_id, exclude_device_id=existing.id
             )
@@ -562,7 +594,9 @@ class DeviceHeartbeatService:
                 update_data["rustdesk_id"] = normalized_rustdesk_id
 
         # Preserve manual / enrollment-token assignment — never override on reuse
-        if DeviceAssignmentService.is_manual_locked(existing.assignment_source):
+        if DeviceAssignmentService.is_manual_locked(existing.assignment_source) or not _proves_identity(
+            payload, existing
+        ):
             for field in ("client_id", "group_id", "assignment_source", "auto_assigned"):
                 update_data.pop(field, None)
 
