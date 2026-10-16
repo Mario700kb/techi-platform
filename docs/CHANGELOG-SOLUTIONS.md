@@ -5,6 +5,41 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-16] REVIEW-FIXES-2026-10-16 — re-enrollment review, one Remote Support session writer, enrollment and audit hardening (`38ec556`, `6de22ff`, `2da03fb`; agent `f4cb49e` built, not rolled out)
+
+**Deployed 22:49 (Tirana), backend + frontend, migration `l2m3n4o5p6q7`.**
+The owner asked to fix everything the day's review found, enterprise grade.
+
+- A re-enrollment that matches a device owned by another agent (by RustDesk
+  ID or fingerprint) no longer takes it over: the caller runs as a new device
+  and a `reenrollment_requests` row waits for an admin (Organization →
+  Re-enrollment, approve/reject, audited). Same machine without agent_id and
+  with the same RustDesk ID still re-attaches.
+- An unverified heartbeat (agent_id does not match) no longer changes
+  public IP, agent version/sha or the Remote Support session, and its
+  response no longer carries the RustDesk ID. RISK-IDENT-001 logging covers
+  resolution by device_id, RustDesk ID and fingerprint.
+- Remote Support session: RustDesk's own reports win over the agent flag for
+  15 min; a reused conn_id closes the lost connection (`close_reason=lost`).
+- `/api/audit/conn|alarm`: ids bounded to int32 (422, was a database 500),
+  per-address limits 300/30 a minute, the same alarm from the same caller
+  recorded once per 10 min.
+- Token-free enrollment honours `TRUSTED_DOMAIN_AUTO_ENROLLMENT` (false in
+  production); `trusted_domains` rows ("x", "alasfalt") only narrow it. 0
+  token-free enrollments in the previous 90 days (last 2026-07-02).
+- Operator and team membership commit in one transaction; device hard delete
+  also removes terminal sessions and detaches connect preferences and vault
+  rows (was a 500, device 729).
+
+Dump `/opt/backups/techi/pre-review-fixes-20261016-224646.sql.gz` (144 MB,
+`gzip -t` ok), rollback `techi-platform-{backend,frontend}:pre-review-fixes-a420810`.
+Backend ready 5 s, guard and smoke passed, unauthenticated
+`/api/v1/reenrollment-requests` 401, oversize `conn_id` 422, 198 heartbeats in
+the first 2 min, no errors in the log. Pytest 1443, Vitest 244, Playwright
+re-enrollment spec, CI green for all four commits. Agent 2.1.26 (forced
+inventory refresh, 4 h resend, OS cache retry, BOM-safe RustDesk TOML) passed
+CI incl. the MSI lifecycle test; not uploaded yet.
+
 ## [2026-10-16] AGENT-2.1.25-PILOT-2026-10-16 — lighter agent on three devices; public IP from the request (`f56b3bd`, `cd864a4`…`be48259`)
 
 **Backend (PUBLIC-IP), deployed 20:29 (Tirana).** Heartbeat and enrollment
