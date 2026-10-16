@@ -136,6 +136,12 @@ export async function getDeviceActions(deviceId: number, limit = 30, status?: st
   return fetchJson<RemoteAction[]>(`/api/v1/devices/${deviceId}/actions?${params}`);
 }
 
+/** Whether the agent holds its live command channel open: actions then run
+ *  within seconds instead of at the next heartbeat. */
+export async function getDeviceAgentChannel(deviceId: number): Promise<{ connected: boolean }> {
+  return fetchJson<{ connected: boolean }>(`/api/v1/devices/${deviceId}/agent-channel`);
+}
+
 export async function getDeviceActionStats(deviceId: number): Promise<ActionStatusStats> {
   return fetchJson<ActionStatusStats>(`/api/v1/devices/${deviceId}/actions/stats`);
 }

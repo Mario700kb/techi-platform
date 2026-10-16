@@ -75,7 +75,10 @@ def _action_event_payload(action: RemoteAction) -> dict:
 def _publish_action_status(action: RemoteAction, event_type: RealtimeEventType) -> None:
     realtime_publisher.publish_threadsafe(
         build_event(event_type, data=_action_event_payload(action), reason="action_status_changed"),
-        dedupe_key=f"action_status:{action.id}",
+        # Keyed on the status too: over the command channel an action goes
+        # sent → acknowledged → completed within a second, and a key per
+        # action dropped every step after the first, leaving pages on "Sent".
+        dedupe_key=f"action_status:{action.id}:{getattr(action.status, 'value', action.status)}",
     )
 
 

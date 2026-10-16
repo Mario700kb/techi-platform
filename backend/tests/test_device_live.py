@@ -252,3 +252,56 @@ def test_a_single_device_action_is_pushed_over_the_channel(monkeypatch):
 
     assert response.status_code == 200, response.text
     assert [(d, str(getattr(t, "value", t))) for d, t in pushed] == [(924, "refresh_inventory")]
+
+
+def test_every_status_step_of_a_fast_action_reaches_the_page(monkeypatch):
+    """Over the channel an action goes sent → acknowledged → completed within a
+    second. Each step must be published; one dedupe key per action dropped
+    everything after "sent" and the page stayed on "Sent"."""
+    from app.services import remote_action_service as ras
+    from app.websocket.publisher import RealtimeEventPublisher
+
+    publisher = RealtimeEventPublisher()
+    kept = []
+
+    def publish_threadsafe(event, *, dedupe_key=None):
+        if not publisher._is_duplicate(dedupe_key):
+            kept.append(event["data"]["status"])
+
+    monkeypatch.setattr(ras.realtime_publisher, "publish_threadsafe", publish_threadsafe)
+
+    class _Action:
+        id = 2581
+        device_id = 924
+
+    action = _Action()
+    for status in ("sent", "acknowledged", "running", "completed", "completed"):
+        action.status = status
+        monkeypatch.setattr(ras, "_action_event_payload", lambda a: {"id": a.id, "status": a.status})
+        ras._publish_action_status(action, ras.RealtimeEventType.ACTION_STATUS_CHANGED)
+
+    assert kept == ["sent", "acknowledged", "running", "completed"]
+
+
+def test_the_page_can_ask_whether_the_agent_channel_is_open(monkeypatch):
+    from app.api.v1.endpoints import actions as actions_endpoint
+    from app.core.auth import get_current_operator
+    from app.db.session import get_db
+    from app.websocket.agent_channel import agent_command_channel
+
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(bind=engine)
+    db = sessionmaker(bind=engine)()
+    owner = Operator(id=1, username="owner", email="o@example.com", hashed_password="x", role="owner", is_active=True)
+    db.add_all([owner, Device(id=924, agent_id=AGENT_ID, hostname="Mario-Lenovo", platform="windows",
+                              device_type=DeviceType.CLIENT, status=DeviceStatus.ONLINE)])
+    db.commit()
+    app = FastAPI()
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_current_operator] = lambda: owner
+    app.include_router(actions_endpoint.router)
+    client = TestClient(app)
+
+    monkeypatch.setattr(agent_command_channel, "is_connected", lambda device_id: device_id == 924)
+    assert client.get("/devices/924/agent-channel").json() == {"connected": True}
+    assert client.get("/devices/999/agent-channel").status_code == 404

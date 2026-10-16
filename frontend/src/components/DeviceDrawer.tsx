@@ -65,6 +65,7 @@ import {
   cancelAction,
   DESTRUCTIVE_ACTIONS,
   getDeviceActions,
+  getDeviceAgentChannel,
   isActiveStatus,
   isTerminalStatus,
   queueDeviceAction,
@@ -634,6 +635,25 @@ export default function DeviceDrawer({
     : device.rustdesk_conflict_detected
       ? "Conflict"
       : device.rustdesk_sync_state;
+  // Is the agent's live command channel open? Checked while the actions tab
+  // is shown, so the banner says whether an action runs now or at the next
+  // heartbeat.
+  const [channelConnected, setChannelConnected] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!isOpen || activeTab !== "management") return;
+    let cancelled = false;
+    const check = () =>
+      getDeviceAgentChannel(device.id)
+        .then((r) => !cancelled && setChannelConnected(r.connected))
+        .catch(() => !cancelled && setChannelConnected(null));
+    void check();
+    const timer = setInterval(check, 15_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [isOpen, activeTab, device.id]);
+
   // Live view: the agent streams only while this drawer shows Overview, and
   // only Windows and Linux agents have the channel it needs.
   const livePlatform = /^(windows|linux)/i.test(device.platform || "");
@@ -1680,7 +1700,11 @@ export default function DeviceDrawer({
                 {device.freshness_state === "online" && !device.is_archived && (
                   <div className="th-drawer-callout mb-3 flex items-start gap-2 text-[13px]" data-tone="online">
                     <Wifi className="mt-0.5 h-4 w-4 flex-none" />
-                    <span>Device is online. Action will be delivered on next heartbeat.</span>
+                    <span>
+                      {channelConnected
+                        ? "Device is connected live. Actions run within seconds."
+                        : "Device is online. Action will be delivered on next heartbeat (within 5 minutes)."}
+                    </span>
                   </div>
                 )}
 

@@ -121,6 +121,22 @@ def queue_device_action(
     return RemoteActionResponse.model_validate(action)
 
 
+@router.get("/devices/{device_id}/agent-channel")
+def get_device_agent_channel(
+    *,
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+    device_id: int,
+):
+    """Whether the device's agent holds its command channel open right now,
+    so the page can say if an action runs at once or at the next heartbeat."""
+    from app.websocket.agent_channel import agent_command_channel
+
+    _get_device_scoped(device_id, db, scope)
+    return {"connected": agent_command_channel.is_connected(device_id)}
+
+
 @router.get("/devices/{device_id}/actions", response_model=List[RemoteActionResponse])
 def list_device_actions(
     *,
