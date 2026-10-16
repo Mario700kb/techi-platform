@@ -5,6 +5,22 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-16] AGENT-2.1.27-PILOT-2026-10-16 — live view confirmed on Mario-Lenovo
+
+Agent 2.1.27 (package `a4b1c336…`, sha256 `ff2b4afa…`) uploaded and made the
+active Windows `agent_binary` 23:37 (2.1.26 kept); Endpoint and bridge MSI
+deliberately left at 2.1.26 until the pilot is accepted (a re-run NETLOGON
+script would otherwise give a whole domain the persistent channel). Mario-
+Lenovo (924) self-updated 23:39 and its command channel connected.
+
+Measured: an authenticated live view through NPM got frames every 3.0 s
+(~1.2 KB: RAM 22%, C: 54.8%, network, user, 170 processes, busiest first).
+"Heartbeat now" was pushed and completed in 0.7 s (was up to 5 min); the
+follow-up heartbeat with a forced full inventory arrived 40 s later instead
+of at the next 5-min tick. Backend 178 MB after (182 MB before), no errors.
+Cosmetic, for the next agent: the first frame has no CPU value, and CPU is not
+rounded to one decimal.
+
 ## [2026-10-16] LIVE-VIEW-2026-10-16 — live device view and instant single-device actions (`4effc87`, `9665d23`, `9723a31`)
 
 **Backend + frontend deployed 23:33 (Tirana), no migration.** The owner asked
