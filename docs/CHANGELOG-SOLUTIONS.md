@@ -5,6 +5,49 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-16] PAGE-LOADING-2026-10-16 — the current page stays while the next one loads; no more coral bar on navigation (`0a96f77`)
+
+Frontend only, deployed 2026-10-16 (Tirana, evening). Rollback image
+`techi-platform-frontend:pre-page-loading-f283397`. Guard passed before and
+after, `nginx -t` OK, container healthy (0 restarts), smoke passed, public
+200; the served main bundle (`index-v2-pSVSsFVj.js`) is the local build of
+`0a96f77`. Root filesystem 90% (2.4 GB free).
+
+The owner saw the coral loading bar again when a page opened with a delay.
+Analysis:
+
+- **Navigation.** React Router 7 navigates in a transition, which keeps the
+  current page until the next is ready — but only for a Suspense boundary
+  that already shows content. The routes' boundary sat inside
+  `<main key={location.pathname}>` (AppShell, kept for the page motion and
+  scroll-to-top), so every navigation mounted a new boundary and React
+  replaced the page with the inline bar at once. Reproduced (Alerts chunk
+  held: Dashboard gone, bar only); without the key the Dashboard stayed.
+- **Reload of Vault / Notifications / Reports.** RequireFeature waited for
+  `/platform/features` although the last flags are stored, showing the bar
+  in an empty shell.
+- **Frequency.** Every deploy renames every chunk, so the first visit of each
+  page after a deploy fetched its code; a page chunk takes 0.14–0.22 s from
+  production and the bar shows after 150 ms. One measurement had a 7 s TLS
+  handshake (network; 40 further samples ≤ 0.2 s; server ~75% idle, steal
+  < 1%). All JS is 362 KB gzipped, pages without the terminal ~170 KB.
+
+Changes:
+
+- The Suspense boundary sits above the keyed `<main>` (AppShell; App for
+  login and the terminal popup). The page motion and scroll-to-top stay.
+- `routes/pageLoading.tsx`: one list of page loaders shared by the routes
+  and a prefetch that runs when the browser is idle after the first page
+  (`requestIdleCallback`, `setTimeout` where missing); the terminal popup is
+  not prefetched.
+- RequireFeature renders the page when the stored flag is on, shows the
+  loading state only without one, and redirects once the fetch says off.
+
+Vitest 244 (2 new); Playwright 147 (`preloader.spec.ts`: navigation keeps
+the current page with no bar, background prefetch, Reports reload while
+flags load — the three fail on the previous code). Checked by screenshot in
+both themes on desktop and phone.
+
 ## [2026-10-16] HEARTBEAT-IDENTITY-2026-10-16 — a heartbeat without the device's agent_id can no longer take the device over (`24380c7`)
 
 Backend only, no migration, deployed 2026-10-16 16:13 (Tirana). Pre-deploy
