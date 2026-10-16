@@ -604,3 +604,64 @@ def test_update_operator_with_unknown_team_changes_nothing(db):
     db.refresh(op)
     assert op.display_name is None
     assert [m.team_id for m in db.query(TeamMember).filter_by(operator_id=op.id)] == [support.id]
+
+
+# ── Operator and team membership are one transaction ──────────────────────── #
+
+def _failing_team_write(monkeypatch):
+    from sqlalchemy.exc import IntegrityError
+
+    from app.repositories.team_repository import TeamRepository
+
+    real = TeamRepository.stage_operator_teams
+
+    def stage_then_fail(self, operator_id, team_ids):
+        real(self, operator_id, team_ids)
+        raise IntegrityError("INSERT INTO team_members", {}, Exception("connection lost"))
+
+    monkeypatch.setattr(TeamRepository, "stage_operator_teams", stage_then_fail)
+
+
+def test_a_failed_team_write_creates_no_operator(db, monkeypatch):
+    from app.schemas.operator import OperatorCreate
+    from app.services.operator_service import OperatorService
+
+    admin = _operator(db, "admin", role="admin")
+    support = _team(db, "Support")
+    _failing_team_write(monkeypatch)
+
+    with pytest.raises(ValueError):
+        OperatorService(db).create_operator(
+            OperatorCreate(
+                username="half", email="half@test.com", password="secret123",
+                role="operator", team_ids=[support.id],
+            ),
+            admin,
+        )
+
+    assert db.query(Operator).filter_by(username="half").first() is None
+    assert db.query(TeamMember).filter_by(team_id=support.id).count() == 0
+
+
+def test_a_failed_team_write_leaves_the_operator_unchanged(db, monkeypatch):
+    from sqlalchemy.exc import IntegrityError
+
+    from app.schemas.operator import OperatorUpdate
+    from app.services.operator_service import OperatorService
+
+    admin = _operator(db, "admin", role="admin")
+    op = _operator(db, "member")
+    support = _team(db, "Support")
+    field = _team(db, "Field")
+    db.add(TeamMember(team_id=support.id, operator_id=op.id))
+    db.commit()
+    _failing_team_write(monkeypatch)
+
+    with pytest.raises(IntegrityError):
+        OperatorService(db).update_operator(
+            op.id, OperatorUpdate(display_name="Renamed", team_ids=[field.id]), admin
+        )
+
+    db.expire_all()
+    assert db.get(Operator, op.id).display_name != "Renamed"
+    assert [m.team_id for m in db.query(TeamMember).filter_by(operator_id=op.id)] == [support.id]

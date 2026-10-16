@@ -55,8 +55,9 @@ _UNVERIFIED_DEVICE_ID_SEEN: dict = {}
 _UNVERIFIED_DEVICE_ID_THROTTLE_SECONDS = 3600.0
 
 
-def _note_unverified_device_id_resolution(payload, device) -> None:
-    """Log a heartbeat resolved from payload.device_id whose agent_id disagrees.
+def _note_unverified_device_id_resolution(payload, device, via: str = "device_id") -> None:
+    """Log a heartbeat resolved from payload.device_id (or, via=, its
+    rustdesk_id or hardware fingerprint) whose agent_id disagrees.
 
     This is the exact population that would stop resolving if device_id
     resolution were gated on a matching agent_id. Logging it now gives that
@@ -74,9 +75,10 @@ def _note_unverified_device_id_resolution(payload, device) -> None:
         return
     _UNVERIFIED_DEVICE_ID_SEEN[device.id] = now
     logger.warning(
-        "RISK-IDENT-001: heartbeat resolved via device_id=%s but agent_id disagrees "
-        "(hostname=%s); this device would stop resolving if device_id required a "
+        "RISK-IDENT-001: heartbeat resolved via %s to device_id=%s but agent_id disagrees "
+        "(hostname=%s); this device would stop resolving if resolution required a "
         "matching agent_id",
+        via,
         device.id,
         getattr(payload, "hostname", None),
     )
@@ -201,6 +203,7 @@ class DeviceHeartbeatService:
             _note_unverified_device_id_resolution(payload, device)
         if device is None and has_valid_rustdesk_id:
             device = self.device_repo.get_by_rustdesk_id(normalized_rustdesk_id)
+            _note_unverified_device_id_resolution(payload, device, via="rustdesk_id")
         # A heartbeat that does not carry the device's own agent_id may report
         # status and inventory, but must not change who the device is: no
         # agent_id, rustdesk_id or client/group from it. Overwriting agent_id
@@ -257,6 +260,7 @@ class DeviceHeartbeatService:
         else:
             device = self._resolve_via_fingerprint(payload, device_type, now)
             verified = _proves_identity(payload, device)
+            _note_unverified_device_id_resolution(payload, device, via="fingerprint")
 
         device = self.status_service.mark_online_from_heartbeat(device)
         if verified:

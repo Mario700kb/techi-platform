@@ -23,6 +23,10 @@ class TrustedDomainService:
         self.db = db
 
     def is_trusted_domain(self, domain: Optional[str], hostname: Optional[str] = None) -> bool:
+        # The switch gates token-free enrollment as a whole. Rows in
+        # trusted_domains narrow it to those domains; they never turn it on.
+        if not settings.TRUSTED_DOMAIN_AUTO_ENROLLMENT:
+            return False
         normalized = self.normalize_domain(domain)
         if not normalized or normalized in _WORKGROUP_NAMES:
             return False

@@ -17,8 +17,9 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.core.time import utcnow_naive
+from app.core.time import utcnow, utcnow_naive
 from app.models.device import Device
+from app.models.device_activity_event import DeviceActivityEvent
 from app.models.remote_support_connection import RemoteSupportConnection
 from app.repositories.audit_log_repository import AuditLogRepository
 from app.repositories.device_repository import DeviceRepository
@@ -49,6 +50,10 @@ ALARM_TYPES = {
 # A close RustDesk never sent (service restart, crash) stops holding the
 # session open after this long.
 OPEN_CONNECTION_LIMIT = timedelta(hours=12)
+
+# RustDesk repeats an alarm while the caller keeps trying; the same alarm from
+# the same caller on the same device is recorded once in this window.
+ALARM_REPEAT_WINDOW = timedelta(minutes=10)
 
 
 def _text(value, limit: int) -> Optional[str]:
@@ -136,6 +141,9 @@ class RustDeskAuditService:
         reason = ALARM_TYPES.get(report.typ, f"alarm {report.typ}")
         caller = _text(info.get("name"), 128) or _text(info.get("id"), 64)
         caller_ip = _text(info.get("ip"), 64)
+        detail = " · ".join(part for part in (reason, caller, caller_ip) if part)
+        if self._alarm_recorded_recently(device.id, detail):
+            return False
         AuditLogRepository(self.db).create(
             operator_id=None,
             operator_username="rustdesk",
@@ -155,11 +163,25 @@ class RustDeskAuditService:
             device_id=device.id,
             event_type="remote_support_alarm",
             summary="Remote Support refused a connection",
-            detail=" · ".join(part for part in (reason, caller, caller_ip) if part),
+            detail=detail,
             actor=caller or "unknown",
             fail_silently=True,
         )
         return True
+
+    def _alarm_recorded_recently(self, device_id: int, detail: str) -> bool:
+        since = utcnow() - ALARM_REPEAT_WINDOW
+        return (
+            self.db.query(DeviceActivityEvent.id)
+            .filter(
+                DeviceActivityEvent.device_id == device_id,
+                DeviceActivityEvent.event_type == "remote_support_alarm",
+                DeviceActivityEvent.detail == detail,
+                DeviceActivityEvent.occurred_at >= since,
+            )
+            .first()
+            is not None
+        )
 
     def _reporting_device(self, rustdesk_id, source_ip: Optional[str]) -> Optional[Device]:
         valid, normalized, _ = RustDeskIdentityService.validate_rustdesk_id(str(rustdesk_id))

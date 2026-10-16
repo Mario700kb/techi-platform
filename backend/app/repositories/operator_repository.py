@@ -5,6 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.operator import Operator, OperatorRole
+from app.repositories.team_repository import TeamRepository
 
 
 class OperatorRepository:
@@ -63,6 +64,7 @@ class OperatorRepository:
         role: str,
         is_superuser: bool = False,
         is_active: bool = True,
+        team_ids: Optional[List[int]] = None,
     ) -> Operator:
         operator = Operator(
             username=username,
@@ -75,6 +77,9 @@ class OperatorRepository:
         )
         self.db.add(operator)
         try:
+            if team_ids:
+                self.db.flush()
+                TeamRepository(self.db).stage_operator_teams(operator.id, team_ids)
             self.db.commit()
         except IntegrityError as exc:
             self.db.rollback()
@@ -82,9 +87,18 @@ class OperatorRepository:
         self.db.refresh(operator)
         return operator
 
-    def save(self, operator: Operator) -> Operator:
+    def save(self, operator: Operator, team_ids: Optional[List[int]] = None) -> Operator:
+        """Commit the operator, and when team_ids is given its team
+        membership, in one transaction: both land or neither does."""
         self.db.add(operator)
-        self.db.commit()
+        try:
+            if team_ids is not None:
+                self.db.flush()
+                TeamRepository(self.db).stage_operator_teams(operator.id, team_ids)
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
         self.db.refresh(operator)
         return operator
 

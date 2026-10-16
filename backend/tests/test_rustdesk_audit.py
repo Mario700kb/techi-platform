@@ -15,7 +15,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import app.models  # noqa: F401  (registers every table on Base.metadata)
-from app.api.rustdesk_audit import router
+from app.api.rustdesk_audit import alarm_limiter, conn_limiter, router
 from app.core.time import utcnow_naive
 from app.db.base import Base
 from app.db.session import get_db
@@ -28,6 +28,15 @@ from app.services.audit_service import AuditAction
 DEVICE_IP = "88.198.53.124"
 RUSTDESK_ID = "490082564"
 SESSION = 7364412900137715231  # a u64 the controlling client picks
+
+
+@pytest.fixture(autouse=True)
+def _fresh_rate_limits():
+    conn_limiter._hits.clear()
+    alarm_limiter._hits.clear()
+    yield
+    conn_limiter._hits.clear()
+    alarm_limiter._hits.clear()
 
 
 @pytest.fixture()
@@ -265,3 +274,36 @@ def test_rustdesk_reports_win_over_the_agent_heartbeat_flag(db, device):
     _closed(client, 3)
     db.refresh(device)
     assert device.rustdesk_session_active is False
+
+
+def test_an_out_of_range_conn_id_is_refused_not_a_server_error(db, device):
+    client = _client(db)
+    body = {"id": RUSTDESK_ID, "conn_id": 2**40, "action": "new"}
+    assert client.post("/api/audit/conn", json=body).status_code == 422
+    assert client.post("/api/audit/conn", json={**body, "conn_id": -1}).status_code == 422
+    assert client.post("/api/audit/alarm", json={"id": RUSTDESK_ID, "typ": 2**40}).status_code == 422
+    assert db.query(RemoteSupportConnection).count() == 0
+
+
+def test_one_address_flooding_the_endpoint_is_cut_off(db, device):
+    client = _client(db, ip="198.51.100.7")
+    codes = [
+        client.post("/api/audit/conn", json={"id": RUSTDESK_ID, "conn_id": n, "action": "close"}).status_code
+        for n in range(conn_limiter._limit + 5)
+    ]
+    assert codes[: conn_limiter._limit] == [204] * conn_limiter._limit
+    assert codes[conn_limiter._limit :] == [429] * 5
+    # The device's own address is counted separately and still gets through.
+    _opened(_client(db), 1)
+
+
+def test_a_repeated_alarm_is_recorded_once(db, device):
+    client = _client(db)
+    info = json.dumps({"ip": "203.0.113.9", "id": "987654321", "name": "unknown-pc"})
+    for _ in range(5):
+        client.post("/api/audit/alarm", json={"id": RUSTDESK_ID, "typ": 2, "info": info})
+    other = json.dumps({"ip": "203.0.113.50", "id": "111222333", "name": "other-pc"})
+    client.post("/api/audit/alarm", json={"id": RUSTDESK_ID, "typ": 2, "info": other})
+
+    assert len(_audit(db, AuditAction.REMOTE_SUPPORT_ALARM)) == 2
+    assert db.query(DeviceActivityEvent).count() == 2

@@ -144,6 +144,8 @@ def test_endpoint_withholds_password_from_forged_heartbeats(client, victim):
         assert response.status_code == 200
         assert response.json()["remote_support_password"] is None
         assert response.json()["pending_actions"] == []
+        # Naming a device_id must not reveal what an operator connects to.
+        assert response.json()["rustdesk_id"] is None
 
 
 def test_endpoint_gives_password_to_the_real_agent(client, victim):
@@ -153,6 +155,7 @@ def test_endpoint_gives_password_to_the_real_agent(client, victim):
     )
     assert response.status_code == 200
     assert response.json()["remote_support_password"]
+    assert response.json()["rustdesk_id"] == REAL_RUSTDESK_ID
 
 
 def test_a_forged_heartbeat_does_not_change_public_ip(db, victim):
@@ -169,3 +172,10 @@ def test_the_real_agent_updates_public_ip(db, victim):
     _beat(db, device_id=device_id, agent_id=REAL_AGENT_ID, public_ip="198.51.100.99")
     db.expire_all()
     assert db.query(Device).get(device_id).public_ip == "198.51.100.99"
+
+
+def test_a_forged_heartbeat_by_rustdesk_id_is_logged(db, victim, caplog):
+    device_heartbeat_service._UNVERIFIED_DEVICE_ID_SEEN.clear()
+    with caplog.at_level("WARNING"):
+        _beat(db, agent_id=FORGED_AGENT_ID, rustdesk_id=REAL_RUSTDESK_ID)
+    assert "RISK-IDENT-001: heartbeat resolved via rustdesk_id" in caplog.text

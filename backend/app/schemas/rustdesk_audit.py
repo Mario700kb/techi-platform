@@ -1,6 +1,10 @@
 from typing import Any, List, Optional, Union
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+# conn_id and type land in INTEGER columns; anything outside int32 used to
+# reach the database and fail there (500) instead of being refused here.
+INT32_MAX = 2**31 - 1
 
 
 class RustDeskConnReport(BaseModel):
@@ -12,12 +16,12 @@ class RustDeskConnReport(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     id: Union[str, int]
-    conn_id: int
+    conn_id: int = Field(ge=0, le=INT32_MAX)
     session_id: Optional[Union[str, int]] = None
     action: Optional[str] = None
     ip: Optional[str] = None
     peer: Optional[List[Any]] = None
-    type: Optional[int] = None
+    type: Optional[int] = Field(default=None, ge=0, le=INT32_MAX)
 
 
 class RustDeskAlarmReport(BaseModel):
@@ -27,5 +31,5 @@ class RustDeskAlarmReport(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     id: Union[str, int]
-    typ: int
-    info: Optional[str] = None
+    typ: int = Field(ge=0, le=INT32_MAX)
+    info: Optional[str] = Field(default=None, max_length=4096)

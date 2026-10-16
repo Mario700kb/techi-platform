@@ -170,7 +170,10 @@ def agent_heartbeat(
     response = {
         "device_id": device.id,
         "heartbeat_id": heartbeat.id,
-        "rustdesk_id": device.rustdesk_id,
+        # The Remote Support ID is what an operator connects to; a caller that
+        # names a device without its agent_id must not learn it. The agent never
+        # reads it from here (it reports its own).
+        "rustdesk_id": device.rustdesk_id if authenticated else None,
         "device_type": device.device_type,
         "status": device.status,
         "last_seen": device.last_seen,

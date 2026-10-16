@@ -98,6 +98,20 @@ class TeamRepository:
         self.db.commit()
         return rows > 0
 
+    def stage_operator_teams(self, operator_id: int, team_ids: List[int]) -> None:
+        """Make the operator a member of exactly these teams without
+        committing, so the caller commits it with the operator change."""
+        current = set(self.get_team_ids_for_operator(operator_id))
+        wanted = set(team_ids)
+        if current - wanted:
+            self.db.query(TeamMember).filter(
+                TeamMember.operator_id == operator_id,
+                TeamMember.team_id.in_(current - wanted),
+            ).delete(synchronize_session=False)
+        for team_id in team_ids:
+            if team_id not in current:
+                self.db.add(TeamMember(team_id=team_id, operator_id=operator_id))
+
     def get_team_ids_for_operator(self, operator_id: int) -> List[int]:
         rows = self.db.query(TeamMember.team_id).filter(TeamMember.operator_id == operator_id).all()
         return [r[0] for r in rows]

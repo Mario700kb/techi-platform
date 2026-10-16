@@ -63,10 +63,13 @@ class AgentEnrollmentService:
             )
 
         if not payload.enrollment_token:
+            # Name the cause when the domain is listed but the switch is off, so
+            # the enrollment audit explains why a domain PC did not enroll.
+            listed = TrustedDomainService(self.db).get_active_domain(domain) is not None
             self._record_audit(
                 payload=payload,
                 result="failed",
-                reason="token_required",
+                reason="trusted_domain_auto_enrollment_disabled" if listed else "token_required",
                 raw_error="enrollment_token is required",
             )
             raise ValueError("enrollment_token is required when trusted domain auto-enrollment is disabled or domain is not trusted")
