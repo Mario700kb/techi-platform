@@ -20,6 +20,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.legacy_compat import router as legacy_compat_router
+from app.api.rustdesk_audit import router as rustdesk_audit_router
 from app.api.v1.api import api_router
 from app.api.v1.endpoints.agent import agent_enroll
 from app.core.auth import require_min_role
@@ -56,6 +57,7 @@ def _run_heartbeat_cleanup() -> None:
         cleanup_old_status_history,
         cleanup_old_audit_logs,
         cleanup_old_enrollment_audit,
+        cleanup_old_remote_support_connections,
         resolve_stale_alerts,
         rotate_remote_support_passwords,
     )
@@ -71,6 +73,7 @@ def _run_heartbeat_cleanup() -> None:
         cleanup_old_status_history,
         cleanup_old_audit_logs,
         cleanup_old_enrollment_audit,
+        cleanup_old_remote_support_connections,
     )
     from app.core import worker_health
     from app.services.audit_service import system_audit_log
@@ -283,6 +286,7 @@ from app.websocket.agent_channel_routes import router as agent_channel_ws_router
 app.include_router(agent_channel_ws_router)
 
 app.include_router(legacy_compat_router)
+app.include_router(rustdesk_audit_router)
 
 
 @app.get("/health", summary="Health check")

@@ -1394,6 +1394,7 @@ const ACTIVITY_KIND_OF: Record<string, ActivityKind> = {
   remote_connect: "remote",
   remote_session_started: "remote",
   remote_session_ended: "remote",
+  remote_support_alarm: "remote",
   terminal_session_opened: "terminal",
   terminal_session_closed: "terminal",
   terminal_session_denied: "terminal",

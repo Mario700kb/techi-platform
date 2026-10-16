@@ -1,6 +1,7 @@
-"""Remote Support (RustDesk) sessions, as reported by the agent.
+"""Remote Support (RustDesk) sessions, as reported by the agent or by RustDesk.
 
-The agent reports in each heartbeat whether a session is live (RustDesk runs
+RustDesk itself reports each connection to /api/audit/conn (see
+rustdesk_audit_service), to the second. The agent reports in each heartbeat whether a session is live (RustDesk runs
 its connection manager for every incoming session). A change starts or ends
 the session's audit record; it is attributed to the operator who asked for
 the device's Connect link shortly before, the only link between a click in
@@ -31,20 +32,27 @@ class RemoteSessionService:
     def __init__(self, db: Session):
         self.db = db
 
-    def apply_report(self, device: Device, active: Optional[bool], *, now: Optional[datetime] = None) -> None:
+    def apply_report(
+        self,
+        device: Device,
+        active: Optional[bool],
+        *,
+        now: Optional[datetime] = None,
+        details: Optional[dict] = None,
+    ) -> None:
         if active is None or bool(active) == bool(device.rustdesk_session_active):
             return
         now = ensure_utc(now or utcnow())
         if active:
-            self._start(device, now)
+            self._start(device, now, details or {})
         else:
-            self._end(device, now, reason="session_closed")
+            self._end(device, now, reason="session_closed", extra=details or {})
 
     def end_if_active(self, device: Device, *, reason: str, now: Optional[datetime] = None) -> None:
         if device.rustdesk_session_active:
             self._end(device, ensure_utc(now or utcnow()), reason=reason)
 
-    def _start(self, device: Device, now: datetime) -> None:
+    def _start(self, device: Device, now: datetime, extra: Optional[dict] = None) -> None:
         connect = self._last_connect_request(device, now)
         operator_id = connect.operator_id if connect else None
         operator = connect.operator_username if connect else None
@@ -57,6 +65,7 @@ class RemoteSessionService:
             "hostname": device.hostname,
             "techi_remote_id": device.rustdesk_id,
             "attribution": "connect_request" if connect else "unattributed",
+            **(extra or {}),
         }
         if connect:
             details["connect_requested_at"] = ensure_utc(connect.created_at).isoformat()
@@ -66,12 +75,13 @@ class RemoteSessionService:
             device_id=device.id,
             event_type="remote_session_started",
             summary="Remote session started",
-            detail=f"By {operator}" if operator else "No Connect request from the console just before it",
+            detail=(f"By {operator}" if operator else "No Connect request from the console just before it")
+            + (f" · from {extra['peer_name']}" if (extra or {}).get("peer_name") else ""),
             actor=operator or "unknown",
             fail_silently=True,
         )
 
-    def _end(self, device: Device, now: datetime, *, reason: str) -> None:
+    def _end(self, device: Device, now: datetime, *, reason: str, extra: Optional[dict] = None) -> None:
         started = ensure_utc(device.rustdesk_session_started_at)
         minutes = max(0, round((now - started).total_seconds() / 60)) if started else None
         operator = device.rustdesk_session_operator
@@ -92,6 +102,7 @@ class RemoteSessionService:
                 "duration_minutes": minutes,
                 "started_at": started.isoformat() if started else None,
                 "reason": reason,
+                **(extra or {}),
             },
         )
         DeviceActivityEventService(self.db).record(

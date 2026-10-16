@@ -66,6 +66,7 @@ class AuditAction:
     REMOTE_CONNECT = "remote_connect"
     REMOTE_SESSION_STARTED = "remote_session_started"
     REMOTE_SESSION_ENDED = "remote_session_ended"
+    REMOTE_SUPPORT_ALARM = "remote_support_alarm"
     REMOTE_SUPPORT_PASSWORDS_ROTATED = "remote_support_passwords_rotated"
     TEAM_CREATED = "team_created"
     TEAM_UPDATED = "team_updated"

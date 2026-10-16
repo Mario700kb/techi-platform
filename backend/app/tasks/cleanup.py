@@ -130,6 +130,19 @@ def cleanup_old_audit_logs(db: Session, days: int = 180) -> int:
     return deleted
 
 
+def cleanup_old_remote_support_connections(db: Session, days: int = 180) -> int:
+    """Same window as the audit log, which keeps the sessions built from them."""
+    cutoff = utcnow_naive() - timedelta(days=days)
+    result = db.execute(
+        text("DELETE FROM remote_support_connections WHERE opened_at < :cutoff"),
+        {"cutoff": cutoff},
+    )
+    db.commit()
+    deleted = result.rowcount
+    logger.info(f"Cleanup: deleted {deleted} Remote Support connection records older than {days} days")
+    return deleted
+
+
 def cleanup_old_enrollment_audit(db: Session, days: int = 180) -> int:
     cutoff = utcnow_naive() - timedelta(days=days)
     result = db.execute(

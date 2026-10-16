@@ -19,6 +19,7 @@ from app.models.report import ReportRun, ReportSchedule
 from app.models.operator import Operator
 from app.models.operator_session import OperatorSession
 from app.models.remote_action import RemoteAction
+from app.models.remote_support_connection import RemoteSupportConnection
 from app.models.team import Team, TeamClientAccess, TeamDeviceAccess, TeamGroupAccess, TeamMember
 from app.models.trusted_domain import TrustedDomain
 from app.models.terminal_session import TerminalSession
@@ -55,6 +56,7 @@ __all__ = [
     "Operator",
     "OperatorConnectPreference",
     "RemoteAction",
+    "RemoteSupportConnection",
     "TerminalSession",
     "TrustedDomain",
     "VaultCredential",

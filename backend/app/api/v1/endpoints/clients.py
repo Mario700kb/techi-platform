@@ -154,7 +154,7 @@ def get_client_profile(
 
 # What each Activity filter on the client profile shows.
 ACTIVITY_KINDS = {
-    "remote": ["remote_connect", "remote_session_started", "remote_session_ended"],
+    "remote": ["remote_connect", "remote_session_started", "remote_session_ended", "remote_support_alarm"],
     "terminal": [
         "terminal_session_opened",
         "terminal_session_closed",
