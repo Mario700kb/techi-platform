@@ -28,8 +28,9 @@ interface FeaturesSnapshot {
 // and redirect to "/" before its own fetch completed.
 // The last flags this browser was told, so the Sidebar paints its full menu
 // on a reload instead of dropping Reports, Vault… until the fetch returns.
-// Display only: route guards still wait for the fetch (loading stays true)
-// and the backend enforces every flag itself.
+// RequireFeature opens a page whose stored flag is on without waiting, and
+// redirects only once the fetch says the flag is off; the backend enforces
+// every flag itself.
 const STORAGE_KEY = "techi.platform-features";
 
 function readStored(): PlatformFeatures | null {

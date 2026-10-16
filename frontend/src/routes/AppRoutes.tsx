@@ -1,54 +1,39 @@
-import { lazy, Suspense, useEffect } from "react";
+import { lazy } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
-import AppPreloader from "../components/AppPreloader";
 // The sign-in screen and the Dashboard are what nearly every visit starts
 // on, so they ship in the main bundle; every other page is its own chunk,
-// fetched the first time it is opened.
+// prefetched once the first page has shown (see pageLoading.tsx).
 import Dashboard from "../pages/Dashboard";
 import Login from "../pages/Login";
-
-const Devices = lazy(() => import("../pages/Devices"));
-const Clients = lazy(() => import("../pages/Clients"));
-const ClientProfilePage = lazy(() => import("../pages/ClientProfile"));
-const Audit = lazy(() => import("../pages/Audit"));
-const Onboarding = lazy(() => import("../pages/Onboarding"));
-const Inventory = lazy(() => import("../pages/Inventory"));
-const Operators = lazy(() => import("../pages/Operators"));
-const Teams = lazy(() => import("../pages/Teams"));
-const TeamDetailPage = lazy(() => import("../pages/TeamDetail"));
-const AgentConfigPage = lazy(() => import("../pages/AgentConfig"));
-const Alerts = lazy(() => import("../pages/Alerts"));
-const More = lazy(() => import("../pages/More"));
-const Settings = lazy(() => import("../pages/Settings"));
-const DeviceDetailsMobile = lazy(() => import("../pages/DeviceDetailsMobile"));
-const TerminalWindow = lazy(() => import("../pages/TerminalWindow"));
-const CredentialVault = lazy(() => import("../pages/CredentialVault"));
-const NotificationSettings = lazy(() => import("../pages/NotificationSettings"));
-const Reports = lazy(() => import("../pages/Reports"));
 import { NotFound } from "../pages/StatusPages";
 import { RequireAuth, RequireFeature, RequirePermission } from "./guards";
+import { FirstPageShown, pageLoaders } from "./pageLoading";
 
-// After a reload the page's own code (Devices, Alerts, …) is still on its way
-// when the shell can already draw. Until the first page has shown, keep the
-// full-screen preloader the boot screen started — the same animation, so it
-// simply stays — instead of an empty shell with a bar; later navigations
-// show the in-page bar inside the shell.
-let firstPageShown = false;
-
-function FirstPageShown() {
-  useEffect(() => {
-    firstPageShown = true;
-  }, []);
-  return null;
-}
-
-function RouteFallback() {
-  return firstPageShown ? <AppPreloader inline label="Loading" /> : <AppPreloader />;
-}
+const Devices = lazy(pageLoaders.Devices);
+const Clients = lazy(pageLoaders.Clients);
+const ClientProfilePage = lazy(pageLoaders.ClientProfile);
+const Audit = lazy(pageLoaders.Audit);
+const Onboarding = lazy(pageLoaders.Onboarding);
+const Inventory = lazy(pageLoaders.Inventory);
+const Operators = lazy(pageLoaders.Operators);
+const Teams = lazy(pageLoaders.Teams);
+const TeamDetailPage = lazy(pageLoaders.TeamDetail);
+const AgentConfigPage = lazy(pageLoaders.AgentConfig);
+const Alerts = lazy(pageLoaders.Alerts);
+const More = lazy(pageLoaders.More);
+const Settings = lazy(pageLoaders.Settings);
+const DeviceDetailsMobile = lazy(pageLoaders.DeviceDetailsMobile);
+const TerminalWindow = lazy(pageLoaders.TerminalWindow);
+const CredentialVault = lazy(pageLoaders.CredentialVault);
+const NotificationSettings = lazy(pageLoaders.NotificationSettings);
+const Reports = lazy(pageLoaders.Reports);
 
 export default function AppRoutes() {
+  // The Suspense boundary for these pages sits above them (App for the
+  // chromeless routes, AppShell for the rest), outside the per-path <main>, so
+  // a navigation keeps the current page on screen until the next one is ready.
   return (
-    <Suspense fallback={<RouteFallback />}>
+    <>
       <FirstPageShown />
       <Routes>
         <Route path="/login" element={<Login />} />
@@ -258,6 +243,6 @@ export default function AppRoutes() {
           }
         />
       </Routes>
-    </Suspense>
+    </>
   );
 }

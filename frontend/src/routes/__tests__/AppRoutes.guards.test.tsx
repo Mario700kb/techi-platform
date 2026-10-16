@@ -106,6 +106,30 @@ describe.each([
     expect(screen.queryByText("Dashboard")).not.toBeInTheDocument();
     expect(screen.getByRole("status", { name: /loading/i })).toBeInTheDocument();
   });
+
+  it("opens at once while flags load when the last known flag is ON — no loading bar", () => {
+    vi.spyOn(platformFeaturesHook, "usePlatformFeatures").mockReturnValue({
+      FEATURE_PLATFORM_CORE: true,
+      FEATURE_LINUX: false,
+      FEATURE_VAULT: true,
+      FEATURE_TERMINAL: false,
+      FEATURE_MIKROTIK: false,
+      FEATURE_STORAGE: false,
+      FEATURE_HYPERVISOR: false,
+      FEATURE_NOTIFICATIONS: false,
+      FEATURE_REPORTING: true,
+    });
+    vi.spyOn(platformFeaturesHook, "usePlatformFeaturesLoading").mockReturnValue(true);
+
+    renderGuardedRoute(
+      <RequireFeature flag={flag}>
+        <div>Protected content</div>
+      </RequireFeature>,
+    );
+
+    expect(screen.getByText("Protected content")).toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: /loading/i })).not.toBeInTheDocument();
+  });
 });
 
 describe("RequirePermission", () => {

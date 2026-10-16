@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import AppShell from "./layouts/AppShell";
 import AppRoutes from "./routes/AppRoutes";
 import { useLocation } from "react-router-dom";
@@ -5,6 +6,7 @@ import { useAuth } from "./auth/AuthContext";
 import AppPreloader from "./components/AppPreloader";
 import ErrorBoundary from "./components/ErrorBoundary";
 import MfaEnrollment from "./pages/MfaEnrollment";
+import { RouteFallback } from "./routes/pageLoading";
 
 function App() {
   const location = useLocation();
@@ -35,7 +37,7 @@ function App() {
     );
   }
   if (isChromeless) {
-    return routes;
+    return <Suspense fallback={<RouteFallback />}>{routes}</Suspense>;
   }
   return <AppShell>{routes}</AppShell>;
 }

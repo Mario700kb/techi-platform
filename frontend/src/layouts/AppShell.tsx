@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, Suspense, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
@@ -8,6 +8,7 @@ import { OfflineBanner } from "../components/mobile/OfflineBanner";
 import SessionExpiryBanner from "../components/SessionExpiryBanner";
 import { useAppData } from "../contexts/AppDataContext";
 import { locateNav } from "../components/navigation";
+import { RouteFallback } from "../routes/pageLoading";
 
 interface AppShellProps {
   children: ReactNode;
@@ -51,6 +52,8 @@ export default function AppShell({ children }: AppShellProps) {
 
   const isTabRoot = TAB_ROOTS.has(location.pathname);
   const isDeviceDetail = isDeviceDetailRoute(location.pathname);
+  const mainClassName = `th-main min-w-0 flex-1 overflow-y-auto p-3 md:p-5 ${isDeviceDetail ? "pb-3 md:pb-5" : "th-main-mnav md:pb-5"}`;
+  const mainStyle = { background: "var(--th-bg-main)" };
   const { lastFetchTime } = useAppData();
 
   return (
@@ -87,14 +90,22 @@ export default function AppShell({ children }: AppShellProps) {
             <OfflineBanner lastFetchTime={lastFetchTime} />
             <SessionExpiryBanner />
             {/* Keyed by path: each page enters with the shared page motion and
-                starts scrolled to the top. Search-param changes keep the page. */}
-            <main
-              key={location.pathname}
-              className={`th-main min-w-0 flex-1 overflow-y-auto p-3 md:p-5 ${isDeviceDetail ? "pb-3 md:pb-5" : "th-main-mnav md:pb-5"}`}
-              style={{ background: "var(--th-bg-main)" }}
+                starts scrolled to the top. Search-param changes keep the page.
+                The Suspense boundary stays outside the keyed <main>: a new
+                boundary on every path would drop the current page for the
+                loading bar while the next page's code arrives, where the
+                router's transition keeps it on screen instead. */}
+            <Suspense
+              fallback={
+                <main className={mainClassName} style={mainStyle}>
+                  <RouteFallback />
+                </main>
+              }
             >
-              {children}
-            </main>
+              <main key={location.pathname} className={mainClassName} style={mainStyle}>
+                {children}
+              </main>
+            </Suspense>
           </div>
         </div>
       </div>

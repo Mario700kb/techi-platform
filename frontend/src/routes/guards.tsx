@@ -24,14 +24,16 @@ export function RequirePermission({ perm, children }: { perm: string; children: 
 
 export type PlatformFeatureFlag = "FEATURE_VAULT" | "FEATURE_NOTIFICATIONS" | "FEATURE_REPORTING";
 
-// Platform Expansion route guard: while flags are still loading, render a
-// loading state rather than redirecting — a flag that is merely unresolved
-// is not the same as a flag that is OFF. Only redirect home once the fetch
-// has settled and the flag is actually off.
+// Platform Expansion route guard. While the flags load, the last flags this
+// browser was told decide: a page whose flag was on opens at once instead of
+// an empty shell with a loading bar (the API enforces every flag itself). A
+// flag that is merely unresolved is not the same as one that is OFF, so with
+// no such flag it shows a loading state, and it redirects home only once the
+// fetch has settled and the flag is actually off.
 export function RequireFeature({ flag, children }: { flag: PlatformFeatureFlag; children: ReactNode }) {
   const features = usePlatformFeatures();
   const loading = usePlatformFeaturesLoading();
+  if (features[flag]) return <>{children}</>;
   if (loading) return <AppPreloader inline label="Loading" />;
-  if (!features[flag]) return <Navigate to="/" replace />;
-  return <>{children}</>;
+  return <Navigate to="/" replace />;
 }
