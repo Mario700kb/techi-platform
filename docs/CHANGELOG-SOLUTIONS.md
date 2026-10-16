@@ -5,6 +5,46 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-16] RUSTDESK-AUDIT-2026-10-16 — Remote Support sessions from RustDesk's own connection reports (`69805b9`)
+
+Backend, database and frontend, deployed 2026-10-16 19:11–19:14 (Tirana).
+Pre-deploy dump `/opt/backups/techi/pre-rustdesk-audit-20261016-191007.sql.gz`
+(143 MB, `gzip -t` OK, complete). Migration `k1l2m3n4o5p6` (new empty table
+`remote_support_connections`) run with the new image while the old backend
+served; proved first on a scratch PostgreSQL (upgrade, downgrade, upgrade).
+Rollback images `techi-platform-{backend,frontend}:pre-rustdesk-audit-a86ce92`.
+Guard passed before and after, backend ready 4 s after start (0 restarts),
+`nginx -t` OK, frontend healthy (0 restarts), smoke passed, public 200;
+`/api/audit/conn` answers 422 to an empty body (404 before). Root filesystem
+91% (2.1 GB free). First real report not yet seen at the time of writing.
+
+**Why.** The owner was dropped from Remote Support on `kubiti-sql-srv`
+(SLH, Windows Server 2025, RustDesk 1.4.6) right after typing the Windows
+password, then asked for the remote password. Looking into it showed that
+RustDesk posts every connection to the API server's `/api/audit/conn` —
+16 posts in three hours, all 404: at 18:36:22 Connect, two reports, two more
+13 s later (the drop), Connect again at 18:36:42. The device's password had
+not changed since 8 Sep, so the drop was not a password mismatch; the
+Administrator session is open there permanently, which fits a Windows
+session switch at logon restarting RustDesk's server. Device logs (session
+events 21/24/25/40, RustDesk and agent logs) are still to be read.
+
+**What.** Bodies are those RustDesk 1.4.6 builds (`post_conn_audit`,
+`post_alarm_audit`): `id`, `uuid`, `conn_id`, `session_id`, plus
+`action:new` with the caller's IP, `peer:[id,name]` and `type` when the
+password is accepted, `action:close`. A report counts only when its RustDesk
+ID belongs to a device and it comes from the public IP that device's agent
+reports from (no IPv6 on the server, so both use IPv4). Accepted passwords
+start the device's Remote Support session through RemoteSessionService
+(attributed to the Connect click, with the operator's machine name); the
+last open connection closing ends it, so client Activity's Remote Support
+time fills without a new agent, and a drop shows as ended + started with the
+same RustDesk session. Connections left open more than 12 h stop holding a
+session. Refused logins (`/api/audit/alarm`) are audited as
+`remote_support_alarm` and shown in the device's activity. Kept 180 days.
+
+Pytest 1420 (10 new); Vitest 244.
+
 ## [2026-10-16] PAGE-LOADING-2026-10-16 — the current page stays while the next one loads; no more coral bar on navigation (`0a96f77`)
 
 Frontend only, deployed 2026-10-16 (Tirana, evening). Rollback image
