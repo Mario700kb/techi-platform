@@ -45,6 +45,13 @@ session. Refused logins (`/api/audit/alarm`) are audited as
 
 Pytest 1420 (10 new); Vitest 244.
 
+Afterwards, with the owner's approval: the 17 rollback tags of the 15 Oct
+deploys removed (the six 16 Oct tags kept: operator-teams, heartbeat-identity,
+page-loading, rustdesk-audit), build cache pruned to 1 GB, dangling images
+pruned. Root filesystem 91% → 83% (2.1 → 3.9 GB free; 0.7 GB from the tags,
+1.1 GB from the cache); containers healthy throughout. Database dumps
+untouched.
+
 ## [2026-10-16] PAGE-LOADING-2026-10-16 — the current page stays while the next one loads; no more coral bar on navigation (`0a96f77`)
 
 Frontend only, deployed 2026-10-16 (Tirana, evening). Rollback image
