@@ -6,15 +6,13 @@ import (
 	"testing"
 )
 
-// The command channel is Linux-only by decision (owner instruction,
-// 2026-08-04: Windows is healthy on the heartbeat path and must not be
-// touched). These tests pin that boundary at the source level so it cannot be
-// widened by accident — a build-tag mistake would otherwise ship a persistent
-// connection to 799 Windows endpoints on a single-vCPU host.
+// The command channel runs on Linux and Windows (Windows since 2026-10-16, for
+// instant single-device actions and the live device view). These tests pin
+// that boundary at the source level so it cannot widen or narrow by accident.
 //
 // They read source rather than calling code so they run on every platform,
 // including the macOS workstation the agent is cross-compiled from. The
-// behavioural tests live in command_channel_linux_test.go.
+// behavioural tests live in command_channel_ws_test.go and live_test.go.
 
 func readAgentFile(t *testing.T, name string) string {
 	t.Helper()
@@ -25,18 +23,25 @@ func readAgentFile(t *testing.T, name string) string {
 	return string(data)
 }
 
-func TestCommandChannelIsLinuxOnly(t *testing.T) {
-	linux := readAgentFile(t, "command_channel_linux.go")
-	if !strings.HasPrefix(linux, "//go:build linux") {
-		t.Fatal("the real implementation must be gated to linux")
+func TestCommandChannelRunsOnLinuxAndWindowsOnly(t *testing.T) {
+	real := readAgentFile(t, "command_channel.go")
+	if !strings.HasPrefix(real, "//go:build linux || windows") {
+		t.Fatal("the real implementation must be gated to linux and windows")
 	}
 	other := readAgentFile(t, "command_channel_other.go")
-	if !strings.HasPrefix(other, "//go:build !linux") {
-		t.Fatal("every non-linux platform must get the no-op")
+	if !strings.HasPrefix(other, "//go:build !linux && !windows") {
+		t.Fatal("every other platform must get the no-op")
 	}
 }
 
-func TestNonLinuxImplementationOpensNothing(t *testing.T) {
+func TestReconnectsAfterAHealthyConnectionAreSpreadOverAMinute(t *testing.T) {
+	real := readAgentFile(t, "command_channel.go")
+	if !strings.Contains(real, "wait = reconnectAfterHealthy()") {
+		t.Fatal("a dropped healthy connection must reconnect after a spread wait, not all at once")
+	}
+}
+
+func TestOtherPlatformsOpenNothing(t *testing.T) {
 	// Checks imports and the function body, not the whole file: prose in a
 	// comment naturally mentions "websocket" and must not trip this.
 	other := readAgentFile(t, "command_channel_other.go")
@@ -53,7 +58,7 @@ func TestNonLinuxImplementationOpensNothing(t *testing.T) {
 
 	for _, forbidden := range []string{"websocket", "Dial", "http.", "net/"} {
 		if strings.Contains(body, forbidden) {
-			t.Fatalf("the non-linux stub must not reference %q — it must open no connection: %s", forbidden, body)
+			t.Fatalf("the no-op stub must not reference %q — it must open no connection: %s", forbidden, body)
 		}
 	}
 	if !strings.Contains(body, `import "context"`) {
@@ -65,8 +70,8 @@ func TestNonLinuxImplementationOpensNothing(t *testing.T) {
 }
 
 func TestWindowsStillRefusesOpenTerminal(t *testing.T) {
-	// The channel only accelerates open_terminal. Windows must keep refusing
-	// it, so even a mis-scoped channel could not open a shell there.
+	// The channel now reaches Windows, but the Web Terminal stays Linux-only:
+	// Windows must keep refusing open_terminal whichever path delivers it.
 	win := readAgentFile(t, "actions_windows.go")
 	if !strings.Contains(win, "not supported on Windows") {
 		t.Fatal("actions_windows.go must keep refusing open_terminal")

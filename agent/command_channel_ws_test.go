@@ -1,16 +1,22 @@
-//go:build linux
+//go:build linux || windows
 
 package main
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
-// Behavioural cover for the Linux-only command channel. The cross-platform
+// Behavioural cover for the command channel (Linux and Windows). The cross-platform
 // boundary tests live in command_channel_test.go.
 
 func TestCommandChannelURLRequiresEnrolment(t *testing.T) {
@@ -130,5 +136,66 @@ func TestRunCommandChannelTakesAPathNotAStruct(t *testing.T) {
 	}
 	if !strings.Contains(src, "loadConfig(configPath)") {
 		t.Fatal("the loop must reload the config from disk each cycle")
+	}
+}
+
+func TestLiveStartOverTheChannelStreamsSnapshots(t *testing.T) {
+	upgrader := websocket.Upgrader{}
+	frames := make(chan map[string]interface{}, 10)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		_ = conn.WriteMessage(websocket.TextMessage, []byte(`{"type":"live_start","interval_seconds":2,"ttl_seconds":10}`))
+		for {
+			_, data, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			var msg map[string]interface{}
+			if json.Unmarshal(data, &msg) == nil && msg["type"] == "live" {
+				frames <- msg
+				_ = conn.WriteMessage(websocket.TextMessage, []byte(`{"type":"live_stop"}`))
+			}
+		}
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = serveCommandChannel(ctx, &Config{}, "ws"+strings.TrimPrefix(srv.URL, "http")) }()
+
+	select {
+	case msg := <-frames:
+		data, _ := msg["data"].(map[string]interface{})
+		if data["ram_percent"] == nil || data["processes"] == nil {
+			t.Fatalf("live frame without ram or processes: %v", msg)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("no live frame within 10 s of live_start")
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for agentLive.active() && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if agentLive.active() {
+		t.Fatal("live_stop did not end the stream")
+	}
+}
+
+func TestAnOldConfigWithoutWebsocketURLUsesTheHeartbeatHost(t *testing.T) {
+	cfg := &Config{
+		BackendURL: "https://api-rdp.techi.com.al/api/v1/agent/heartbeat",
+		DeviceID:   924,
+		AgentID:    "agent_x",
+	}
+	got := commandChannelURL(cfg)
+	if !strings.HasPrefix(got, "wss://api-rdp.techi.com.al/ws/agent/commands?") {
+		t.Fatalf("channel URL from the heartbeat host = %q", got)
+	}
+	if websocketBaseFrom("ftp://x") != "" || websocketBaseFrom("") != "" {
+		t.Fatal("only http(s) URLs give a websocket origin")
 	}
 }

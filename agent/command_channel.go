@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux || windows
 
 package main
 
@@ -19,9 +19,12 @@ package main
 // heartbeat path uses, so actions get identical ack/complete bookkeeping and
 // identical callback authentication.
 //
-// LINUX ONLY, deliberately. Windows is healthy on the heartbeat path and is
-// explicitly out of scope (owner instruction, 2026-08-04); command_channel_other.go
-// provides a no-op so no other platform even compiles this.
+// Linux and Windows. It was Linux-only from 2026-08-04 until the owner asked
+// for live device data (2026-10-16): Windows now uses it so single-device
+// actions run within seconds and an open device page can stream a live view
+// (live.go). Reconnects are spread over a minute so a backend restart is not
+// met by the whole fleet at once. command_channel_other.go keeps every other
+// platform on the heartbeat alone.
 
 import (
 	"context"
@@ -30,6 +33,7 @@ import (
 	"math/rand"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -40,11 +44,35 @@ const (
 	commandChannelMaxBackoff  = 2 * time.Minute
 	commandChannelPingPeriod  = 60 * time.Second
 	commandChannelDialTimeout = 20 * time.Second
+	// A connection that stayed up this long was healthy: the next drop starts
+	// the backoff from the bottom again instead of where the last outage left it.
+	commandChannelHealthyAfter = 2 * time.Minute
+	// After a healthy connection drops (usually a backend restart) the first
+	// retry waits a random time up to this, so ~900 agents return over a
+	// minute instead of within the same few seconds.
+	commandChannelReconnectSpread = time.Minute
+	commandChannelWriteTimeout    = 10 * time.Second
 )
 
 type commandEnvelope struct {
-	Type   string        `json:"type"`
-	Action PendingAction `json:"action"`
+	Type            string        `json:"type"`
+	Action          PendingAction `json:"action"`
+	IntervalSeconds int           `json:"interval_seconds"`
+	TTLSeconds      int           `json:"ttl_seconds"`
+}
+
+// channelWriter serialises writes: gorilla/websocket allows one writer at a
+// time, and the ping loop and the live stream both write.
+type channelWriter struct {
+	mu   sync.Mutex
+	conn *websocket.Conn
+}
+
+func (w *channelWriter) write(data []byte) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	_ = w.conn.SetWriteDeadline(time.Now().Add(commandChannelWriteTimeout))
+	return w.conn.WriteMessage(websocket.TextMessage, data)
 }
 
 // commandChannelURL derives the channel URL from the websocket_url the backend
@@ -53,6 +81,11 @@ type commandEnvelope struct {
 // heartbeat path keeps working exactly as before.
 func commandChannelURL(cfg *Config) string {
 	base := strings.TrimSpace(cfg.WebSocketURL)
+	if base == "" {
+		// Configs written before enrolment returned websocket_url: the
+		// channel lives on the same host the heartbeat goes to.
+		base = websocketBaseFrom(firstNonBlank(cfg.APIURL, cfg.BackendURL))
+	}
 	if base == "" || cfg.DeviceID <= 0 || strings.TrimSpace(cfg.AgentID) == "" {
 		return ""
 	}
@@ -69,6 +102,31 @@ func commandChannelURL(cfg *Config) string {
 		Path:     "/ws/agent/commands",
 		RawQuery: q.Encode(),
 	}).String()
+}
+
+// websocketBaseFrom turns the heartbeat URL into the WebSocket origin of the
+// same host (https → wss, http → ws). "" when it is not an http(s) URL.
+func websocketBaseFrom(raw string) string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Host == "" {
+		return ""
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "https":
+		return "wss://" + parsed.Host
+	case "http":
+		return "ws://" + parsed.Host
+	}
+	return ""
+}
+
+func firstNonBlank(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func itoa(n int) string {
@@ -119,15 +177,22 @@ func runCommandChannel(ctx context.Context, configPath string) {
 			}
 			continue
 		}
+		connectedAt := time.Now()
 		if err := serveCommandChannel(ctx, cfg, endpoint); err != nil && ctx.Err() == nil {
 			log.Printf("[command-channel] disconnected: %v", err)
 		}
-		if !sleepCtx(ctx, jitter(backoff)) {
-			return
+		wait := jitter(backoff)
+		if time.Since(connectedAt) >= commandChannelHealthyAfter {
+			backoff = commandChannelMinBackoff
+			wait = reconnectAfterHealthy()
+		} else {
+			backoff *= 2
+			if backoff > commandChannelMaxBackoff {
+				backoff = commandChannelMaxBackoff
+			}
 		}
-		backoff *= 2
-		if backoff > commandChannelMaxBackoff {
-			backoff = commandChannelMaxBackoff
+		if !sleepCtx(ctx, wait) {
+			return
 		}
 	}
 }
@@ -141,6 +206,9 @@ func serveCommandChannel(ctx context.Context, cfg *Config, endpoint string) erro
 	}
 	defer conn.Close()
 	log.Printf("[command-channel] connected")
+	writer := &channelWriter{conn: conn}
+	// A live view never outlives the connection it was requested on.
+	defer agentLive.stop()
 
 	// Keep the socket warm so idle NAT/proxy timeouts do not silently kill it,
 	// and so the server's idle sweep can tell a live agent from a dead one.
@@ -154,7 +222,7 @@ func serveCommandChannel(ctx context.Context, cfg *Config, endpoint string) erro
 			case <-pingCtx.Done():
 				return
 			case <-ticker.C:
-				if err := conn.WriteMessage(websocket.TextMessage, []byte(`{"type":"ping"}`)); err != nil {
+				if err := writer.write([]byte(`{"type":"ping"}`)); err != nil {
 					return
 				}
 			}
@@ -171,15 +239,35 @@ func serveCommandChannel(ctx context.Context, cfg *Config, endpoint string) erro
 			log.Printf("[command-channel] ignoring unparsable message")
 			continue
 		}
-		if env.Type != "action" || env.Action.Action == "" {
-			continue
+		switch env.Type {
+		case "action":
+			if env.Action.Action == "" {
+				continue
+			}
+			log.Printf("[command-channel] received action %d: %s", env.Action.ActionID, env.Action.Action)
+			// Same entry point the heartbeat path uses, so ack/running/complete
+			// reporting and callback authentication are identical. Run it
+			// detached so a long action does not stall the read loop.
+			go func(action PendingAction) {
+				runAction(cfg, action)
+				// Actions that ask for a fresh heartbeat (Refresh inventory,
+				// Heartbeat now, restart) get it now, not at the next tick.
+				if pendingImmediateHeartbeat.Load() {
+					wakeHeartbeat()
+				}
+			}(env.Action)
+		case "live_start":
+			agentLive.request(env.IntervalSeconds, env.TTLSeconds, writer.write)
+		case "live_stop":
+			agentLive.stop()
 		}
-		log.Printf("[command-channel] received action %d: %s", env.Action.ActionID, env.Action.Action)
-		// Same entry point the heartbeat path uses, so ack/running/complete
-		// reporting and callback authentication are identical. Run it detached
-		// so a long action does not stall the read loop and stall the channel.
-		go runAction(cfg, env.Action)
 	}
+}
+
+// reconnectAfterHealthy is the first wait after a long-lived connection
+// dropped: at least the minimum backoff, spread at random over a minute.
+func reconnectAfterHealthy() time.Duration {
+	return commandChannelMinBackoff + time.Duration(rand.Int63n(int64(commandChannelReconnectSpread)))
 }
 
 func sleepCtx(ctx context.Context, d time.Duration) bool {

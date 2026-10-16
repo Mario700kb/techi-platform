@@ -97,7 +97,37 @@ func runAgent(ctx context.Context, configPath string, enrollmentToken string, on
 			}
 			applyPendingInterval(&interval)
 			timer.Reset(jitteredInterval(interval))
+		case <-heartbeatWakeCh:
+			// An action delivered over the command channel asked for a fresh
+			// heartbeat. This cycle is that heartbeat, so it must not run a
+			// second follow-up of its own.
+			pendingImmediateHeartbeat.Store(false)
+			if err := runSingleHeartbeat(configPath, enrollmentToken); err != nil {
+				log.Printf("heartbeat cycle failed: %v", err)
+				recordHeartbeatOutcome(startupState, err)
+			} else {
+				recordHeartbeatOutcome(startupState, nil)
+			}
+			applyPendingInterval(&interval)
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			timer.Reset(jitteredInterval(interval))
 		}
+	}
+}
+
+// heartbeatWakeCh asks the agent loop for a heartbeat now. Buffered by one: a
+// wake that arrives while one is already pending adds nothing.
+var heartbeatWakeCh = make(chan struct{}, 1)
+
+func wakeHeartbeat() {
+	select {
+	case heartbeatWakeCh <- struct{}{}:
+	default:
 	}
 }
 
