@@ -5,6 +5,18 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-16] AGENT-2.1.26-PILOT-2026-10-16 — agent, Endpoint MSI and bridge MSI 2.1.26 active; Mario-Lenovo updated (`f4cb49e`)
+
+CI run 38960775363 (MSI lifecycle checks and the Windows SCM test passed).
+Uploaded and activated 22:54–23:03 (Tirana); 2.1.25 kept inactive for
+rollback: `agent_binary` 2.1.26 (package `85fd5cb7…`, sha256 `a03db6f3…`;
+was `179a9143…`), Endpoint MSI 2.1.26.0 (`eb8d8986…`, sha256 `3c998ba5…`;
+was `e9af2e33…`), bridge MSI 2.1.26.0 (`7501d36f…`, sha256 `d7d8cb02…`; was
+`69642dc2…`). Public downloads and `/active-version` return 2.1.26.
+Activation updates no installed device. Owner chose Mario-Lenovo (924) as
+the pilot: `self_update` #2577 completed 22:59, device reports 2.1.26 with
+the package sha256, online, RustDesk running, same OS/IP as before.
+
 ## [2026-10-16] REVIEW-FIXES-2026-10-16 — re-enrollment review, one Remote Support session writer, enrollment and audit hardening (`38ec556`, `6de22ff`, `2da03fb`; agent `f4cb49e` built, not rolled out)
 
 **Deployed 22:49 (Tirana), backend + frontend, migration `l2m3n4o5p6q7`.**
