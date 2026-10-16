@@ -5,6 +5,26 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-16] FIREWALL-2026-10-16 — a firewall in front of the server; UDP 21116 briefly blocked
+
+No code change. About 19:25–19:45 (Tirana) the owner set up a firewall in
+front of the server (outside the host; `ufw` on the host unchanged). The
+first rule set let through 443, TCP 21116 and 21117 only: SSH (22), HTTP (80)
+and TCP 21115 did not answer, and UDP 21116 — RustDesk's registration and
+connection setup — was blocked (1 packet in 12 s on `eth0` against hundreds
+normally; 22 TCP connections on 21116, so devices were not falling back to
+TCP). Remote Support could not reach devices meanwhile.
+
+The owner then allowed 22 and 80, and on request TCP 21115 and UDP 21116.
+At 19:47 measured: TCP 22, 80, 443, 21115, 21116, 21117 open; UDP 21116
+212 packets in and 158 out in 10 s; 11 new connections on 21115 in 10 s.
+
+Inbound the server needs: 22/TCP (admin, best limited to TECHI's IPs),
+80/TCP (Let's Encrypt renewal by NPM, http→https), 443/TCP (console, API,
+agents, RustDesk audit reports), 21115/TCP, 21116/TCP+UDP, 21117/TCP
+(RustDesk). Not needed: 21118/21119 (web client), 8082 (nothing listens).
+81, 3000, 5432, 8000 stay closed (TECHI-SEC1A).
+
 ## [2026-10-16] RUSTDESK-AUDIT-2026-10-16 — Remote Support sessions from RustDesk's own connection reports (`69805b9`)
 
 Backend, database and frontend, deployed 2026-10-16 19:11–19:14 (Tirana).
