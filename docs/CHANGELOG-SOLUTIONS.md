@@ -5,6 +5,35 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-16] LIVE-VIEW-2026-10-16 — live device view and instant single-device actions (`4effc87`, `9665d23`, `9723a31`)
+
+**Backend + frontend deployed 23:33 (Tirana), no migration.** The owner asked
+for live device data without loading the server or the devices; a shorter
+heartbeat was rejected (5× the database writes on one vCPU for data nobody
+watches). Instead:
+
+- Actions queued for one device (Actions, Remote Support) are pushed over the
+  agent's command channel when it is open; otherwise the heartbeat delivers
+  them. Bulk commands stay on the heartbeat (it spreads a fleet self_update).
+- `/ws/devices/{id}/live`: an open device page (drawer Overview, mobile page)
+  asks the agent to stream a snapshot every 3 s (renewed every 15 s, TTL
+  45 s, stopped when the last page closes or the tab is hidden). Frames are
+  validated, one a second at most, never stored, and reach only operators
+  whose teams see the device. Panel: CPU, memory, network, signed-in user,
+  uptime, disks, busiest processes.
+- Agent 2.1.27 (`9665d23`, CI run 38969375416, all MSI lifecycle checks and
+  the live WebSocket test passed on Windows): command channel on Windows,
+  reconnects spread over a minute after a healthy connection drops, live
+  stream with native APIs only (no PowerShell, fixed disks only). Not uploaded
+  yet; until a device runs it the panel says "older than 2.1.27".
+
+Dump `/opt/backups/techi/pre-live-view-20261016-233153.sql.gz` (144 MB,
+`gzip -t` ok), rollback `techi-platform-{backend,frontend}:pre-live-view-2da03fb`.
+Backend ready 5 s, guard and smoke passed, unauthenticated
+`wss://api-rdp.techi.com.al/ws/devices/924/live` closed with 4001 through
+NPM, 154 heartbeats in the first 2 min. Load before: backend 182 MB, load
+0.30. Pytest 1458, Vitest 250, Playwright 154.
+
 ## [2026-10-16] AGENT-2.1.26-PILOT-2026-10-16 — agent, Endpoint MSI and bridge MSI 2.1.26 active; Mario-Lenovo updated (`f4cb49e`)
 
 CI run 38960775363 (MSI lifecycle checks and the Windows SCM test passed).
