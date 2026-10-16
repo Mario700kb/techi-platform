@@ -230,3 +230,38 @@ def test_a_malformed_report_is_rejected(db, device):
     client = _client(db)
     assert client.post("/api/audit/conn", json={"action": "new"}).status_code == 422
     assert client.post("/api/audit/alarm", json={"id": RUSTDESK_ID, "typ": 2, "info": "not json"}).status_code == 204
+
+
+def test_a_reused_conn_id_closes_the_lost_connection_and_does_not_stick(db, device):
+    client = _client(db)
+    _opened(client, 3)
+    _accepted(client, 3)  # session open, but the close is lost (RustDesk restarts)
+    db.refresh(device)
+    assert device.rustdesk_session_active is True
+
+    _opened(client, 3)  # same conn_id reused → the old one was lost
+    rows = db.query(RemoteSupportConnection).order_by(RemoteSupportConnection.id).all()
+    assert rows[0].closed_at is not None and rows[0].close_reason == "lost"
+    # The new connection is not yet authorized, so the session is now closed.
+    db.refresh(device)
+    assert device.rustdesk_session_active is False
+
+
+def test_rustdesk_reports_win_over_the_agent_heartbeat_flag(db, device):
+    from app.services.remote_session_service import RemoteSessionService
+
+    client = _client(db)
+    _opened(client, 3)
+    _accepted(client, 3)
+    db.refresh(device)
+    assert device.rustdesk_session_active is True and device.rustdesk_session_source == "rustdesk"
+
+    # An agent heartbeat sampling False a moment later must not end the live
+    # RustDesk session while RustDesk is the authority.
+    RemoteSessionService(db).apply_report(device, False, source="heartbeat")
+    db.refresh(device)
+    assert device.rustdesk_session_active is True
+
+    _closed(client, 3)
+    db.refresh(device)
+    assert device.rustdesk_session_active is False

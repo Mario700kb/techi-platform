@@ -26,6 +26,9 @@ class RemoteSupportConnection(Base):
     opened_at = Column(DateTime, nullable=False, default=utcnow_naive)
     authorized_at = Column(DateTime, nullable=True)
     closed_at = Column(DateTime, nullable=True)
+    # closed: RustDesk reported the close. lost: a newer connection showed this
+    # one was gone without a close (RustDesk restarted, or the client reconnected).
+    close_reason = Column(String(16), nullable=True)
 
     __table_args__ = (
         Index("ix_remote_support_connections_device_conn", "device_id", "conn_id"),

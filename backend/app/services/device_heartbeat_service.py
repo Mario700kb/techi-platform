@@ -216,6 +216,12 @@ class DeviceHeartbeatService:
         prev_repair_count = device.rustdesk_repair_count if device else 0
         if device:
             update_data = payload.model_dump(exclude_unset=True, exclude={"device_id", "rustdesk_id", "agent_id"})
+            if not verified:
+                # An unverified caller reports status, but must not move the
+                # device's network identity: public_ip gates the RustDesk audit
+                # check, and agent_version/sha complete a pending self_update.
+                for field in ("public_ip", "agent_version", "agent_sha256"):
+                    update_data.pop(field, None)
             self._drop_stale_repair_counter(update_data, now)
             for field in ("rustdesk_install_status", "rustdesk_status", "rustdesk_version", "rustdesk_install_path"):
                 update_data.pop(field, None)
@@ -329,6 +335,7 @@ class DeviceHeartbeatService:
             "current_payload": device_payload(device),
             "prev_user": prev_user,
             "prev_repair_count": prev_repair_count,
+            "verified": verified,
         }
 
     def _create_from_stable_identity(
@@ -399,7 +406,10 @@ class DeviceHeartbeatService:
         self._process_telemetry(payload, device)
         self._process_inventory(payload, device)
         self._process_capabilities(payload, device)
-        RemoteSessionService(self.db).apply_report(device, payload.remote_session_active)
+        # Only a verified agent may drive the device's Remote Support session
+        # flag; an unverified caller (a clone, a probe) must not start or end it.
+        if ctx.get("verified"):
+            RemoteSessionService(self.db).apply_report(device, payload.remote_session_active)
         self._evaluate_post_heartbeat_alerts(device)
 
     def _process_capabilities(self, payload: AgentHeartbeatPayload, device) -> None:

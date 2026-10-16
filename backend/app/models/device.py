@@ -123,6 +123,12 @@ class Device(Base):
     rustdesk_session_active = Column(Boolean, default=False, server_default=text("false"), nullable=False)
     rustdesk_session_started_at = Column(DateTime, nullable=True)
     rustdesk_session_operator = Column(String(128), nullable=True)
+    # Which writer owns the current/last session: "rustdesk" (its own
+    # /api/audit/conn reports, second-accurate) or "heartbeat" (the agent's
+    # coarse per-beat flag). RustDesk reports win; a heartbeat yields while
+    # RustDesk is reporting. rustdesk_last_report_at marks the last such report.
+    rustdesk_session_source = Column(String(16), nullable=True)
+    rustdesk_last_report_at = Column(DateTime, nullable=True)
 
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
     group_id = Column(Integer, ForeignKey("device_groups.id"), nullable=True)

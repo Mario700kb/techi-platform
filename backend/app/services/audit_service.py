@@ -33,6 +33,8 @@ class AuditAction:
     MFA_ENABLED = "mfa_enabled"
     MFA_DISABLED = "mfa_disabled"
     MFA_RESET = "mfa_reset"
+    REENROLLMENT_APPROVED = "reenrollment_approved"
+    REENROLLMENT_REJECTED = "reenrollment_rejected"
     MFA_RECOVERY_CODES_REGENERATED = "mfa_recovery_codes_regenerated"
     OPERATOR_CREATED = "operator_created"
     OPERATOR_UPDATED = "operator_updated"

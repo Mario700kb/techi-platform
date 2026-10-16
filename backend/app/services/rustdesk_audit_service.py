@@ -70,6 +70,10 @@ class RustDeskAuditService:
         now = utcnow_naive()
 
         if report.action == "new":
+            # A new connection with this conn_id means any still-open one with
+            # the same id was lost (RustDesk restarted, or its close never
+            # arrived); close it so it cannot hold a session open for 12 h.
+            self.connections.close_open_for_conn(device.id, report.conn_id, now=now, reason="lost")
             self.connections.add(
                 RemoteSupportConnection(
                     device_id=device.id,
@@ -80,6 +84,7 @@ class RustDeskAuditService:
                 )
             )
             self.db.commit()
+            self._sync_session(device, now)
             return True
 
         if report.peer is not None:
@@ -96,7 +101,7 @@ class RustDeskAuditService:
             connection.peer_name = _text(report.peer[1] if len(report.peer) > 1 else None, 128)
             connection.conn_type = report.type
             self.db.commit()
-            RemoteSessionService(self.db).apply_report(device, True, details=self._session_details(connection))
+            self._sync_session(device, now, details=self._session_details(connection))
             return True
 
         if report.action == "close":
@@ -104,14 +109,19 @@ class RustDeskAuditService:
             if connection is None:
                 return False
             connection.closed_at = now
+            connection.close_reason = "closed"
             self.db.commit()
-            if connection.authorized_at is not None and not self.connections.count_open_authorized(
-                device.id, since=now - OPEN_CONNECTION_LIMIT
-            ):
-                RemoteSessionService(self.db).apply_report(device, False, details=self._session_details(connection))
+            self._sync_session(device, now, details=self._session_details(connection))
             return True
 
         return False
+
+    def _sync_session(self, device, now, details: Optional[dict] = None) -> None:
+        """Drive the device's session flag from the open authorized connections:
+        active while at least one is open, ended once the last closes. Derived
+        from the rows, so a lost close or an out-of-order report self-corrects."""
+        active = self.connections.count_open_authorized(device.id, since=now - OPEN_CONNECTION_LIMIT) > 0
+        RemoteSessionService(self.db).apply_report(device, active, now=now, details=details, source="rustdesk")
 
     def record_alarm(self, report: RustDeskAlarmReport, source_ip: Optional[str]) -> bool:
         device = self._reporting_device(report.id, source_ip)

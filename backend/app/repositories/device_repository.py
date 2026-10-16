@@ -518,10 +518,29 @@ class DeviceRepository:
         obj = self.get(device_id)
         if not obj:
             return None
+        # Children whose FK does not cascade: delete the history rows, detach
+        # the records that outlive the device (a vault credential, a connect
+        # preference). Cascading FKs (inventory, notes, activity, remote
+        # actions, team access, Remote Support connections, re-enrollment
+        # requests) go with the device itself.
+        from app.models.terminal_session import TerminalSession
+        from app.models.connect_preference import OperatorConnectPreference
+        from app.models.vault_credential import VaultCredential, VaultCredentialAssignment
+
         self.db.query(DeviceAlert).filter(DeviceAlert.device_id == device_id).delete(synchronize_session=False)
         self.db.query(DeviceTelemetry).filter(DeviceTelemetry.device_id == device_id).delete(synchronize_session=False)
         self.db.query(DeviceStatusHistory).filter(DeviceStatusHistory.device_id == device_id).delete(synchronize_session=False)
         self.db.query(DeviceHeartbeat).filter(DeviceHeartbeat.device_id == device_id).delete(synchronize_session=False)
+        self.db.query(TerminalSession).filter(TerminalSession.device_id == device_id).delete(synchronize_session=False)
+        self.db.query(OperatorConnectPreference).filter(OperatorConnectPreference.device_id == device_id).update(
+            {OperatorConnectPreference.device_id: None}, synchronize_session=False
+        )
+        self.db.query(VaultCredentialAssignment).filter(VaultCredentialAssignment.device_id == device_id).update(
+            {VaultCredentialAssignment.device_id: None}, synchronize_session=False
+        )
+        self.db.query(VaultCredential).filter(VaultCredential.device_id == device_id).update(
+            {VaultCredential.device_id: None}, synchronize_session=False
+        )
         self.db.delete(obj)
         self.db.commit()
         return obj

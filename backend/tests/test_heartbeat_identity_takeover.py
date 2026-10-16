@@ -153,3 +153,19 @@ def test_endpoint_gives_password_to_the_real_agent(client, victim):
     )
     assert response.status_code == 200
     assert response.json()["remote_support_password"]
+
+
+def test_a_forged_heartbeat_does_not_change_public_ip(db, victim):
+    victim.public_ip = "203.0.113.50"
+    db.commit()
+    device_id = victim.id
+    _beat(db, device_id=device_id, agent_id=FORGED_AGENT_ID, public_ip="198.51.100.99")
+    db.expire_all()
+    assert db.query(Device).get(device_id).public_ip == "203.0.113.50"
+
+
+def test_the_real_agent_updates_public_ip(db, victim):
+    device_id = victim.id
+    _beat(db, device_id=device_id, agent_id=REAL_AGENT_ID, public_ip="198.51.100.99")
+    db.expire_all()
+    assert db.query(Device).get(device_id).public_ip == "198.51.100.99"

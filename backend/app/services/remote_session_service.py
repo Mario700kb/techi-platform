@@ -27,6 +27,11 @@ logger = logging.getLogger(__name__)
 # A Connect click this long before a session starts is taken as its origin.
 ATTRIBUTION_WINDOW = timedelta(minutes=15)
 
+# While RustDesk's own second-accurate reports have arrived this recently, the
+# agent's coarse per-beat flag does not touch the session: RustDesk is the
+# authority and the two writers would otherwise fight.
+RUSTDESK_AUTHORITY_WINDOW = timedelta(minutes=15)
+
 
 class RemoteSessionService:
     def __init__(self, db: Session):
@@ -39,26 +44,43 @@ class RemoteSessionService:
         *,
         now: Optional[datetime] = None,
         details: Optional[dict] = None,
+        source: str = "heartbeat",
     ) -> None:
-        if active is None or bool(active) == bool(device.rustdesk_session_active):
+        if active is None:
             return
         now = ensure_utc(now or utcnow())
+        if source == "heartbeat" and self._rustdesk_is_authoritative(device, now):
+            # RustDesk's own reports are driving this device's sessions; the
+            # agent's coarse flag must not start or end anything meanwhile.
+            return
+        if source == "rustdesk":
+            device.rustdesk_last_report_at = now.replace(tzinfo=None)
+            self.db.add(device)
+        if bool(active) == bool(device.rustdesk_session_active):
+            if source == "rustdesk":
+                self.db.commit()
+            return
         if active:
-            self._start(device, now, details or {})
+            self._start(device, now, details or {}, source=source)
         else:
-            self._end(device, now, reason="session_closed", extra=details or {})
+            self._end(device, now, reason="session_closed", extra=details or {}, source=source)
+
+    def _rustdesk_is_authoritative(self, device: Device, now: datetime) -> bool:
+        last = ensure_utc(device.rustdesk_last_report_at)
+        return last is not None and (now - last) < RUSTDESK_AUTHORITY_WINDOW
 
     def end_if_active(self, device: Device, *, reason: str, now: Optional[datetime] = None) -> None:
         if device.rustdesk_session_active:
             self._end(device, ensure_utc(now or utcnow()), reason=reason)
 
-    def _start(self, device: Device, now: datetime, extra: Optional[dict] = None) -> None:
+    def _start(self, device: Device, now: datetime, extra: Optional[dict] = None, *, source: str = "heartbeat") -> None:
         connect = self._last_connect_request(device, now)
         operator_id = connect.operator_id if connect else None
         operator = connect.operator_username if connect else None
         device.rustdesk_session_active = True
         device.rustdesk_session_started_at = now.replace(tzinfo=None)
         device.rustdesk_session_operator = operator
+        device.rustdesk_session_source = source
         self.db.add(device)
         self.db.commit()
         details = {
@@ -81,7 +103,7 @@ class RemoteSessionService:
             fail_silently=True,
         )
 
-    def _end(self, device: Device, now: datetime, *, reason: str, extra: Optional[dict] = None) -> None:
+    def _end(self, device: Device, now: datetime, *, reason: str, extra: Optional[dict] = None, source: str = "heartbeat") -> None:
         started = ensure_utc(device.rustdesk_session_started_at)
         minutes = max(0, round((now - started).total_seconds() / 60)) if started else None
         operator = device.rustdesk_session_operator
@@ -89,6 +111,7 @@ class RemoteSessionService:
         device.rustdesk_session_active = False
         device.rustdesk_session_started_at = None
         device.rustdesk_session_operator = None
+        device.rustdesk_session_source = None
         self.db.add(device)
         self.db.commit()
         self._audit(

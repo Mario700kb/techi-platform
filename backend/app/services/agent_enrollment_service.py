@@ -6,7 +6,9 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.models.device import Device
+from app.models.reenrollment_request import ReenrollmentRequest
 from app.repositories.device_repository import DeviceRepository
+from app.repositories.reenrollment_request_repository import ReenrollmentRequestRepository
 from app.schemas.agent import AgentEnrollmentRequest, AgentEnrollmentResponse
 from app.schemas.device import DeviceCreate, DeviceStatus, DeviceUpdate
 from app.services.device_assignment_service import AssignmentSignal, DeviceAssignmentService
@@ -32,6 +34,7 @@ class AgentEnrollmentService:
         self.assignment_service = DeviceAssignmentService(db)
         self.activity_service = DeviceActivityEventService(db)
         self.enrollment_audit = EnrollmentAuditService(db)
+        self.reenrollment_requests = ReenrollmentRequestRepository(db)
 
     def enroll(
         self,
@@ -87,6 +90,14 @@ class AgentEnrollmentService:
         identity_rustdesk_id = normalized_rustdesk_id if valid_rustdesk_id else None
 
         existing = self._find_existing_device(payload, rustdesk_id=identity_rustdesk_id)
+
+        takeover = self._blocked_takeover(existing, incoming_agent_id, identity_rustdesk_id)
+        if takeover is not None:
+            return self._hold_for_review(
+                payload, existing, incoming_agent_id, takeover,
+                heartbeat_url=heartbeat_url, websocket_url=websocket_url,
+                token=token, token_client_id=token.client_id,
+            )
 
         # Token status is enforced only for first-time enrollments. An existing
         # device may re-enroll on an exhausted (USED) token because it does not
@@ -188,13 +199,22 @@ class AgentEnrollmentService:
         )
         identity_rustdesk_id = normalized_rustdesk_id if valid_rustdesk_id else None
 
+        existing = self._find_existing_device(payload, rustdesk_id=identity_rustdesk_id)
+        takeover = self._blocked_takeover(existing, incoming_agent_id, identity_rustdesk_id)
+        if takeover is not None:
+            return self._hold_for_review(
+                payload, existing, incoming_agent_id, takeover,
+                heartbeat_url=heartbeat_url, websocket_url=websocket_url,
+                token=None, token_client_id=None,
+            )
+
         device = self._upsert_device(
             payload,
             agent_id=agent_id,
             rustdesk_id=identity_rustdesk_id,
             client_id=None,
             group_id=None,
-            existing=self._find_existing_device(payload, rustdesk_id=identity_rustdesk_id),
+            existing=existing,
         )
         if not getattr(device, "_reenrollment_matched", False):
             device = self.assignment_service.apply_trusted_domain_assignment(
@@ -249,6 +269,139 @@ class AgentEnrollmentService:
             hostname=self._normalize(payload.hostname),
             local_ip=self._normalize(payload.local_ip),
             public_ip=self._normalize(payload.public_ip),
+        )
+
+    def _blocked_takeover(
+        self,
+        existing: Optional[Device],
+        incoming_agent_id: Optional[str],
+        incoming_rustdesk_id: Optional[str] = None,
+    ) -> Optional[str]:
+        """Why this enrollment must not take `existing` over, or None when it may.
+
+        A match is a takeover only when the device already carries a different
+        agent_id: a reinstalled machine sends a fresh one, a clone sends its
+        own, and either way the device must stay with the agent it has until an
+        admin decides. A match on the device's own agent_id, or on a device
+        that never had one, is the real agent and proceeds.
+        """
+        if existing is None:
+            return None
+        stored = (existing.agent_id or "").strip()
+        incoming = (incoming_agent_id or "").strip()
+        if not stored or stored == incoming:
+            return None
+        # The caller presents no agent_id: an agent that lost its config
+        # re-enrolling. When its RustDesk id still matches the device, it is the
+        # same machine — re-attach. Only a different, non-empty agent_id (a real
+        # second machine, a clone) is a takeover to hold.
+        if not incoming:
+            if incoming_rustdesk_id and existing.rustdesk_id == incoming_rustdesk_id:
+                return None
+            return "fingerprint"
+        if incoming_rustdesk_id and existing.rustdesk_id == incoming_rustdesk_id:
+            return "rustdesk_id"
+        return "fingerprint"
+
+    def _hold_for_review(
+        self,
+        payload: AgentEnrollmentRequest,
+        existing: Device,
+        incoming_agent_id: Optional[str],
+        matched_by: str,
+        *,
+        heartbeat_url: str,
+        websocket_url: str,
+        token,
+        token_client_id: Optional[int],
+    ) -> AgentEnrollmentResponse:
+        """A matched device already belongs to another agent. Record the
+        request for an admin instead of handing the device over, and enroll the
+        caller as its own fresh device so it is visible and manageable but holds
+        no other machine's identity."""
+        now = utcnow()
+        agent_id = incoming_agent_id or self._new_agent_id()
+        valid_rustdesk_id, normalized_rustdesk_id, _ = RustDeskIdentityService.validate_rustdesk_id(
+            payload.rustdesk_id or ""
+        )
+        # A fresh device: never the matched one, and without the contested
+        # rustdesk_id (the real device keeps it; the heartbeat resolves this one
+        # by its own agent_id).
+        created = self.device_repo.create(
+            DeviceCreate(
+                agent_id=agent_id,
+                hostname=self._normalize(payload.hostname),
+                current_user=self._normalize(payload.current_user),
+                domain=self._normalize(payload.domain),
+                public_ip=self._normalize(payload.public_ip),
+                local_ip=self._normalize(payload.local_ip),
+                os_name=self._normalize(payload.os_name),
+                os_version=self._normalize(payload.os_version),
+                os_caption=self._normalize(payload.os_caption),
+                os_build=self._normalize(payload.os_build),
+                windows_product_type=payload.windows_product_type,
+                platform=self._normalize(payload.platform),
+                architecture=self._normalize(payload.architecture),
+                cpu=None,
+                ram=None,
+                storage=None,
+                client_id=token_client_id,
+                group_id=token.group_id if token else None,
+                auto_assigned=False,
+                assignment_source="enrollment_token" if token_client_id else "system_auto",
+                status=DeviceStatus.OFFLINE,
+                rustdesk_id=None,
+                rustdesk_sync_state="pending",
+                rustdesk_sync_message="Awaiting first heartbeat",
+                last_seen=now,
+                last_enrollment_at=now,
+                duplicate_candidate=True,
+                duplicate_of_device_id=existing.id,
+            )
+        )
+        existing_request = self.reenrollment_requests.for_device_agent(existing.id, agent_id)
+        if existing_request is None:
+            self.reenrollment_requests.add(
+                ReenrollmentRequest(
+                    device_id=existing.id,
+                    agent_id=agent_id,
+                    matched_by=matched_by,
+                    status="pending",
+                    hostname=self._normalize(payload.hostname),
+                    current_user=self._normalize(payload.current_user),
+                    domain=self._normalize(payload.domain),
+                    local_ip=self._normalize(payload.local_ip),
+                    public_ip=self._normalize(payload.public_ip),
+                    rustdesk_id=normalized_rustdesk_id if valid_rustdesk_id else None,
+                    os_caption=self._normalize(payload.os_caption),
+                    platform=self._normalize(payload.platform),
+                    token_name=getattr(token, "name", None),
+                    new_device_id=created.id,
+                    last_seen_at=now.replace(tzinfo=None),
+                )
+            )
+            self.db.commit()
+        self.activity_service.record(
+            device_id=existing.id,
+            event_type="reenrollment_held",
+            summary="Re-enrollment held for review",
+            detail=f"Another agent (host {self._normalize(payload.hostname) or 'unknown'}) matched this device "
+            f"by {matched_by} but did not prove its identity; enrolled as device #{created.id}.",
+            actor="agent",
+            fail_silently=True,
+        )
+        self._record_audit(
+            payload=payload, token=token, device=existing,
+            result="held_for_review", reason=f"takeover_blocked_{matched_by}",
+        )
+        return AgentEnrollmentResponse(
+            agent_id=agent_id,
+            device_id=created.id,
+            heartbeat_url=heartbeat_url,
+            websocket_url=websocket_url,
+            enrollment_status="enrolled",
+            assigned_client_id=token_client_id,
+            assigned_group_id=token.group_id if token else None,
         )
 
     def _upsert_device(
