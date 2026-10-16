@@ -5,6 +5,38 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-16] OPERATOR-TEAMS-2026-10-16 — choose teams when adding or editing an operator (`1d44f48`)
+
+Backend and frontend, no migration, deployed 2026-10-16 10:07–10:11 (Tirana).
+Pre-deploy dump `/opt/backups/techi/pre-operator-teams-20261016-100531.sql.gz`
+(137 MB, `gzip -t` OK, ends with "cluster dump complete"). Rollback images
+`techi-platform-{backend,frontend}:pre-operator-teams-a2187dc`. Guard passed
+before and after, `nginx -t` OK, backend ready 8 s after start (0 restarts),
+366 devices checked in within 3 min, frontend healthy (0 restarts), smoke
+passed, public 200, the new code in the served Operators bundle and in the
+running backend. Root filesystem 89% (2.7 GB free) after the two builds.
+
+The owner asked to pick an operator's teams when creating them, then also
+when editing; until now membership was set only from the Teams page.
+
+- `POST /operators` and `PUT /operators/{id}` take `team_ids`. On create the
+  operator joins those teams; on update the list replaces their
+  memberships, and an update without it leaves them alone. An unknown team
+  is refused before anything changes. The audit entry carries `team_ids`.
+  Same gate as before (owner/admin), so no one gains a new power.
+- Add operator and Edit operator share one Teams field: a toggle chip per
+  team in its colour. Edit sends `team_ids` only when they were changed.
+  The hint under the field (Add only) says operators reach only their
+  teams' devices and owners/admins every device.
+- Bug fixed: when the operators list came from the 2-minute cache, teams
+  were not loaded, so the Teams column read "No team" for everyone; with
+  teams in Edit, saving then could have dropped memberships. Teams now
+  load on every visit.
+
+Pytest 1403 (5 new); Vitest 242; Playwright 145 (new: operator teams on
+create and edit in both themes, untouched teams not sent, teams after a
+cached revisit — this one fails on the old code).
+
 ## [2026-10-15] STANDARD-GROUPS-2026-10-15 — Network, Storage, Hypervisors and Other as real, selectable groups (`779c883`)
 
 Backend and frontend, no migration, deployed 2026-10-15 23:35–23:39 (Tirana).
