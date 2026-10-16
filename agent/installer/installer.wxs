@@ -474,12 +474,13 @@
     <!-- EpCustomActDll nga v1.0.4 — shkruan TOML konfigurim për TECHI Remote Support -->
     <Binary Id="EpCustomActDll" SourceFile="EpCustomActDll.dll"/>
 
-    <!-- WriteTechiConfigs: shkruan TOML config (server/relay/key) për RS.
-         Fusha e 4-t (api-server) mbetet bosh me qellim: me [API_URL] aty çdo klient RS
-         postonte telemetrine e vet te platforma çdo 10-15s (RISK-SUPPLY-002). -->
+    <!-- WriteTechiConfigs: shkruan TOML config (server/relay/key/api-server) për RS.
+         api-server = [API_URL]: RS raporton çdo lidhje te /api/audit/conn (vendim
+         2026-10-16). Heartbeat-i i vet (/api/heartbeat, /api/sysinfo, çdo ~15 s)
+         merr 204 në NPM pa arritur te backend-i (RISK-SUPPLY-002). -->
     <CustomAction Id="WriteTechiConfigs.SetParam"
                   Property="WriteTechiConfigs"
-                  Value="[REMOTE_SERVER]|[REMOTE_RELAY]|[REMOTE_KEY]||[AppDataFolder]"/>
+                  Value="[REMOTE_SERVER]|[REMOTE_RELAY]|[REMOTE_KEY]|[API_URL]|[AppDataFolder]"/>
     <CustomAction Id="WriteTechiConfigs"
                   BinaryRef="EpCustomActDll"
                   DllEntry="WriteTechiConfigs"
@@ -490,7 +491,7 @@
     <!-- ApplyTechiRemoteSupportConfigFinal: aplikon konfigurimet finale të RS -->
     <CustomAction Id="ApplyTechiRemoteSupportConfigFinal.SetParam"
                   Property="ApplyTechiRemoteSupportConfigFinal"
-                  Value="[REMOTE_SERVER]|[REMOTE_RELAY]|[REMOTE_KEY]||[AppDataFolder]"/>
+                  Value="[REMOTE_SERVER]|[REMOTE_RELAY]|[REMOTE_KEY]|[API_URL]|[AppDataFolder]"/>
     <CustomAction Id="ApplyTechiRemoteSupportConfigFinal"
                   BinaryRef="EpCustomActDll"
                   DllEntry="ApplyTechiRemoteSupportConfigFinal"
