@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/csv"
 	"fmt"
 	"log"
 	"os"
@@ -49,14 +48,12 @@ type PatchStatus struct {
 	PatchState     string `json:"patch_state"`
 }
 
-// collectProcessesAndServices gathers processes (all platforms) and services (Windows only).
-func collectProcessesAndServices() ([]ProcessInfo, []ServiceInfo) {
-	procs := collectProcessList()
-	var svcs []ServiceInfo
-	if runtime.GOOS == "windows" {
-		svcs = collectWindowsServices()
+// collectServices lists the Windows services; other platforms report none.
+func collectServices() []ServiceInfo {
+	if runtime.GOOS != "windows" {
+		return nil
 	}
-	return procs, svcs
+	return collectWindowsServices()
 }
 
 func collectSoftwareInventory() []SoftwareInfo {
@@ -128,89 +125,6 @@ func collectProcessList() []ProcessInfo {
 		result[i] = entries[i].info
 	}
 	return result
-}
-
-func collectWindowsServices() []ServiceInfo {
-	out, err := runWithTimeout(15*time.Second, "wmic", "service", "get",
-		"Name,DisplayName,State,StartMode", "/FORMAT:CSV")
-	if err != nil {
-		log.Printf("services: wmic failed: %v", err)
-		return nil
-	}
-	return parseWMICServiceCSV(string(out))
-}
-
-func parseWMICServiceCSV(raw string) []ServiceInfo {
-	raw = strings.TrimPrefix(raw, "\xef\xbb\xbf") // strip BOM
-	r := csv.NewReader(strings.NewReader(raw))
-	r.TrimLeadingSpace = true
-	records, err := r.ReadAll()
-	if err != nil {
-		log.Printf("services: csv parse error: %v", err)
-		return nil
-	}
-
-	// WMIC CSV: blank line, then header, then blank, then data rows
-	var header []string
-	var rows [][]string
-	for _, rec := range records {
-		if strings.TrimSpace(strings.Join(rec, "")) == "" {
-			continue
-		}
-		if header == nil {
-			header = rec
-		} else {
-			rows = append(rows, rec)
-		}
-	}
-	if header == nil {
-		return nil
-	}
-
-	idx := func(name string) int {
-		for i, h := range header {
-			if strings.TrimSpace(h) == name {
-				return i
-			}
-		}
-		return -1
-	}
-	iName, iDisplay, iState, iStart := idx("Name"), idx("DisplayName"), idx("State"), idx("StartMode")
-	if iName < 0 {
-		return nil
-	}
-
-	var svcs []ServiceInfo
-	for _, rec := range rows {
-		if iName >= len(rec) {
-			continue
-		}
-		name := strings.TrimSpace(rec[iName])
-		if name == "" {
-			continue
-		}
-		svc := ServiceInfo{Name: name}
-		if iDisplay >= 0 && iDisplay < len(rec) {
-			svc.DisplayName = strings.TrimSpace(rec[iDisplay])
-		}
-		if iState >= 0 && iState < len(rec) {
-			svc.Status = strings.ToLower(strings.TrimSpace(rec[iState]))
-		}
-		if iStart >= 0 && iStart < len(rec) {
-			switch strings.ToLower(strings.TrimSpace(rec[iStart])) {
-			case "auto":
-				svc.StartupType = "automatic"
-			case "manual":
-				svc.StartupType = "manual"
-			case "disabled":
-				svc.StartupType = "disabled"
-			default:
-				svc.StartupType = strings.ToLower(strings.TrimSpace(rec[iStart]))
-			}
-		}
-		svcs = append(svcs, svc)
-	}
-	return svcs
 }
 
 func collectWindowsSoftware() []SoftwareInfo {
@@ -407,16 +321,14 @@ func windowsRebootRequired() bool {
 		`HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired`,
 		`HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending`,
 	}
+	// PendingFileRenameOperations is not consulted: installers and updaters
+	// leave entries there that never need a restart, and it marked 87% of the
+	// fleet as waiting for one (2026-10-16).
 	for _, key := range keys {
 		out, err := runWithTimeout(5*time.Second, "reg", "query", key)
 		if err == nil && strings.TrimSpace(string(out)) != "" {
 			return true
 		}
-	}
-	out, err := runWithTimeout(5*time.Second, "reg", "query",
-		`HKLM\SYSTEM\CurrentControlSet\Control\Session Manager`, "/v", "PendingFileRenameOperations")
-	if err == nil && strings.Contains(string(out), "PendingFileRenameOperations") {
-		return true
 	}
 	return false
 }

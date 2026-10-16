@@ -30,7 +30,6 @@ type HeartbeatPayload struct {
 	UserSource            string         `json:"user_source,omitempty"`
 	UserSessionState      string         `json:"user_session_state,omitempty"`
 	Domain                string         `json:"domain"`
-	PublicIP              string         `json:"public_ip"`
 	LocalIP               string         `json:"local_ip"`
 	OSName                string         `json:"os_name"`
 	OSVersion             string         `json:"os_version"`
@@ -86,7 +85,6 @@ func buildHeartbeatPayload(cfg *Config, inv *Inventory, rustdesk RustDeskInfo, t
 		UserSource:            inv.UserSource,
 		UserSessionState:      inv.UserSessionState,
 		Domain:                inv.Domain,
-		PublicIP:              inv.PublicIP,
 		LocalIP:               inv.LocalIP,
 		OSName:                inv.OSName,
 		OSVersion:             inv.OSVersion,

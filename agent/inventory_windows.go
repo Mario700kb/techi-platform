@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"os/exec"
 	"strings"
+	"sync"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows/registry"
@@ -34,7 +36,28 @@ type windowsCIMOperatingSystem struct {
 	ProductType int    `json:"ProductType"`
 }
 
+// The edition and build change only with an upgrade, which restarts the
+// machine and the agent; reading them launched PowerShell on every heartbeat.
+const osInfoRefreshEvery = 24 * time.Hour
+
+var osInfoCache struct {
+	sync.Mutex
+	info OSInfo
+	at   time.Time
+}
+
 func collectOSInfo() OSInfo {
+	osInfoCache.Lock()
+	defer osInfoCache.Unlock()
+	if !osInfoCache.at.IsZero() && time.Since(osInfoCache.at) < osInfoRefreshEvery {
+		return osInfoCache.info
+	}
+	osInfoCache.info = readWindowsOSInfo()
+	osInfoCache.at = time.Now()
+	return osInfoCache.info
+}
+
+func readWindowsOSInfo() OSInfo {
 	info := collectWindowsOSInfoFromCIM()
 	if info.Caption == "" || info.Build == "" || info.WindowsProductType == 0 {
 		fallback := collectWindowsOSInfoFromRegistry()

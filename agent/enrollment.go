@@ -25,7 +25,6 @@ type EnrollmentRequest struct {
 	OSBuild            string `json:"os_build,omitempty"`
 	WindowsProductType int    `json:"windows_product_type,omitempty"`
 	LocalIP            string `json:"local_ip"`
-	PublicIP           string `json:"public_ip,omitempty"`
 	RustDeskID         string `json:"rustdesk_id,omitempty"`
 	AgentVersion       string `json:"agent_version,omitempty"`
 	AgentSHA256        string `json:"agent_sha256,omitempty"`
@@ -94,7 +93,6 @@ func enrollAgent(cfg *Config, inv *Inventory, rustdesk RustDeskInfo) (*Enrollmen
 		OSBuild:            inv.OSBuild,
 		WindowsProductType: inv.WindowsProductType,
 		LocalIP:            inv.LocalIP,
-		PublicIP:           inv.PublicIP,
 		RustDeskID:         configuredRustDeskID(&Config{RustDeskID: rustdesk.ID}),
 		AgentVersion:       AgentVersion,
 		AgentSHA256:        currentAgentSHA256(),

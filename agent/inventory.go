@@ -27,7 +27,6 @@ type Inventory struct {
 	UserSessionState   string `json:"user_session_state"`
 	Domain             string `json:"domain"`
 	LocalIP            string `json:"local_ip"`
-	PublicIP           string `json:"public_ip"`
 	OSName             string `json:"os_name"`
 	OSVersion          string `json:"os_version"`
 	OSCaption          string `json:"os_caption,omitempty"`
@@ -57,7 +56,6 @@ func collectInventory(cfg *Config) (*Inventory, error) {
 	userSession := buildUserSession()
 	domain := buildDomain()
 	localIP := getLocalIP()
-	publicIP := getPublicIP(cfg.PublicIPService, cfg.TimeoutSeconds)
 	osName, osVersion, osCaption, osBuild, windowsProductType := buildOSInfo()
 	cpuInfo := buildCPUInfo()
 	ramInfo := buildRAMInfo()
@@ -70,7 +68,6 @@ func collectInventory(cfg *Config) (*Inventory, error) {
 		UserSessionState:   userSession.UserSessionState,
 		Domain:             domain,
 		LocalIP:            localIP,
-		PublicIP:           publicIP,
 		OSName:             osName,
 		OSVersion:          osVersion,
 		OSCaption:          osCaption,

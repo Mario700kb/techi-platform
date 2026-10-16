@@ -14,36 +14,35 @@ import (
 )
 
 // remoteSupportReloadBootWindow bounds when the agent may restart Remote
-// Support to load a cleaned configuration: right after boot nobody is
-// connected yet. Outside it the cleaned file takes effect at the next
-// restart, so a technician's session is never cut to apply it.
+// Support to load an updated configuration: right after boot nobody is
+// connected yet. Outside it the change takes effect at the next restart, so a
+// technician's session is never cut to apply it.
 const remoteSupportReloadBootWindow = 10 * time.Minute
 
 var lastRemoteSupportReload time.Time
 
-// clearPlatformAPIServer removes an api-server that points Remote Support at
-// the platform (RISK-SUPPLY-002) from every Config2 file. The MSI no longer
-// writes it, but self_update replaces only techi-agent.exe, so devices that
-// already carry it are cleaned here. An api-server the operator configured
-// (rustdesk_api_server) is managed, not removed.
-func clearPlatformAPIServer(cfg *Config) {
+// ensurePlatformAPIServer points Remote Support at the platform as its
+// api-server wherever none is set, so RustDesk reports every connection
+// (opened, password accepted, closed) and refused logins to the platform.
+// The MSI writes no api-server since 2.1.24; installs before it wrote the
+// platform URL, which is kept. A value someone chose (rustdesk_api_server, or
+// any other non-empty value) is left as it is.
+func ensurePlatformAPIServer(cfg *Config) {
 	if cfg.RustDeskAPIServer != "" {
 		return
 	}
-	hosts := platformHosts(cfg)
-	if len(hosts) == 0 {
+	apiServer := platformAPIServer(cfg)
+	if apiServer == "" {
 		return
 	}
-	cleared := 0
+	updated := 0
 	for _, dir := range rustDeskConfigDirs() {
 		path := filepath.Join(dir, "TECHI Remote Support2.toml")
 		data, err := os.ReadFile(path)
 		if err != nil {
 			continue
 		}
-		patched, changed := removeTOMLOptionIf(string(data), "api-server", func(v string) bool {
-			return apiServerPointsAtPlatform(v, hosts)
-		})
+		patched, changed := setTOMLOptionIfEmpty(string(data), "api-server", apiServer)
 		if !changed {
 			continue
 		}
@@ -59,13 +58,13 @@ func clearPlatformAPIServer(cfg *Config) {
 			setTomlReadOnly(path)
 		}
 		if err != nil {
-			log.Printf("[rustdesk_manage] api-server removal failed %s: %v", path, err)
+			log.Printf("[rustdesk_manage] api-server update failed %s: %v", path, err)
 			continue
 		}
-		log.Printf("[rustdesk_manage] api-server pointing at the platform removed: %s", path)
-		cleared++
+		log.Printf("[rustdesk_manage] api-server set to the platform: %s", path)
+		updated++
 	}
-	if cleared > 0 {
+	if updated > 0 {
 		reloadRemoteSupportIfIdle()
 	}
 }
@@ -73,18 +72,18 @@ func clearPlatformAPIServer(cfg *Config) {
 func reloadRemoteSupportIfIdle() {
 	uptime, err := host.Uptime()
 	if err != nil || time.Duration(uptime)*time.Second > remoteSupportReloadBootWindow {
-		log.Printf("[rustdesk_manage] Remote Support picks up the cleaned configuration at its next restart")
+		log.Printf("[rustdesk_manage] Remote Support picks up the updated configuration at its next restart")
 		return
 	}
 	if !lastRemoteSupportReload.IsZero() {
 		return
 	}
 	if remoteSupportSessionActive(brandedRemoteSupportCmdlines()) {
-		log.Printf("[rustdesk_manage] remote session active; Remote Support picks up the cleaned configuration at its next restart")
+		log.Printf("[rustdesk_manage] remote session active; Remote Support picks up the updated configuration at its next restart")
 		return
 	}
 	lastRemoteSupportReload = time.Now()
-	log.Printf("[rustdesk_manage] restarting Remote Support to load the cleaned configuration (uptime %ds, no session)", uptime)
+	log.Printf("[rustdesk_manage] restarting Remote Support to load the updated configuration (uptime %ds, no session)", uptime)
 	stopRustDeskServiceFn()
 	if err := startRustDeskServiceFn(); err != nil {
 		log.Printf("[rustdesk_manage] Remote Support restart failed: %v", err)

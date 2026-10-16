@@ -20,7 +20,6 @@ type Config struct {
 	AgentID          string `json:"agent_id,omitempty"`
 	DeviceID         int    `json:"device_id,omitempty"`
 	RustDeskID       string `json:"rustdesk_id"`
-	PublicIPService  string `json:"public_ip_service"`
 	TimeoutSeconds   int    `json:"timeout_seconds"`
 	HeartbeatSeconds int    `json:"heartbeat_interval_seconds"`
 	Retries          int    `json:"retries"`
@@ -59,7 +58,6 @@ func defaultConfig() Config {
 		BackendURL:       defaultLocalAPIURL + heartbeatPath,
 		APIURL:           defaultLocalAPIURL,
 		RustDeskID:       "",
-		PublicIPService:  "https://api.ipify.org?format=text",
 		TimeoutSeconds:   10,
 		HeartbeatSeconds: 60,
 		Retries:          3,
@@ -111,9 +109,6 @@ func applyConfigDefaults(cfg *Config) {
 	}
 	if cfg.RustDeskID == "" {
 		cfg.RustDeskID = ""
-	}
-	if cfg.PublicIPService == "" {
-		cfg.PublicIPService = "https://api.ipify.org?format=text"
 	}
 	if cfg.TimeoutSeconds <= 0 {
 		cfg.TimeoutSeconds = 10

@@ -1,0 +1,204 @@
+package main
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"log"
+	"sync"
+	"time"
+)
+
+// The heavy inventory — the Windows Update search, installed software,
+// services and the process list — used to be collected on every heartbeat:
+// three PowerShell launches and a Windows Update search of up to 20 s every
+// five minutes, before the heartbeat could even be sent. It is now collected
+// in the background, each part on its own schedule, and a part is sent only
+// when it has changed (or once a day, so the platform's copy never goes
+// stale). The platform keeps the last copy of a part a heartbeat leaves out.
+const (
+	processRefreshEvery  = 15 * time.Minute
+	softwareRefreshEvery = time.Hour
+	serviceRefreshEvery  = time.Hour
+	patchRefreshEvery    = time.Hour
+	inventoryResendEvery = 24 * time.Hour
+)
+
+type inventorySection[T any] struct {
+	every       time.Duration
+	collect     func() T
+	value       T
+	hash        string
+	collectedAt time.Time
+	sentHash    string
+	sentAt      time.Time
+}
+
+func (s *inventorySection[T]) due(now time.Time) bool {
+	return s.collectedAt.IsZero() || now.Sub(s.collectedAt) >= s.every
+}
+
+func (s *inventorySection[T]) store(value T, now time.Time) {
+	s.value = value
+	s.hash = contentHash(value)
+	s.collectedAt = now
+}
+
+// pending is the value to send now: collected, and either changed since it
+// was last sent or not sent for inventoryResendEvery.
+func (s *inventorySection[T]) pending(now time.Time) (T, bool) {
+	var zero T
+	if s.collectedAt.IsZero() {
+		return zero, false
+	}
+	if s.hash != s.sentHash || now.Sub(s.sentAt) >= inventoryResendEvery {
+		return s.value, true
+	}
+	return zero, false
+}
+
+func (s *inventorySection[T]) markSent(hash string, now time.Time) {
+	s.sentHash = hash
+	s.sentAt = now
+}
+
+func contentHash(v any) string {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+type backgroundInventory struct {
+	mu        sync.Mutex
+	running   bool
+	now       func() time.Time
+	processes inventorySection[[]ProcessInfo]
+	services  inventorySection[[]ServiceInfo]
+	software  inventorySection[[]SoftwareInfo]
+	patch     inventorySection[*PatchStatus]
+}
+
+func newBackgroundInventory(
+	now func() time.Time,
+	processes func() []ProcessInfo,
+	services func() []ServiceInfo,
+	software func() []SoftwareInfo,
+	patch func() *PatchStatus,
+) *backgroundInventory {
+	return &backgroundInventory{
+		now:       now,
+		processes: inventorySection[[]ProcessInfo]{every: processRefreshEvery, collect: processes},
+		services:  inventorySection[[]ServiceInfo]{every: serviceRefreshEvery, collect: services},
+		software:  inventorySection[[]SoftwareInfo]{every: softwareRefreshEvery, collect: software},
+		patch:     inventorySection[*PatchStatus]{every: patchRefreshEvery, collect: patch},
+	}
+}
+
+var heavyInventory = newBackgroundInventory(
+	time.Now,
+	collectProcessList,
+	collectServices,
+	collectSoftwareInventory,
+	collectPatchStatus,
+)
+
+// refresh starts one background pass over the parts that are due; it never
+// waits for it, and leaves a pass that is still running alone.
+func (b *backgroundInventory) refresh(cfg *Config) {
+	b.mu.Lock()
+	if b.running {
+		b.mu.Unlock()
+		return
+	}
+	b.running = true
+	b.mu.Unlock()
+	go func() {
+		defer func() {
+			b.mu.Lock()
+			b.running = false
+			b.mu.Unlock()
+		}()
+		b.collectDue(cfg)
+	}()
+}
+
+// collectDue collects every enabled part that is due, one after the other.
+func (b *backgroundInventory) collectDue(cfg *Config) {
+	collectSection(b, &b.processes, cfg.CollectProcesses)
+	collectSection(b, &b.services, cfg.CollectServices)
+	collectSection(b, &b.software, cfg.CollectSoftware)
+	collectSection(b, &b.patch, true)
+}
+
+func collectSection[T any](b *backgroundInventory, s *inventorySection[T], enabled bool) {
+	if !enabled {
+		return
+	}
+	b.mu.Lock()
+	due := s.due(b.now())
+	b.mu.Unlock()
+	if !due {
+		return
+	}
+	value := s.collect()
+	b.mu.Lock()
+	s.store(value, b.now())
+	b.mu.Unlock()
+}
+
+// inventoryForHeartbeat is what one heartbeat carries; sent marks it as
+// delivered and is called only once the platform has accepted the heartbeat,
+// so a failed send is retried with the next one.
+type inventoryForHeartbeat struct {
+	Processes []ProcessInfo
+	Services  []ServiceInfo
+	Software  []SoftwareInfo
+	Patch     *PatchStatus
+	sent      func()
+}
+
+func (b *backgroundInventory) forHeartbeat() inventoryForHeartbeat {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	now := b.now()
+	var out inventoryForHeartbeat
+	var marks []func(time.Time)
+
+	if v, ok := b.processes.pending(now); ok {
+		out.Processes = v
+		hash := b.processes.hash
+		marks = append(marks, func(at time.Time) { b.processes.markSent(hash, at) })
+	}
+	if v, ok := b.services.pending(now); ok {
+		out.Services = v
+		hash := b.services.hash
+		marks = append(marks, func(at time.Time) { b.services.markSent(hash, at) })
+	}
+	if v, ok := b.software.pending(now); ok {
+		out.Software = v
+		hash := b.software.hash
+		marks = append(marks, func(at time.Time) { b.software.markSent(hash, at) })
+	}
+	if v, ok := b.patch.pending(now); ok {
+		out.Patch = v
+		hash := b.patch.hash
+		marks = append(marks, func(at time.Time) { b.patch.markSent(hash, at) })
+	}
+
+	out.sent = func() {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		at := b.now()
+		for _, mark := range marks {
+			mark(at)
+		}
+	}
+	if len(marks) > 0 {
+		log.Printf("inventory: sending %d processes, %d services, %d software entries, patch status %t",
+			len(out.Processes), len(out.Services), len(out.Software), out.Patch != nil)
+	}
+	return out
+}

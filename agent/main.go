@@ -117,40 +117,16 @@ func runSingleHeartbeat(configPath string, enrollmentToken string) error {
 		tel.CPUPercent, tel.RAMPercent, tel.DiskPercent, tel.UptimeSeconds, tel.HeartbeatLatencyMs,
 	)
 
-	var procs []ProcessInfo
-	var svcs []ServiceInfo
-	if cfg.CollectProcesses || cfg.CollectServices {
-		procs, svcs = collectProcessesAndServices()
-		if !cfg.CollectProcesses {
-			procs = nil
-		}
-		if !cfg.CollectServices {
-			svcs = nil
-		}
-		log.Printf("inventory snapshot: %d processes, %d services", len(procs), len(svcs))
-	} else {
-		log.Printf("heavy process/service inventory disabled")
-	}
+	heavyInventory.refresh(cfg)
+	heavy := heavyInventory.forHeartbeat()
 
-	var software []SoftwareInfo
-	if cfg.CollectSoftware {
-		software = collectSoftwareInventory()
-		log.Printf("software inventory snapshot: %d entries", len(software))
-	} else {
-		log.Printf("software inventory disabled")
-	}
-
-	patchStatus := collectPatchStatus()
-	if patchStatus != nil {
-		log.Printf("patch status: state=%s pending=%d reboot_required=%t", patchStatus.PatchState, patchStatus.PendingUpdates, patchStatus.RebootRequired)
-	}
-
-	payload := buildHeartbeatPayload(cfg, inventory, rustdesk, tel, procs, svcs, software, patchStatus)
+	payload := buildHeartbeatPayload(cfg, inventory, rustdesk, tel, heavy.Processes, heavy.Services, heavy.Software, heavy.Patch)
 	payload.RemoteSessionActive = currentRemoteSessionState()
 	hbResp, err := sendHeartbeat(cfg, payload)
 	if err != nil {
 		return err
 	}
+	heavy.sent()
 
 	log.Printf("heartbeat sent successfully to %s", cfg.BackendURL)
 	processActions(cfg, hbResp.PendingActions)

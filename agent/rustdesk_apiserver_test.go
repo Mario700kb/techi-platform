@@ -5,43 +5,55 @@ import (
 	"testing"
 )
 
-const dirtyConfig2 = "rendezvous_server = '139.162.158.208:21116'\r\nnat_type = 1\r\n\r\n[options]\r\ncustom-rendezvous-server = '139.162.158.208'\r\napi-server = 'https://api-rdp.techi.com.al'\r\nkey = 'abc='\r\n"
+const platformConfig2 = "rendezvous_server = '139.162.158.208:21116'\r\nnat_type = 1\r\n\r\n[options]\r\ncustom-rendezvous-server = '139.162.158.208'\r\napi-server = 'https://api-rdp.techi.com.al'\r\nkey = 'abc='\r\n"
 
-func TestPlatformAPIServerIsRemovedAndTheRestKept(t *testing.T) {
-	cfg := &Config{APIURL: "https://api-rdp.techi.com.al", BackendURL: "https://api-rdp.techi.com.al/api/v1/agent/heartbeat"}
-	hosts := platformHosts(cfg)
+func TestAMissingAPIServerIsSetToThePlatform(t *testing.T) {
+	cfg := &Config{APIURL: "https://api-rdp.techi.com.al/", BackendURL: "https://api-rdp.techi.com.al/api/v1/agent/heartbeat"}
+	content := "rendezvous_server = '139.162.158.208:21116'\n\n[options]\ncustom-rendezvous-server = '139.162.158.208'\nkey = 'abc='\n"
 
-	got, changed := removeTOMLOptionIf(dirtyConfig2, "api-server", func(v string) bool { return apiServerPointsAtPlatform(v, hosts) })
+	got, changed := setTOMLOptionIfEmpty(content, "api-server", platformAPIServer(cfg))
 
-	if !changed || strings.Contains(got, "api-server") {
-		t.Fatalf("api-server not removed: changed=%v\n%s", changed, got)
+	if !changed || !strings.Contains(got, "api-server = 'https://api-rdp.techi.com.al'") {
+		t.Fatalf("api-server not set: changed=%v\n%s", changed, got)
 	}
-	for _, kept := range []string{"rendezvous_server = '139.162.158.208:21116'", "custom-rendezvous-server = '139.162.158.208'", "key = 'abc='", "nat_type = 1"} {
+	for _, kept := range []string{"rendezvous_server = '139.162.158.208:21116'", "custom-rendezvous-server = '139.162.158.208'", "key = 'abc='"} {
 		if !strings.Contains(got, kept) {
 			t.Fatalf("%q lost:\n%s", kept, got)
 		}
 	}
-	if _, again := removeTOMLOptionIf(got, "api-server", func(string) bool { return true }); again {
+	if _, again := setTOMLOptionIfEmpty(got, "api-server", platformAPIServer(cfg)); again {
 		t.Fatal("second pass must be a no-op")
 	}
 }
 
-func TestAnAPIServerSomeoneChoseIsLeftAlone(t *testing.T) {
-	hosts := platformHosts(&Config{APIURL: "https://api-rdp.techi.com.al"})
-	for _, value := range []string{"https://rustdesk-pro.example.com", "", "not a url at all ::"} {
-		if apiServerPointsAtPlatform(value, hosts) {
-			t.Fatalf("%q must not be treated as the platform", value)
-		}
-	}
-	if !apiServerPointsAtPlatform("HTTPS://API-RDP.techi.com.al:443/", hosts) {
-		t.Fatal("host comparison must ignore case, port and path")
+func TestAnEmptyAPIServerIsFilled(t *testing.T) {
+	got, changed := setTOMLOptionIfEmpty("[options]\napi-server = ''\n", "api-server", "https://api-rdp.techi.com.al")
+	if !changed || !strings.Contains(got, "api-server = 'https://api-rdp.techi.com.al'") || strings.Count(got, "api-server") != 1 {
+		t.Fatalf("empty api-server not replaced:\n%s", got)
 	}
 }
 
-func TestOnlyTheOptionsSectionIsTouched(t *testing.T) {
-	content := "api-server = 'https://api-rdp.techi.com.al'\n[options]\nkey = 'x'\n"
-	if _, changed := removeTOMLOptionIf(content, "api-server", func(string) bool { return true }); changed {
-		t.Fatal("a top-level key with the same name is not a Remote Support option")
+func TestAnAPIServerAlreadySetIsKept(t *testing.T) {
+	for _, content := range []string{platformConfig2, "[options]\napi-server = 'https://rustdesk-pro.example.com'\n"} {
+		if got, changed := setTOMLOptionIfEmpty(content, "api-server", "https://api-rdp.techi.com.al"); changed || got != content {
+			t.Fatalf("an api-server already set must be kept:\n%s", got)
+		}
+	}
+}
+
+func TestPlatformAPIServerIsTheBaseURL(t *testing.T) {
+	cases := map[Config]string{
+		{APIURL: "https://api-rdp.techi.com.al"}:                                 "https://api-rdp.techi.com.al",
+		{APIURL: "https://api-rdp.techi.com.al/api/v1/"}:                         "https://api-rdp.techi.com.al",
+		{BackendURL: "https://api-rdp.techi.com.al:8443/api/v1/agent/heartbeat"}: "https://api-rdp.techi.com.al:8443",
+		{APIURL: "api-rdp.techi.com.al"}:                                         "https://api-rdp.techi.com.al",
+		{}:                                                                       "",
+	}
+	for cfg, want := range cases {
+		cfg := cfg
+		if got := platformAPIServer(&cfg); got != want {
+			t.Fatalf("platformAPIServer(%+v) = %q, want %q", cfg, got, want)
+		}
 	}
 }
 
