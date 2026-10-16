@@ -108,12 +108,12 @@ func TestImmediateActionsRunFromAFolderThatExists(t *testing.T) {
 	}
 }
 
-// TestRemoteSupportIsNeverPointedAtThePlatformAPI guards RISK-SUPPLY-002. The
-// fourth field of the EpCustomActDll parameters becomes the client's
-// api-server. Set to API_URL, every Remote Support client posted its own
-// heartbeat and sysinfo to the platform every 10-15 seconds, about 94% of all
-// backend traffic, and the platform processed none of it.
-func TestRemoteSupportIsNeverPointedAtThePlatformAPI(t *testing.T) {
+// TestRemoteSupportReportsToThePlatformAPI: the fourth field of the
+// EpCustomActDll parameters becomes the client's api-server. It is API_URL, so
+// Remote Support reports every connection to /api/audit/conn (owner's decision
+// 2026-10-16). Its own heartbeat and sysinfo to the same server, every ~15 s
+// (RISK-SUPPLY-002), are answered by NPM and never reach the backend.
+func TestRemoteSupportReportsToThePlatformAPI(t *testing.T) {
 	paramRe := regexp.MustCompile(`(?s)Id="(WriteTechiConfigs|ApplyTechiRemoteSupportConfigFinal)\.SetParam".*?Value="([^"]*)"`)
 	for _, path := range []string{"installer/installer.wxs", "installer/remote-support.wxs"} {
 		matches := paramRe.FindAllStringSubmatch(readWxs(t, path), -1)
@@ -125,8 +125,8 @@ func TestRemoteSupportIsNeverPointedAtThePlatformAPI(t *testing.T) {
 			if len(fields) != 5 {
 				t.Fatalf("%s %s: want 5 fields, got %q", path, m[1], m[2])
 			}
-			if fields[3] != "" {
-				t.Errorf("%s %s: api-server field must stay empty, got %q", path, m[1], fields[3])
+			if fields[3] != "[API_URL]" {
+				t.Errorf("%s %s: api-server field must be [API_URL], got %q", path, m[1], fields[3])
 			}
 		}
 	}
