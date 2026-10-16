@@ -79,7 +79,7 @@ def create_operator(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-    audit_log(db, operator=current, action=AuditAction.OPERATOR_CREATED, entity_type="operator", entity_id=created.id, details={"target_username": created.username, "role": created.role})
+    audit_log(db, operator=current, action=AuditAction.OPERATOR_CREATED, entity_type="operator", entity_id=created.id, details={"target_username": created.username, "role": created.role, "team_ids": payload.team_ids})
     return created
 
 

@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import type { CSSProperties } from "react";
 import {
   AlertTriangle,
+  Check,
   KeySquare,
   Pencil,
   Plus,
@@ -93,6 +94,61 @@ function FormError({ message }: { message: string | null }) {
   );
 }
 
+function TeamPicker({
+  teams,
+  selected,
+  onChange,
+  role,
+}: {
+  teams: TeamWithStats[];
+  selected: number[];
+  onChange: (teamIds: number[]) => void;
+  role?: UserRole;
+}) {
+  return (
+    <div className="th-onb-field">
+      Teams
+      {teams.length === 0 ? (
+        <span className="th-onb-hint">No teams yet. Create one under Teams, then add them there.</span>
+      ) : (
+        <>
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Teams">
+            {teams.map((team) => {
+              const isSelected = selected.includes(team.id);
+              return (
+                <button
+                  key={team.id}
+                  type="button"
+                  aria-pressed={isSelected}
+                  className="th-status-chip th-team-pick"
+                  style={{ "--chip-tone": team.color ?? "var(--th-accent)" } as CSSProperties}
+                  onClick={() =>
+                    onChange(isSelected ? selected.filter((id) => id !== team.id) : [...selected, team.id])
+                  }
+                >
+                  {isSelected ? <Check className="h-3 w-3" /> : <i />}
+                  {team.name}
+                </button>
+              );
+            })}
+          </div>
+          {role && (
+            <span className="th-onb-hint">
+              {role === "operator"
+                ? "Operators reach only the devices of their teams."
+                : "Owners and admins reach every device, whatever their teams."}
+            </span>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function sameIds(a: number[], b: number[]): boolean {
+  return a.length === b.length && a.every((id) => b.includes(id));
+}
+
 export default function Operators() {
   const { user, can } = useAuth();
   const canManage = can("admin");
@@ -114,6 +170,7 @@ export default function Operators() {
     password: "",
     role: "operator",
     is_active: true,
+    team_ids: [],
   });
   const [createError, setCreateError] = useState<string | null>(null);
   const [createLoading, setCreateLoading] = useState(false);
@@ -141,7 +198,12 @@ export default function Operators() {
   const filterTabsRef = useTabIndicator<HTMLDivElement>(filter);
 
   const loadData = async (force = false) => {
-    if (!force && appCache.get(CACHE_KEYS.operatorsList, CACHE_TTL.operatorsList)) return;
+    if (!force && appCache.get(CACHE_KEYS.operatorsList, CACHE_TTL.operatorsList)) {
+      listTeams()
+        .then(setTeams)
+        .catch((err) => setError(err instanceof Error ? err.message : "Failed to load teams"));
+      return;
+    }
     try {
       setLoading(true);
       setError(null);
@@ -223,8 +285,21 @@ export default function Operators() {
         appCache.set(CACHE_KEYS.operatorsList, next);
         return next;
       });
+      setTeams((prev) =>
+        prev.map((t) =>
+          createForm.team_ids.includes(t.id) ? { ...t, operator_ids: [...(t.operator_ids ?? []), created.id] } : t,
+        ),
+      );
       setShowCreate(false);
-      setCreateForm({ username: "", email: "", display_name: "", password: "", role: "operator", is_active: true });
+      setCreateForm({
+        username: "",
+        email: "",
+        display_name: "",
+        password: "",
+        role: "operator",
+        is_active: true,
+        team_ids: [],
+      });
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : "Failed to create operator");
     } finally {
@@ -240,6 +315,7 @@ export default function Operators() {
       display_name: op.display_name ?? "",
       role: op.role === "readonly" ? "operator" : op.role,
       is_active: op.is_active,
+      team_ids: teamsForOperator(op.id).map((t) => t.id),
     });
     setEditError(null);
   };
@@ -254,15 +330,29 @@ export default function Operators() {
     try {
       setEditLoading(true);
       setEditError(null);
+      const { team_ids: teamIds = [], ...fields } = editForm;
+      const teamsChanged = !sameIds(
+        teamIds,
+        teamsForOperator(editTarget.id).map((t) => t.id),
+      );
       const updated = await updateOperator(editTarget.id, {
-        ...editForm,
-        display_name: editForm.display_name || null,
+        ...fields,
+        display_name: fields.display_name || null,
+        ...(teamsChanged ? { team_ids: teamIds } : {}),
       });
       setOperators((prev) => {
         const next = prev.map((o) => (o.id === updated.id ? updated : o));
         appCache.set(CACHE_KEYS.operatorsList, next);
         return next;
       });
+      if (teamsChanged) {
+        setTeams((prev) =>
+          prev.map((t) => {
+            const others = (t.operator_ids ?? []).filter((id) => id !== updated.id);
+            return { ...t, operator_ids: teamIds.includes(t.id) ? [...others, updated.id] : others };
+          }),
+        );
+      }
       setEditTarget(null);
     } catch (err) {
       setEditError(err instanceof Error ? err.message : "Failed to update operator");
@@ -854,6 +944,12 @@ export default function Operators() {
               />
             </div>
           </div>
+          <TeamPicker
+            teams={teams}
+            selected={createForm.team_ids}
+            onChange={(teamIds) => setCreateForm((f) => ({ ...f, team_ids: teamIds }))}
+            role={createForm.role}
+          />
           <label className="th-onb-check">
             <input
               type="checkbox"
@@ -927,6 +1023,11 @@ export default function Operators() {
             />
             <span className="th-onb-hint">{ROLE_INFO[(editForm.role ?? editTarget.role) as UserRole].hint}.</span>
           </div>
+          <TeamPicker
+            teams={teams}
+            selected={editForm.team_ids ?? []}
+            onChange={(teamIds) => setEditForm((f) => ({ ...f, team_ids: teamIds }))}
+          />
         </Modal>
       )}
 

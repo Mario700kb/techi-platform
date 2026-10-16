@@ -512,3 +512,95 @@ def test_owner_still_bypasses_scope(db):
     owner = _operator(db, "owner_bypass", role="owner")
     scope = get_operator_scope(operator=owner, db=db)
     assert scope is None, "Owner must always receive None (bypass)"
+
+
+# ── Operator creation with teams ──────────────────────────────────────────── #
+
+def test_create_operator_joins_the_chosen_teams(db):
+    from app.schemas.operator import OperatorCreate
+    from app.services.operator_service import OperatorService
+
+    admin = _operator(db, "admin", role="admin")
+    support = _team(db, "Support")
+    field = _team(db, "Field")
+    _team(db, "Other")
+
+    created = OperatorService(db).create_operator(
+        OperatorCreate(
+            username="newbie", email="newbie@test.com", password="secret123",
+            role="operator", team_ids=[support.id, field.id, support.id],
+        ),
+        admin,
+    )
+
+    member_teams = {m.team_id for m in db.query(TeamMember).filter_by(operator_id=created.id)}
+    assert member_teams == {support.id, field.id}
+
+
+def test_create_operator_with_unknown_team_creates_nothing(db):
+    from app.schemas.operator import OperatorCreate
+    from app.services.operator_service import OperatorService
+
+    admin = _operator(db, "admin", role="admin")
+
+    with pytest.raises(ValueError, match="Team not found"):
+        OperatorService(db).create_operator(
+            OperatorCreate(
+                username="ghost", email="ghost@test.com", password="secret123",
+                role="operator", team_ids=[999],
+            ),
+            admin,
+        )
+
+    assert db.query(Operator).filter_by(username="ghost").first() is None
+
+
+def test_update_operator_replaces_their_teams(db):
+    from app.schemas.operator import OperatorUpdate
+    from app.services.operator_service import OperatorService
+
+    admin = _operator(db, "admin", role="admin")
+    op = _operator(db, "member")
+    support = _team(db, "Support")
+    field = _team(db, "Field")
+    servers = _team(db, "Servers")
+    db.add_all([TeamMember(team_id=support.id, operator_id=op.id), TeamMember(team_id=field.id, operator_id=op.id)])
+    db.commit()
+
+    OperatorService(db).update_operator(op.id, OperatorUpdate(team_ids=[field.id, servers.id]), admin)
+
+    member_teams = {m.team_id for m in db.query(TeamMember).filter_by(operator_id=op.id)}
+    assert member_teams == {field.id, servers.id}
+
+
+def test_update_operator_without_team_ids_keeps_their_teams(db):
+    from app.schemas.operator import OperatorUpdate
+    from app.services.operator_service import OperatorService
+
+    admin = _operator(db, "admin", role="admin")
+    op = _operator(db, "member")
+    support = _team(db, "Support")
+    db.add(TeamMember(team_id=support.id, operator_id=op.id))
+    db.commit()
+
+    OperatorService(db).update_operator(op.id, OperatorUpdate(display_name="Renamed"), admin)
+
+    assert [m.team_id for m in db.query(TeamMember).filter_by(operator_id=op.id)] == [support.id]
+
+
+def test_update_operator_with_unknown_team_changes_nothing(db):
+    from app.schemas.operator import OperatorUpdate
+    from app.services.operator_service import OperatorService
+
+    admin = _operator(db, "admin", role="admin")
+    op = _operator(db, "member")
+    support = _team(db, "Support")
+    db.add(TeamMember(team_id=support.id, operator_id=op.id))
+    db.commit()
+
+    with pytest.raises(ValueError, match="Team not found"):
+        OperatorService(db).update_operator(op.id, OperatorUpdate(display_name="Renamed", team_ids=[999]), admin)
+
+    db.refresh(op)
+    assert op.display_name is None
+    assert [m.team_id for m in db.query(TeamMember).filter_by(operator_id=op.id)] == [support.id]

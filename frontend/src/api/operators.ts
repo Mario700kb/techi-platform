@@ -22,6 +22,7 @@ export interface OperatorCreate {
   password: string;
   role: UserRole;
   is_active: boolean;
+  team_ids: number[];
 }
 
 export interface OperatorUpdate {
@@ -30,6 +31,7 @@ export interface OperatorUpdate {
   display_name?: string | null;
   role?: UserRole;
   is_active?: boolean;
+  team_ids?: number[];
 }
 
 export interface OperatorPasswordReset {

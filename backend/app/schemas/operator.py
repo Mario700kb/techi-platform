@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 
@@ -32,6 +32,7 @@ class OperatorCreate(OperatorBase):
     password: str
     role: OperatorRole = OperatorRole.READONLY
     is_active: bool = True
+    team_ids: List[int] = []
 
     @field_validator("password")
     @classmethod
@@ -49,6 +50,7 @@ class OperatorUpdate(BaseModel):
     display_name: Optional[str] = None
     role: Optional[OperatorRole] = None
     is_active: Optional[bool] = None
+    team_ids: Optional[List[int]] = None
 
 
 class OperatorPasswordReset(BaseModel):

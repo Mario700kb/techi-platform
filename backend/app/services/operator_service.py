@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.core.auth import hash_password
 from app.models.operator import Operator, OperatorRole
 from app.repositories.operator_repository import OperatorRepository
+from app.repositories.team_repository import TeamRepository
 from app.schemas.operator import OperatorCreate, OperatorPasswordReset, OperatorUpdate
 
 
@@ -29,7 +30,9 @@ class OperatorService:
         if self.repo.get_by_email(str(payload.email)):
             raise ValueError("Email already taken")
 
-        return self.repo.create(
+        team_ids = self._existing_team_ids(payload.team_ids)
+
+        operator = self.repo.create(
             username=payload.username,
             email=str(payload.email),
             display_name=payload.display_name,
@@ -37,6 +40,8 @@ class OperatorService:
             role=payload.role.value,
             is_active=payload.is_active,
         )
+        self._set_teams(operator.id, team_ids)
+        return operator
 
     def update_operator(self, operator_id: int, payload: OperatorUpdate, caller: Operator) -> Operator:
         target = self.repo.get(operator_id)
@@ -53,6 +58,8 @@ class OperatorService:
             self._assert_not_last_active_admin_capable(target, "deactivate")
         if payload.role is not None and payload.role.value not in (OperatorRole.OWNER.value, OperatorRole.ADMIN.value):
             self._assert_not_last_active_admin_capable(target, "change role of")
+
+        team_ids = self._existing_team_ids(payload.team_ids) if payload.team_ids is not None else None
 
         if payload.username is not None:
             existing = self.repo.get_by_username(payload.username)
@@ -75,7 +82,10 @@ class OperatorService:
         if payload.is_active is not None:
             target.is_active = payload.is_active
 
-        return self.repo.save(target)
+        saved = self.repo.save(target)
+        if team_ids is not None:
+            self._set_teams(saved.id, team_ids)
+        return saved
 
     def delete_operator(self, operator_id: int, caller: Operator) -> Operator:
         target = self.repo.get(operator_id)
@@ -118,6 +128,22 @@ class OperatorService:
 
         MfaService(self.repo.db).disable(target)
         return target
+
+    def _existing_team_ids(self, team_ids: List[int]) -> List[int]:
+        teams = TeamRepository(self.repo.db)
+        unique = list(dict.fromkeys(team_ids))
+        if any(teams.get(team_id) is None for team_id in unique):
+            raise ValueError("Team not found")
+        return unique
+
+    def _set_teams(self, operator_id: int, team_ids: List[int]) -> None:
+        teams = TeamRepository(self.repo.db)
+        current = set(teams.get_team_ids_for_operator(operator_id))
+        for team_id in current - set(team_ids):
+            teams.remove_member(team_id, operator_id)
+        for team_id in team_ids:
+            if team_id not in current:
+                teams.add_member(team_id, operator_id)
 
     def _assert_not_last_active_admin_capable(self, target: Operator, action: str) -> None:
         if target.role in (OperatorRole.OWNER.value, OperatorRole.ADMIN.value) and target.is_active:
