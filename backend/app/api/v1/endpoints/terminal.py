@@ -11,7 +11,6 @@ app.platform_core.rollout, generic across future features). Operator-scoped
 secret.
 """
 
-import asyncio
 import json
 import logging
 from datetime import datetime
@@ -28,6 +27,7 @@ from app.core.auth import (
     require_role_or_permission,
 )
 from app.core.config import settings
+from app.services.action_push import push_action_if_connected
 from app.db.session import get_db
 from app.models.client import Client
 from app.models.operator import Operator, OperatorRole
@@ -79,60 +79,8 @@ def _has_terminal_capability(device) -> bool:
     return isinstance(caps, dict) and "terminal" in caps
 
 
-# Long enough for a healthy loop to accept a frame, short enough that a wedged
-# one cannot stall the operator's request behind it.
-_PUSH_TIMEOUT_SECONDS = 5.0
-
-
-def _push_action_if_connected(device_id: int, action, action_svc) -> bool:
-    """Deliver a queued action over the agent command channel, if one is open.
-
-    Best-effort by design. Any failure — no channel, a dead socket, an event
-    loop that will not schedule — leaves the action queued for the heartbeat
-    path, which is exactly the pre-2026-08-04 behaviour. Opening a terminal
-    must never fail because the accelerator did.
-
-    Two ordering rules make that promise true, both learned the hard way on
-    2026-08-05 when this function marked actions SENT that it then failed to
-    push, leaving them deliverable by nobody (the heartbeat path collects only
-    QUEUED work) and every retry blocked by the duplicate-action guard:
-
-    1. The frame goes on the wire *before* the action is marked SENT.
-    2. This endpoint is sync, so it runs in a worker thread with no running
-       loop. The push is scheduled onto the main loop captured at startup;
-       `asyncio.get_running_loop()` here raises RuntimeError, always.
-    """
-    from app.websocket.agent_channel import agent_command_channel, get_main_loop
-
-    if not agent_command_channel.is_connected(device_id):
-        return False
-
-    loop = get_main_loop()
-    if loop is None:
-        logger.warning("terminal: no main event loop captured; heartbeat will deliver for device %s", device_id)
-        return False
-
-    try:
-        # Build without mutating: if the push fails, the action must still look
-        # untouched so the heartbeat path picks it up normally.
-        delivery = action_svc.build_delivery(action)
-        payload = {"type": "action", "action": delivery.model_dump()}
-        future = asyncio.run_coroutine_threadsafe(
-            agent_command_channel.push(device_id, payload), loop
-        )
-        # Bounded: a wedged loop must not hold the operator's HTTP request open.
-        pushed = future.result(timeout=_PUSH_TIMEOUT_SECONDS)
-    except Exception:
-        logger.exception("terminal: command-channel push failed for device %s; heartbeat will deliver", device_id)
-        return False
-
-    if not pushed:
-        # push() reports False for an unconnected or dead socket. Leave the
-        # action QUEUED so the heartbeat delivers it.
-        return False
-
-    action_svc.mark_delivered(action)
-    return True
+# The push helper is shared with the other single-device action endpoints.
+_push_action_if_connected = push_action_if_connected
 
 
 @router.post("/devices/{device_id}/terminal/sessions", response_model=TerminalSessionResponse)

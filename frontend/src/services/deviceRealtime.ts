@@ -130,7 +130,7 @@ const RECONNECT_DELAYS = [1000, 2000, 5000, 10000, 15000, 30000];
 const STALE_CONNECTION_MS = 45000;
 const CLIENT_PING_MS = 20000;
 
-export function buildDeviceRealtimeUrl(tenantId: string = "default"): string {
+function realtimeBaseUrl(): string {
   let wsBase: string;
   const configured = import.meta.env.VITE_WS_BASE_URL;
   if (configured) {
@@ -144,9 +144,20 @@ export function buildDeviceRealtimeUrl(tenantId: string = "default"): string {
   } else {
     wsBase = "ws://localhost:8000";
   }
-  const url = new URL(wsBase);
+  return wsBase;
+}
+
+export function buildDeviceRealtimeUrl(tenantId: string = "default"): string {
+  const url = new URL(realtimeBaseUrl());
   url.pathname = "/ws/devices";
   url.searchParams.set("tenant_id", tenantId);
+  return url.toString();
+}
+
+/** The live view of one device (backend app/websocket/live_hub.py). */
+export function buildDeviceLiveUrl(deviceId: number): string {
+  const url = new URL(realtimeBaseUrl());
+  url.pathname = `/ws/devices/${deviceId}/live`;
   return url.toString();
 }
 

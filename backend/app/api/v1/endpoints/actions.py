@@ -21,6 +21,7 @@ from app.schemas.remote_action import (
 from app.services.audit_service import AuditAction, audit_log
 from app.services.device_service import DeviceService
 from app.services.permission_service import ACTION_PERMISSION_MAP
+from app.services.action_push import push_action_if_connected
 from app.services.remote_action_service import RemoteActionService
 
 router = APIRouter()
@@ -114,6 +115,9 @@ def queue_device_action(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     audit_log(db, operator=operator, action=AuditAction.ACTION_QUEUED, entity_type="remote_action", entity_id=action.id, details={"device_id": device_id, "action_type": action.action_type})
+    # Delivered now if the agent's command channel is open; otherwise the
+    # next heartbeat picks it up exactly as before.
+    push_action_if_connected(device_id, action, RemoteActionService(db))
     return RemoteActionResponse.model_validate(action)
 
 

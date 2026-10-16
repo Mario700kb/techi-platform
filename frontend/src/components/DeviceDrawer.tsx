@@ -98,6 +98,8 @@ import ResourceBar from "./ResourceBar";
 import { deviceSite } from "../utils/location";
 import { cpuView, osView, storageView } from "../utils/system";
 import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
+import DeviceLivePanel from "./DeviceLivePanel";
+import { useDeviceLive } from "../hooks/useDeviceLive";
 
 interface DeviceDrawerProps {
   device: Device;
@@ -632,6 +634,11 @@ export default function DeviceDrawer({
     : device.rustdesk_conflict_detected
       ? "Conflict"
       : device.rustdesk_sync_state;
+  // Live view: the agent streams only while this drawer shows Overview, and
+  // only Windows and Linux agents have the channel it needs.
+  const livePlatform = /^(windows|linux)/i.test(device.platform || "");
+  const live = useDeviceLive(device.id, isOpen && activeTab === "overview" && livePlatform && !device.is_archived);
+
   // Capability-driven Terminal tab: only when FEATURE_TERMINAL is on AND the
   // device reports the terminal capability. Inserted after Remote Support so the
   // Connect-oriented tabs sit together; Windows (no terminal cap) never sees it.
@@ -932,6 +939,8 @@ export default function DeviceDrawer({
                 )}
               </div>
             )}
+
+            {livePlatform && !device.is_archived && <DeviceLivePanel live={live} />}
 
             {/* Status */}
             <section className="mb-5">

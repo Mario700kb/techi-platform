@@ -45,6 +45,8 @@ import { FreshnessState } from "../components/mobile/primitives";
 import { Button, EmptyState } from "../components/ui";
 import { isDeviceOffline, TERMS, TONE } from "../utils/deviceStatus";
 import { VitalsStrip } from "../components/mobile/VitalsStrip";
+import DeviceLivePanel from "../components/DeviceLivePanel";
+import { useDeviceLive } from "../hooks/useDeviceLive";
 import { AccordionSection } from "../components/mobile/AccordionSection";
 import { Sparkline } from "../components/mobile/Sparkline";
 import {
@@ -169,6 +171,9 @@ export default function DeviceDetailsMobile() {
   const telemetryHistory = cachedHistory ?? [];
 
   const telemetry = useDeviceTelemetry({ deviceId: device ? deviceId : null, latestEvent });
+  // Live view while this page is open (Windows and Linux agents from 2.1.27).
+  const livePlatform = /^(windows|linux)/i.test(device?.platform || "");
+  const live = useDeviceLive(device ? deviceId : null, livePlatform && !device?.is_archived);
   const deviceAlerts = useDeviceAlerts({ deviceId, latestEvent });
   const activity = useDeviceActivity({ deviceId, latestEvent, enabled: timelineOpen });
 
@@ -418,11 +423,15 @@ export default function DeviceDetailsMobile() {
         </div>
       </div>
 
-      <VitalsStrip
-        cpu={telemetry.snapshot?.cpu_percent ?? null}
-        ram={telemetry.snapshot?.ram_percent ?? null}
-        disk={telemetry.snapshot?.disk_percent ?? null}
-      />
+      {live.state === "live" && live.snapshot ? null : (
+        <VitalsStrip
+          cpu={telemetry.snapshot?.cpu_percent ?? null}
+          ram={telemetry.snapshot?.ram_percent ?? null}
+          disk={telemetry.snapshot?.disk_percent ?? null}
+        />
+      )}
+
+      {livePlatform && !device.is_archived && <DeviceLivePanel live={live} />}
 
       <AccordionSection
         icon={<AlertTriangle className="h-4 w-4" />}

@@ -159,3 +159,65 @@ async def deployments_websocket(websocket: WebSocket, tenant_id: str = "default"
         await realtime_manager.disconnect(connection_id, tenant_id=tenant_id)
     except Exception:
         await realtime_manager.disconnect(connection_id, tenant_id=tenant_id)
+
+
+def _device_visible(device_id: int, scope: Any) -> bool:
+    from app.core.scope import device_in_scope
+    from app.repositories.device_repository import DeviceRepository
+
+    db = SessionLocal()
+    try:
+        device = DeviceRepository(db).get(device_id)
+        if device is None or device.is_archived:
+            return False
+        return device_in_scope(device.client_id, device.group_id, device.id, scope)
+    finally:
+        db.close()
+
+
+@router.websocket("/ws/devices/{device_id}/live")
+async def device_live_websocket(websocket: WebSocket, device_id: int):
+    """Live snapshots of one device while its page is open (see
+    app/websocket/live_hub.py). The operator must be able to see the device;
+    the page receives `live_status` (is the agent's channel open) on every
+    renewal and `live` frames as the agent sends them."""
+    import asyncio
+    import time
+
+    from app.websocket.live_hub import LIVE_INTERVAL_SECONDS, LIVE_RENEW_SECONDS, device_live_hub
+
+    scope = await _authenticate_ws(websocket, _ws_token(websocket))
+    if scope is _AUTH_FAILED:
+        return
+    if not _device_visible(device_id, scope):
+        await _reject_ws(websocket)
+        return
+
+    subprotocol = _subprotocol_for(websocket)
+    if subprotocol:
+        await websocket.accept(subprotocol=subprotocol)
+    else:
+        await websocket.accept()
+    viewer = await device_live_hub.add_viewer(device_id, websocket)
+    try:
+        while True:
+            connected = await device_live_hub.request_live(device_id)
+            if not await viewer.send(
+                {"type": "live_status", "agent_connected": connected, "interval_seconds": LIVE_INTERVAL_SECONDS}
+            ):
+                break
+            # Anything the page sends only proves it is alive; the renewal
+            # still waits its turn.
+            deadline = time.monotonic() + LIVE_RENEW_SECONDS
+            while (remaining := deadline - time.monotonic()) > 0:
+                try:
+                    await asyncio.wait_for(websocket.receive_text(), timeout=remaining)
+                except asyncio.TimeoutError:
+                    break
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        if await device_live_hub.remove_viewer(device_id, websocket):
+            await device_live_hub.stop_live(device_id)

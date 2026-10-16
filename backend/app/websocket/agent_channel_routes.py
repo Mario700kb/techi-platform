@@ -24,6 +24,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.db.session import SessionLocal
 from app.repositories.device_repository import DeviceRepository
 from app.websocket.agent_channel import agent_command_channel
+from app.websocket.live_hub import device_live_hub, parse_agent_message
 
 logger = logging.getLogger(__name__)
 
@@ -60,14 +61,20 @@ async def agent_command_ws(websocket: WebSocket, device_id: int = 0, agent_id: s
 
     await websocket.accept()
     await agent_command_channel.register(device_id, websocket)
+    if device_live_hub.has_viewers(device_id):
+        # Someone has the device open: an agent that just (re)connected picks
+        # the live view up at once instead of at the page's next renewal.
+        await device_live_hub.request_live(device_id)
     try:
         while True:
-            # The agent is not expected to say anything meaningful; this read
-            # exists to notice the disconnect and to time out a socket that has
-            # gone quiet. Payloads are ignored on purpose — this channel is
-            # push-only, so an agent cannot use it to ask the server for
-            # anything it could not already request over HTTP.
-            await asyncio.wait_for(websocket.receive_text(), timeout=IDLE_TIMEOUT_SECONDS)
+            # The agent sends pings, and live frames while someone watches the
+            # device. Nothing else is acted on: an agent cannot use this
+            # channel to ask the server for anything it could not already
+            # request over HTTP. The read also times out a socket gone quiet.
+            text = await asyncio.wait_for(websocket.receive_text(), timeout=IDLE_TIMEOUT_SECONDS)
+            message = parse_agent_message(text)
+            if message is not None and message.get("type") == "live":
+                await device_live_hub.publish(device_id, message.get("data"))
     except WebSocketDisconnect:
         pass
     except asyncio.TimeoutError:

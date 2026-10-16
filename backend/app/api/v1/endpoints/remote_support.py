@@ -22,6 +22,7 @@ from app.services.component_package_service import ComponentPackageService
 from app.services.audit_service import AuditAction, audit_log
 from app.services.permission_service import DEPLOYMENT, REMOTE_SUPPORT_CONNECT, REMOTE_SUPPORT_MANAGE
 from app.services.device_service import DeviceService
+from app.services.action_push import push_action_if_connected
 from app.services.remote_action_service import RemoteActionService
 from app.services.remote_support_password_service import RemoteSupportPasswordService, agent_applies_per_device_password
 
@@ -515,6 +516,9 @@ def restart_remote_support_service(
             "source": "remote_support",
         },
     )
+    # Delivered now if the agent's command channel is open; otherwise the
+    # next heartbeat picks it up exactly as before.
+    push_action_if_connected(device_id, action, RemoteActionService(db))
     return RemoteActionResponse.model_validate(action)
 
 
@@ -567,6 +571,9 @@ def deploy_remote_support(
             "force_reinstall": force_reinstall,
         },
     )
+    # Delivered now if the agent's command channel is open; otherwise the
+    # next heartbeat picks it up exactly as before.
+    push_action_if_connected(device_id, action, RemoteActionService(db))
     return RemoteActionResponse.model_validate(action)
 
 
@@ -605,4 +612,7 @@ def repair_remote_support_config(
             "source": "remote_support",
         },
     )
+    # Delivered now if the agent's command channel is open; otherwise the
+    # next heartbeat picks it up exactly as before.
+    push_action_if_connected(device_id, action, RemoteActionService(db))
     return RemoteActionResponse.model_validate(action)
