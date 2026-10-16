@@ -5,6 +5,55 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-16] HEARTBEAT-IDENTITY-2026-10-16 — a heartbeat without the device's agent_id can no longer take the device over (`24380c7`)
+
+Backend only, no migration, deployed 2026-10-16 16:13 (Tirana). Pre-deploy
+dump `/opt/backups/techi/pre-heartbeat-identity-20261016-161121.sql.gz`
+(141 MB, `gzip -t` OK, complete). Rollback image
+`techi-platform-backend:pre-heartbeat-identity-ad0ca05`. Guard passed before
+and after, backend ready 8 s after start (0 restarts), smoke passed, public
+200, no errors. After one heartbeat cycle 660 devices seen and 657 synced
+with RustDesk in 5 minutes — the same as before the deploy (664 / 661); the
+three not synced have no RustDesk ID. Root filesystem 90% (2.5 GB free).
+
+**The flaw (critical).** The owner asked for a backend review; it found that
+the RISK-SEC-002 gate could be bypassed. The heartbeat resolved the device
+from a caller-supplied `device_id` (or `rustdesk_id`) and saved the
+caller's `agent_id` on it; the gate then compared the caller's `agent_id`
+with the value just written. One unauthenticated `POST
+/api/v1/agent/heartbeat {"device_id": N, "agent_id": "x"}` per device
+returned its Remote Support ID and password and its pending actions (marked
+SENT). The legacy `/api/heartbeat` forwards to the same code. Reproduced
+locally; `test_heartbeat_password_gate.py` mocked the core and could not see
+it.
+
+**Signs of use: none found.** Every takeover must send an `agent_id` that
+differs from the stored one, which logs `RISK-IDENT-001`. Logs from
+2026-09-27: four devices only — 123 SALT-WS01 and 920 arch01-kt2 (two
+cloned machines each, same client office), 774 (the known TECHI office PC
+and roaming laptop) and 707 Arch-02 once on 28 Sep. Heartbeats from 9 Oct:
+no IP reporting for several clients' devices like a scan; RustDesk ID
+changes came from each device's own network; "foreign" IPs were roaming
+laptops and Topexpress changing IP for all its devices at once on 10 Oct.
+The nine remote actions sent and never completed since 27 Sep were self
+updates on four devices that never logged `RISK-IDENT-001`. Not covered:
+before 27 Sep, and the RustDesk server's own logs.
+
+**The fix.** A heartbeat never changes `agent_id`. It changes
+`rustdesk_id`, runs the RustDesk sync, takes client/group and triggers
+trusted-domain regrouping only when it carries the `agent_id` stored on the
+device (constant-time compare). The `agent_id` cache holds verified agents
+only, so a forged id is not "known" on its second request. Fingerprint
+reuse follows the same rule (no auto-reuse in three weeks of logs). Status,
+last_seen and inventory are still ingested. All 928 active devices have an
+`agent_id`, so none is left without one. For the clone pairs, the machine
+whose `agent_id` is stored keeps the device, its RustDesk ID and Connect;
+the other keeps reporting but gets no password or actions until it is
+re-enrolled.
+
+Pytest 1410 (7 new, running the real core and endpoint; four fail on the
+previous code).
+
 ## [2026-10-16] OPERATOR-TEAMS-2026-10-16 — choose teams when adding or editing an operator (`1d44f48`)
 
 Backend and frontend, no migration, deployed 2026-10-16 10:07–10:11 (Tirana).
