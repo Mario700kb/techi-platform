@@ -5,6 +5,67 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-16] AGENT-2.1.25-PILOT-2026-10-16 — lighter agent on three devices; public IP from the request (`f56b3bd`, `cd864a4`…`be48259`)
+
+**Backend (PUBLIC-IP), deployed 20:29 (Tirana).** Heartbeat and enrollment
+fill a missing public IP from `request.client.host` (uvicorn resolves it from
+X-Forwarded-For only when the trusted proxy set it); the heartbeat used to
+read the header's first entry itself, which a caller could choose. Dump
+`/opt/backups/techi/pre-public-ip-20261016-202621.sql.gz` (143 MB, complete),
+rollback `techi-platform-backend:pre-public-ip-f5f134f`, ready 4 s, 0
+restarts, guard and smoke passed. After one cycle 0 of 928 devices changed
+public IP (today's agents still send their own). Pytest 1423 (3 new).
+
+**Agent 2.1.25.** The owner asked what data the agent collects; the review
+found the heavy checks on every heartbeat and the owner said to do all of it:
+
+- Windows Update search, Get-HotFix, software, services and processes are
+  collected in the background (processes every 15 min, the rest hourly) and
+  a part is sent only when it changed or once a day, marked sent only after
+  the platform accepted the heartbeat. Windows edition/build read once a
+  day. Before: three PowerShell launches and a Windows Update search of up
+  to 20 s every 5 min, before the heartbeat was sent.
+- Services from the Service Control Manager instead of `wmic` (only 4
+  devices reported services).
+- "Reboot required" no longer counts PendingFileRenameOperations (803 of 925
+  devices flagged).
+- No public IP lookup at api.ipify.org.
+- Remote Support `api-server`: the owner chose to keep RustDesk's connection
+  reports, so the agent no longer removes it (2.1.24) but sets it where
+  missing, and MSI 2.1.25 writes `[API_URL]` again (RISK-SUPPLY-002
+  accepted; NPM answers RustDesk's own heartbeat). The MSI lifecycle test and
+  `installer_wxs_test.go` follow the decision.
+
+CI run 38947068108: Go tests (race-clean locally), the new Windows test
+reading services from the SCM (EventLog running/automatic, 0.04 s), all 28
+MSI lifecycle checks (fresh install, uninstall, upgrade over 2.1.20 with
+Remote Support files held open, api-server kept and set). Artifacts:
+`techi-agent-2.1.25.exe` (sha256 `10ce749c…dd498`), Endpoint and bridge MSI
+2.1.25 (not uploaded).
+
+**Pilot.** `techi-agent-2.1.25.exe` uploaded and activated as the Windows
+`agent_binary` (package `179a9143…`; 2.1.20 `b2e48efe…` kept), uploaded by
+"denis (via Claude)" through `AgentPackageService` on the server.
+`self_update` (bulk, target = device ids) to Techi-Server (12, from 2.1.20)
+and Mario-Lenovo (924, from 2.1.24) at 20:36, both verified by heartbeat at
+20:41; HV-PROD-01 (781) at 21:01, verified 21:04. Measured on the pilot:
+
+| | Before | 2.1.25 |
+|---|---|---|
+| Services, Mario-Lenovo | 0 | 290 |
+| Services, Techi-Server | 248 (wmic) | 248 (SCM), same wording |
+| Reboot required | true on both | false; Techi-Server up_to_date, Mario-Lenovo updates_available (1) |
+| Inventory rewrite | every heartbeat | 18:45 then 19:01 (processes at 15 min), none at 18:50/18:56 |
+| Public IP | ipify | request address, unchanged |
+
+Heartbeats regular every ~5 min, RustDesk synced, no backend errors.
+
+Learned for the rollout: a queued action expires `execution_timeout_seconds`
+(at most 600 s) after it is created, so a `self_update` reaches only devices
+online at that moment; the seven offline TECHI shpk devices get it in the
+next round. Activating a package updates nobody (`agent_update` is always
+`None`).
+
 ## [2026-10-16] FIREWALL-2026-10-16 — a firewall in front of the server; UDP 21116 briefly blocked
 
 No code change. About 19:25–19:45 (Tirana) the owner set up a firewall in
