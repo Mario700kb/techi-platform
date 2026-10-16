@@ -60,6 +60,15 @@ and Mario-Lenovo (924, from 2.1.24) at 20:36, both verified by heartbeat at
 
 Heartbeats regular every ~5 min, RustDesk synced, no backend errors.
 
+At 21:14, on the owner's note that the Endpoint MSI and the update bridge
+were still 2.1.20, both 2.1.25 MSIs from the same CI run were uploaded and
+activated (sha256 verified: Endpoint `973cb120…`, bridge `d4ce0d13…`; the
+2.1.20 packages kept). The three public download endpoints serve the 2.1.25
+files and `/active-version` answers 2.1.25. This updates no installed PC:
+domain PCs install what a DC script put in NETLOGON, so a domain moves to
+2.1.25 (MSI upgrade, Remote Support restarted) only when an admin re-runs its
+deployment script; new installs get 2.1.25.
+
 Learned for the rollout: a queued action expires `execution_timeout_seconds`
 (at most 600 s) after it is created, so a `self_update` reaches only devices
 online at that moment; the seven offline TECHI shpk devices get it in the
