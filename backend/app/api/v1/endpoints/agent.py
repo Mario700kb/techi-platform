@@ -85,6 +85,8 @@ def agent_enroll(
     client_ip = request.client.host if request.client else "unknown"
     if not enroll_limiter.is_allowed(client_ip):
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many enrollment attempts")
+    if not payload.public_ip and request.client:
+        payload = payload.model_copy(update={"public_ip": request.client.host})
     base_url = _normalize_public_backend_url(request)
     websocket_url = _public_websocket_url(base_url)
     service = AgentEnrollmentService(db)
@@ -116,11 +118,12 @@ def agent_heartbeat(
     Agent heartbeat endpoint. Returns immediately after writing the device record;
     telemetry, inventory, alerts, and realtime events run in a background task.
     """
-    if not payload.public_ip:
-        forwarded_for = request.headers.get("x-forwarded-for", "").split(",", 1)[0].strip()
-        client_ip = forwarded_for or (request.client.host if request.client else None)
-        if client_ip:
-            payload = payload.model_copy(update={"public_ip": client_ip})
+    # Agents from 2.1.25 send no public IP (it came from api.ipify.org):
+    # the address the request arrives from is the one that counts. uvicorn
+    # takes it from X-Forwarded-For only when the proxy (FORWARDED_ALLOW_IPS)
+    # sent it, so a caller cannot choose it with its own header.
+    if not payload.public_ip and request.client:
+        payload = payload.model_copy(update={"public_ip": request.client.host})
 
     service = DeviceHeartbeatService(db)
     try:
