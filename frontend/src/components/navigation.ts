@@ -12,6 +12,7 @@ import {
   SlidersHorizontal,
   Users,
   UsersRound,
+  ShieldQuestion,
 } from "lucide-react";
 import type { PlatformFeatureFlag } from "../routes/guards";
 
@@ -136,6 +137,14 @@ export const NAV_SECTIONS: NavSection[] = [
         permission: "manage_operators",
         mobile: "desktop",
         keywords: "users technicians accounts roles permissions access",
+      },
+      {
+        label: "Re-enrollment",
+        to: "/reenrollment",
+        icon: ShieldQuestion,
+        permission: "manage_operators",
+        mobile: "desktop",
+        keywords: "reinstall takeover clone duplicate device identity enrollment review",
       },
       {
         label: "Teams",

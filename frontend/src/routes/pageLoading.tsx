@@ -12,6 +12,7 @@ export const pageLoaders = {
   Onboarding: () => import("../pages/Onboarding"),
   Inventory: () => import("../pages/Inventory"),
   Operators: () => import("../pages/Operators"),
+  Reenrollment: () => import("../pages/Reenrollment"),
   Teams: () => import("../pages/Teams"),
   TeamDetail: () => import("../pages/TeamDetail"),
   AgentConfig: () => import("../pages/AgentConfig"),

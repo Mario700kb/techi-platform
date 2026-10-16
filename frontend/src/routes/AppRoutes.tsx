@@ -16,6 +16,7 @@ const Audit = lazy(pageLoaders.Audit);
 const Onboarding = lazy(pageLoaders.Onboarding);
 const Inventory = lazy(pageLoaders.Inventory);
 const Operators = lazy(pageLoaders.Operators);
+const Reenrollment = lazy(pageLoaders.Reenrollment);
 const Teams = lazy(pageLoaders.Teams);
 const TeamDetailPage = lazy(pageLoaders.TeamDetail);
 const AgentConfigPage = lazy(pageLoaders.AgentConfig);
@@ -118,6 +119,16 @@ export default function AppRoutes() {
             <RequireAuth>
               <RequirePermission perm="manage_operators">
                 <Operators />
+              </RequirePermission>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/reenrollment"
+          element={
+            <RequireAuth>
+              <RequirePermission perm="manage_operators">
+                <Reenrollment />
               </RequirePermission>
             </RequireAuth>
           }
