@@ -5,6 +5,23 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-16] LIVE-STATUS-2026-10-16 — instant actions show every status step (`29f618c`)
+
+**Backend + frontend deployed 23:53 (Tirana), no migration.** The owner
+restarted Mario-Lenovo from the drawer: the restart ran in 0.5 s over the
+channel, but the page stayed on "Sent", counted "4 in progress" and said the
+action would wait for the next heartbeat. Action status events were
+deduplicated per action for 0.75 s, which swallowed every step after "sent"
+once delivery became instant; the key now includes the status. New
+`GET /devices/{id}/agent-channel` lets the actions banner say "connected live"
+or "next heartbeat (within 5 minutes)".
+
+Dump `/opt/backups/techi/pre-live-status-20261016-235153.sql.gz` (144 MB),
+rollback `pre-live-status-9723a31`, backend ready 5 s, guard and smoke
+passed. Verified through NPM on the dashboard socket: a Ping to 924 produced
+queued/sent 0.05 s, acknowledged 0.22 s, running 0.37 s, completed 0.52 s.
+Pytest 1460, Vitest 250, Playwright desktop 113.
+
 ## [2026-10-16] AGENT-2.1.27-PILOT-2026-10-16 — live view confirmed on Mario-Lenovo
 
 Agent 2.1.27 (package `a4b1c336…`, sha256 `ff2b4afa…`) uploaded and made the
