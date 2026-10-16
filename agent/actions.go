@@ -16,6 +16,11 @@ import (
 // heartbeat runs immediately instead of waiting for the next ticker tick.
 var pendingImmediateHeartbeat atomic.Bool
 
+// pendingForceInventory is set when the operator asks for a fresh inventory
+// (Refresh inventory, Heartbeat now): the next heartbeat collects the heavy
+// parts synchronously instead of waiting out their schedule.
+var pendingForceInventory atomic.Bool
+
 // pendingIntervalChange carries a new heartbeat interval (seconds) requested by
 // the server via HeartbeatResponse.HeartbeatIntervalSecs or the
 // change_heartbeat_interval action. runAgent reads and applies it after each cycle.
@@ -178,11 +183,16 @@ func handlePing(_ context.Context) actionResult {
 func handleRefreshInventory(ctx context.Context, cfg *Config) actionResult {
 	done := make(chan actionResult, 1)
 	go func() {
+		// Collect the heavy parts (software, services, patch status) now so the
+		// next heartbeat carries them; collectInventory covers the light facts.
+		heavyInventory.forceCollect(cfg)
 		inv, err := collectInventory(cfg)
 		if err != nil {
 			done <- actionResult{err: fmt.Errorf("inventory collection failed: %w", err)}
 			return
 		}
+		pendingForceInventory.Store(true)
+		pendingImmediateHeartbeat.Store(true)
 		tel := collectTelemetry()
 		done <- actionResult{
 			message: fmt.Sprintf("Inventory refreshed: hostname=%s cpu=%.1f%% ram=%.1f%% disk=%.1f%%",
@@ -198,6 +208,7 @@ func handleRefreshInventory(ctx context.Context, cfg *Config) actionResult {
 }
 
 func handleImmediateHeartbeat() actionResult {
+	pendingForceInventory.Store(true)
 	pendingImmediateHeartbeat.Store(true)
 	log.Printf("immediate_heartbeat: next heartbeat forced immediately")
 	return actionResult{message: "Immediate heartbeat scheduled — telemetry and inventory will refresh within seconds"}

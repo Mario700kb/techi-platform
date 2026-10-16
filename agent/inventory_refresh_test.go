@@ -75,18 +75,18 @@ func assertParts(t *testing.T, h inventoryForHeartbeat, want ...string) {
 
 func TestNothingIsSentBeforeTheFirstCollection(t *testing.T) {
 	_, b := newFakeInventory()
-	assertParts(t, b.forHeartbeat())
+	assertParts(t, b.forHeartbeat(everything))
 }
 
 func TestEachPartIsSentOnceAfterItIsCollected(t *testing.T) {
 	_, b := newFakeInventory()
 	b.collectDue(everything)
 
-	first := b.forHeartbeat()
+	first := b.forHeartbeat(everything)
 	assertParts(t, first, "processes", "services", "software", "patch")
 	first.sent()
 
-	assertParts(t, b.forHeartbeat())
+	assertParts(t, b.forHeartbeat(everything))
 }
 
 func TestPartsAreNotCollectedAgainBeforeTheirTime(t *testing.T) {
@@ -111,46 +111,46 @@ func TestPartsAreNotCollectedAgainBeforeTheirTime(t *testing.T) {
 func TestAnUnchangedPartIsNotResentWhenCollectedAgain(t *testing.T) {
 	f, b := newFakeInventory()
 	b.collectDue(everything)
-	b.forHeartbeat().sent()
+	b.forHeartbeat(everything).sent()
 
 	f.advance(time.Hour)
 	b.collectDue(everything)
 	// The process list differs every time; software, services and patch did not change.
-	assertParts(t, b.forHeartbeat(), "processes")
+	assertParts(t, b.forHeartbeat(everything), "processes")
 }
 
 func TestAChangedPartIsSent(t *testing.T) {
 	f, b := newFakeInventory()
 	b.collectDue(everything)
-	b.forHeartbeat().sent()
+	b.forHeartbeat(everything).sent()
 
 	f.softwareName = "7-Zip 26.01"
 	f.pendingUpdates = 3
 	f.advance(time.Hour)
 	b.collectDue(everything)
 
-	h := b.forHeartbeat()
+	h := b.forHeartbeat(everything)
 	assertParts(t, h, "processes", "software", "patch")
 	if h.Software[0].Name != "7-Zip 26.01" || h.Patch.PendingUpdates != 3 {
 		t.Fatalf("stale values sent: %+v %+v", h.Software, h.Patch)
 	}
 }
 
-func TestEverythingIsResentOnceADay(t *testing.T) {
+func TestEverythingIsResentPeriodically(t *testing.T) {
 	f, b := newFakeInventory()
 	b.collectDue(everything)
-	b.forHeartbeat().sent()
+	b.forHeartbeat(everything).sent()
 
 	f.advance(inventoryResendEvery)
-	assertParts(t, b.forHeartbeat(), "processes", "services", "software", "patch")
+	assertParts(t, b.forHeartbeat(everything), "processes", "services", "software", "patch")
 }
 
 func TestAPartIsResentWhenTheHeartbeatFailed(t *testing.T) {
 	_, b := newFakeInventory()
 	b.collectDue(everything)
 
-	_ = b.forHeartbeat() // sent() never called: the heartbeat did not get through
-	assertParts(t, b.forHeartbeat(), "processes", "services", "software", "patch")
+	_ = b.forHeartbeat(everything) // sent() never called: the heartbeat did not get through
+	assertParts(t, b.forHeartbeat(everything), "processes", "services", "software", "patch")
 }
 
 func TestDisabledPartsAreNeverCollectedButPatchStatusIs(t *testing.T) {
@@ -160,7 +160,7 @@ func TestDisabledPartsAreNeverCollectedButPatchStatusIs(t *testing.T) {
 	if f.processes.Load()+f.services.Load()+f.software.Load() != 0 {
 		t.Fatal("a part turned off in the configuration was collected")
 	}
-	assertParts(t, b.forHeartbeat(), "patch")
+	assertParts(t, b.forHeartbeat(everything), "patch")
 }
 
 func TestRefreshNeverWaitsForTheCollection(t *testing.T) {
@@ -189,14 +189,14 @@ func TestRefreshNeverWaitsForTheCollection(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("refresh waited for the collection")
 	}
-	assertParts(t, b.forHeartbeat())
+	assertParts(t, b.forHeartbeat(everything))
 
 	close(release)
 	deadline := time.Now().Add(2 * time.Second)
-	for len(sentParts(b.forHeartbeat())) == 0 && time.Now().Before(deadline) {
+	for len(sentParts(b.forHeartbeat(everything))) == 0 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	assertParts(t, b.forHeartbeat(), "patch")
+	assertParts(t, b.forHeartbeat(everything), "patch")
 	if started.Load() != 1 {
 		t.Fatalf("a second pass started while the first was running: %d", started.Load())
 	}
@@ -227,4 +227,35 @@ func TestAConfigWithTheOldPublicIPServiceStillLoads(t *testing.T) {
 	if err != nil || !cfg.CollectSoftware {
 		t.Fatalf("old config not loaded: %v %+v", err, cfg)
 	}
+}
+
+func TestAForcedRefreshCollectsEverythingNow(t *testing.T) {
+	f, b := newFakeInventory()
+	b.collectDue(everything)
+	b.forHeartbeat(everything).sent()
+
+	// Ten minutes later nothing is due; a technician installs software and
+	// presses Refresh inventory.
+	f.advance(10 * time.Minute)
+	f.softwareName = "Installed just now"
+	b.forceCollect(everything)
+
+	if f.software.Load() != 2 || f.patch.Load() != 2 || f.services.Load() != 2 {
+		t.Fatalf("forced refresh skipped parts: software=%d patch=%d services=%d",
+			f.software.Load(), f.patch.Load(), f.services.Load())
+	}
+	h := b.forHeartbeat(everything)
+	if len(h.Software) != 1 || h.Software[0].Name != "Installed just now" {
+		t.Fatalf("the refreshed software list was not sent: %+v", h.Software)
+	}
+}
+
+func TestAPartSwitchedOffIsNotSentAgain(t *testing.T) {
+	f, b := newFakeInventory()
+	b.collectDue(everything)
+	b.forHeartbeat(everything).sent()
+
+	softwareOff := &Config{CollectProcesses: true, CollectServices: true}
+	f.advance(inventoryResendEvery)
+	assertParts(t, b.forHeartbeat(softwareOff), "processes", "services", "patch")
 }

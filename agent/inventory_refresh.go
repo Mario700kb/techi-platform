@@ -21,7 +21,12 @@ const (
 	softwareRefreshEvery = time.Hour
 	serviceRefreshEvery  = time.Hour
 	patchRefreshEvery    = time.Hour
-	inventoryResendEvery = 24 * time.Hour
+	// An unchanged part is re-sent this often even when nothing changed, so a
+	// part the platform failed to store (a heartbeat it 2xx'd but whose
+	// background save errored) is not missing until the next change or a
+	// restart. Short enough to self-heal within an afternoon, long enough that
+	// it is not sent on most heartbeats.
+	inventoryResendEvery = 4 * time.Hour
 )
 
 type inventorySection[T any] struct {
@@ -36,6 +41,10 @@ type inventorySection[T any] struct {
 
 func (s *inventorySection[T]) due(now time.Time) bool {
 	return s.collectedAt.IsZero() || now.Sub(s.collectedAt) >= s.every
+}
+
+func (s *inventorySection[T]) markDue() {
+	s.collectedAt = time.Time{}
 }
 
 func (s *inventorySection[T]) store(value T, now time.Time) {
@@ -133,6 +142,20 @@ func (b *backgroundInventory) collectDue(cfg *Config) {
 	collectSection(b, &b.patch, true)
 }
 
+// forceCollect refreshes every enabled part now, synchronously, so the next
+// heartbeat carries current software, services and patch status. Used by the
+// "Refresh inventory" / "Heartbeat now" actions and by `-once`, where waiting
+// out the schedule (up to an hour) or the background pass would be wrong.
+func (b *backgroundInventory) forceCollect(cfg *Config) {
+	b.mu.Lock()
+	b.processes.markDue()
+	b.services.markDue()
+	b.software.markDue()
+	b.patch.markDue()
+	b.mu.Unlock()
+	b.collectDue(cfg)
+}
+
 func collectSection[T any](b *backgroundInventory, s *inventorySection[T], enabled bool) {
 	if !enabled {
 		return
@@ -160,27 +183,33 @@ type inventoryForHeartbeat struct {
 	sent      func()
 }
 
-func (b *backgroundInventory) forHeartbeat() inventoryForHeartbeat {
+func (b *backgroundInventory) forHeartbeat(cfg *Config) inventoryForHeartbeat {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	now := b.now()
 	var out inventoryForHeartbeat
 	var marks []func(time.Time)
 
-	if v, ok := b.processes.pending(now); ok {
-		out.Processes = v
-		hash := b.processes.hash
-		marks = append(marks, func(at time.Time) { b.processes.markSent(hash, at) })
+	if cfg.CollectProcesses {
+		if v, ok := b.processes.pending(now); ok {
+			out.Processes = v
+			hash := b.processes.hash
+			marks = append(marks, func(at time.Time) { b.processes.markSent(hash, at) })
+		}
 	}
-	if v, ok := b.services.pending(now); ok {
-		out.Services = v
-		hash := b.services.hash
-		marks = append(marks, func(at time.Time) { b.services.markSent(hash, at) })
+	if cfg.CollectServices {
+		if v, ok := b.services.pending(now); ok {
+			out.Services = v
+			hash := b.services.hash
+			marks = append(marks, func(at time.Time) { b.services.markSent(hash, at) })
+		}
 	}
-	if v, ok := b.software.pending(now); ok {
-		out.Software = v
-		hash := b.software.hash
-		marks = append(marks, func(at time.Time) { b.software.markSent(hash, at) })
+	if cfg.CollectSoftware {
+		if v, ok := b.software.pending(now); ok {
+			out.Software = v
+			hash := b.software.hash
+			marks = append(marks, func(at time.Time) { b.software.markSent(hash, at) })
+		}
 	}
 	if v, ok := b.patch.pending(now); ok {
 		out.Patch = v

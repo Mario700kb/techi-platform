@@ -30,6 +30,10 @@ func runAgent(ctx context.Context, configPath string, enrollmentToken string, on
 	logStartupDiagnostics(configPath, defaultLogPath(), cfg)
 
 	if once {
+		// One-shot run (diagnostics, CI): collect the heavy inventory
+		// synchronously so the single heartbeat is complete and no background
+		// PowerShell is left running after the process exits.
+		pendingForceInventory.Store(true)
 		return runSingleHeartbeat(configPath, enrollmentToken)
 	}
 

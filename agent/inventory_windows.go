@@ -38,28 +38,42 @@ type windowsCIMOperatingSystem struct {
 
 // The edition and build change only with an upgrade, which restarts the
 // machine and the agent; reading them launched PowerShell on every heartbeat.
-const osInfoRefreshEvery = 24 * time.Hour
+// A complete read is cached for a day. An incomplete one (CIM failed at boot
+// and the registry fallback filled in) is cached only briefly, so the next
+// heartbeat can correct it instead of showing e.g. "Windows 10" for 24 h.
+const (
+	osInfoRefreshEvery = 24 * time.Hour
+	osInfoRetryEvery   = 15 * time.Minute
+)
 
 var osInfoCache struct {
 	sync.Mutex
-	info OSInfo
-	at   time.Time
+	info     OSInfo
+	at       time.Time
+	complete bool
 }
 
 func collectOSInfo() OSInfo {
 	osInfoCache.Lock()
 	defer osInfoCache.Unlock()
-	if !osInfoCache.at.IsZero() && time.Since(osInfoCache.at) < osInfoRefreshEvery {
+	ttl := osInfoRefreshEvery
+	if !osInfoCache.complete {
+		ttl = osInfoRetryEvery
+	}
+	if !osInfoCache.at.IsZero() && time.Since(osInfoCache.at) < ttl {
 		return osInfoCache.info
 	}
-	osInfoCache.info = readWindowsOSInfo()
+	info, complete := readWindowsOSInfo()
+	osInfoCache.info = info
+	osInfoCache.complete = complete
 	osInfoCache.at = time.Now()
-	return osInfoCache.info
+	return info
 }
 
-func readWindowsOSInfo() OSInfo {
+func readWindowsOSInfo() (OSInfo, bool) {
 	info := collectWindowsOSInfoFromCIM()
-	if info.Caption == "" || info.Build == "" || info.WindowsProductType == 0 {
+	complete := info.Caption != "" && info.Build != "" && info.WindowsProductType != 0
+	if !complete {
 		fallback := collectWindowsOSInfoFromRegistry()
 		if info.Caption == "" {
 			info.Caption = fallback.Caption
@@ -80,7 +94,7 @@ func readWindowsOSInfo() OSInfo {
 	if info.Version == "" {
 		info.Version = info.Build
 	}
-	return info
+	return info, complete
 }
 
 func collectWindowsOSInfoFromCIM() OSInfo {

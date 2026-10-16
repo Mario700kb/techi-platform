@@ -91,11 +91,22 @@ func stripTOMLQuotes(s string) string {
 	return s
 }
 
+// isOptionsHeader reports whether a trimmed line opens the [options] table,
+// also when the file starts with a UTF-8 byte-order mark or the header is
+// written "[ options ]". Missing it would make a patch append a second
+// [options] table, which RustDesk cannot read.
+func isOptionsHeader(trimmed string) bool {
+	trimmed = strings.TrimPrefix(trimmed, "\ufeff")
+	trimmed = strings.NewReplacer(" ", "", "\t", "").Replace(trimmed)
+	return trimmed == "[options]"
+}
+
 // parseTOMLOptions extracts key→value pairs from the [options] section of a
 // TOML string. Returned values have surrounding quotes stripped and whitespace
 // trimmed so comparisons are quote-style and whitespace agnostic.
 func parseTOMLOptions(content string) map[string]string {
 	result := make(map[string]string)
+	content = strings.TrimPrefix(content, "\ufeff")
 	content = strings.ReplaceAll(content, "\r\n", "\n")
 	inOptions := false
 	for _, line := range strings.Split(content, "\n") {
@@ -104,7 +115,7 @@ func parseTOMLOptions(content string) map[string]string {
 			continue
 		}
 		if strings.HasPrefix(trimmed, "[") {
-			inOptions = trimmed == "[options]"
+			inOptions = isOptionsHeader(trimmed)
 			continue
 		}
 		if !inOptions {
@@ -182,6 +193,11 @@ func applyTOMLOptionPatch(content string, managed map[string]string) (string, bo
 	if len(managed) == 0 {
 		return content, false
 	}
+	bom := ""
+	if strings.HasPrefix(content, "\ufeff") {
+		bom = "\ufeff"
+		content = strings.TrimPrefix(content, bom)
+	}
 	content = strings.ReplaceAll(content, "\r\n", "\n")
 	lines := strings.Split(content, "\n")
 
@@ -193,7 +209,7 @@ func applyTOMLOptionPatch(content string, managed map[string]string) (string, bo
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "[") {
-			inOptions = trimmed == "[options]"
+			inOptions = isOptionsHeader(trimmed)
 			if inOptions {
 				optionsSectionIdx = i
 			}
@@ -247,7 +263,7 @@ func applyTOMLOptionPatch(content string, managed map[string]string) (string, bo
 		}
 	}
 
-	return strings.Join(lines, "\n"), changed
+	return bom + strings.Join(lines, "\n"), changed
 }
 
 // setTOMLOptionIfEmpty sets key in the [options] section only when it is

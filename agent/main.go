@@ -117,8 +117,16 @@ func runSingleHeartbeat(configPath string, enrollmentToken string) error {
 		tel.CPUPercent, tel.RAMPercent, tel.DiskPercent, tel.UptimeSeconds, tel.HeartbeatLatencyMs,
 	)
 
-	heavyInventory.refresh(cfg)
-	heavy := heavyInventory.forHeartbeat()
+	// A forced refresh (Refresh inventory / Heartbeat now / -once) collects the
+	// heavy parts synchronously so this heartbeat carries current software,
+	// services and patch status; otherwise it starts a background pass and
+	// sends whatever the schedule has ready.
+	if pendingForceInventory.CompareAndSwap(true, false) {
+		heavyInventory.forceCollect(cfg)
+	} else {
+		heavyInventory.refresh(cfg)
+	}
+	heavy := heavyInventory.forHeartbeat(cfg)
 
 	payload := buildHeartbeatPayload(cfg, inventory, rustdesk, tel, heavy.Processes, heavy.Services, heavy.Software, heavy.Patch)
 	payload.RemoteSessionActive = currentRemoteSessionState()

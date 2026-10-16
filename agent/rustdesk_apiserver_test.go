@@ -93,3 +93,24 @@ func TestRemoteSessionReport(t *testing.T) {
 		}
 	}
 }
+
+func TestAnOptionsHeaderWithABOMOrSpacesIsFound(t *testing.T) {
+	for _, content := range []string{
+		"\ufeff[options]\r\nkey = 'abc='\r\n",
+		"[ options ]\nkey = 'abc='\n",
+	} {
+		got, changed := setTOMLOptionIfEmpty(content, "api-server", "https://api-rdp.techi.com.al")
+		if !changed {
+			t.Fatalf("api-server not added to %q", content)
+		}
+		if strings.Count(got, "options") != 1 {
+			t.Fatalf("a second [options] table was appended:\n%q", got)
+		}
+		if strings.HasPrefix(content, "\ufeff") && !strings.HasPrefix(got, "\ufeff") {
+			t.Fatalf("the byte-order mark was dropped:\n%q", got)
+		}
+		if parseTOMLOptions(got)["api-server"] != "https://api-rdp.techi.com.al" {
+			t.Fatalf("api-server not readable back from:\n%q", got)
+		}
+	}
+}
