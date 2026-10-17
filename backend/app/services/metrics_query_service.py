@@ -17,6 +17,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
+from app.platform_core.classification import classify_category
 from app.core.time import utcnow_naive
 from app.models.alert import AlertState, DeviceAlert
 from app.models.device import Device, DeviceStatus
@@ -480,7 +481,7 @@ class MetricsQueryService:
             mem_peaks = [v["mem_max"] for v in ordered if v["mem_max"] is not None]
             disk_peaks = [v["disk_max"] for v in ordered if v["disk_max"] is not None]
             rows_out.append(ClientDeviceRow(
-                device_id=device.id, name=name, kind=getattr(device.device_type, "value", str(device.device_type)),
+                device_id=device.id, name=name, kind=classify_category(device),
                 agent_version=device.agent_version, spark=spark,
                 cpu_peak=round(max(cpu_peaks), 1) if cpu_peaks else None,
                 mem_peak=round(max(mem_peaks), 1) if mem_peaks else None,

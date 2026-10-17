@@ -98,8 +98,15 @@ const coveragePct = (value: number | null | undefined) =>
 const hourLabel = (hour: number) => `${String(hour).padStart(2, "0")}:00`;
 
 function kindLabel(kind: string): string {
-  if (kind === "server") return TERMS.server;
-  if (kind === "client") return TERMS.clientPc;
+  // The console's device category (older backends sent server/client).
+  if (kind === "servers" || kind === "server") return TERMS.server;
+  if (kind === "clientpc" || kind === "client") return TERMS.clientPc;
+  if (kind === "network") return "Network device";
+  if (kind === "storage") return "Storage";
+  if (kind === "hypervisors") return "Hypervisor";
+  if (kind === "printers") return "Printer";
+  if (kind === "iot") return "IoT device";
+  if (kind === "other") return "Other";
   return "Unclassified";
 }
 

@@ -48,6 +48,7 @@ import {
   updateDevice,
 } from "../api/devices";
 import { formatDateTime, formatLocalDateTime, parseUTC, timeAgo } from "../utils/time";
+import { deviceTypeLabel, headerGroup } from "../utils/deviceBadges";
 import {
   freshnessTone,
   humanize,
@@ -710,7 +711,11 @@ export default function DeviceDrawer({
         <header className="flex-none px-5 pt-4" style={{ borderBottom: "1px solid var(--th-border-drawer-section)" }}>
           <div className="flex items-start gap-3">
             <span className="th-palette-icon !h-10 !w-10 flex-none" aria-hidden="true">
-              {device.device_type === "server" ? <Server className="h-5 w-5" /> : <Monitor className="h-5 w-5" />}
+              {deviceTypeLabel(device) === TERMS.server ? (
+                <Server className="h-5 w-5" />
+              ) : (
+                <Monitor className="h-5 w-5" />
+              )}
               <i style={{ background: freshnessTone(device.freshness_state) }} />
             </span>
 
@@ -781,13 +786,12 @@ export default function DeviceDrawer({
               )}
               <p className="mt-0.5 truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
                 {[
-                  device.device_type === "server"
-                    ? "Server"
-                    : device.device_type === "client"
-                      ? "Workstation"
-                      : "Unclassified",
+                  // The console's category (standard group first, then the
+                  // OS), not the legacy device_type column; a standard group
+                  // is not repeated after it.
+                  deviceTypeLabel(device),
                   device.resolved_client_name || device.client_name || TERMS.noClient,
-                  device.resolved_group || device.group_name,
+                  headerGroup(device),
                   hostnameSubtitle ? `host ${hostnameSubtitle}` : null,
                   `#${device.id}`,
                 ]

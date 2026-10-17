@@ -93,6 +93,16 @@ export function agentVersionView(
 
 // ─── Device type, health, last seen ──────────────────────────────────────────
 
+// The six standard groups (GroupPicker); naming one after the device's type
+// says the same thing twice.
+const STANDARD_GROUPS = new Set(["servers", "client pc", "network", "storage", "hypervisors", "other"]);
+
+/** The device's group for a one-line summary: left out when it is a standard group. */
+export function headerGroup(device: Device): string | null {
+  const group = device.resolved_group || device.group_name || null;
+  return group && STANDARD_GROUPS.has(group.trim().toLowerCase()) ? null : group;
+}
+
 export function deviceTypeLabel(device: Device): string {
   const cat = device.resolved_device_category;
   if (cat === "servers" || device.device_type === "server") return TERMS.server;
