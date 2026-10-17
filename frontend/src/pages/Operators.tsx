@@ -469,7 +469,7 @@ export default function Operators() {
 
   if (denied) {
     return (
-      <section className="premium-page th-onb space-y-4">
+      <section className="premium-page th-onb th-page-fill flex flex-col gap-4">
         <PageHeader title="Operators" description="Platform users, their roles and their access." />
         <div className="th-onb-card th-onb-enter">
           <EmptyState
@@ -483,7 +483,7 @@ export default function Operators() {
   }
 
   return (
-    <section className="premium-page th-onb space-y-4">
+    <section className="premium-page th-onb th-page-fill flex flex-col gap-4">
       <PageHeader
         title="Operators"
         description="Platform users, their roles and their access."

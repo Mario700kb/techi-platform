@@ -660,7 +660,7 @@ export default function CredentialVault() {
 
   if (!canView) {
     return (
-      <section className="premium-page th-onb space-y-4">
+      <section className="premium-page th-onb th-page-fill flex flex-col gap-4">
         <PageHeader title="Credential Vault" description="Encrypted credentials for Connect, SSH and integrations." />
         <div className="th-onb-card th-onb-enter">
           <EmptyState
@@ -717,7 +717,7 @@ export default function CredentialVault() {
   ];
 
   return (
-    <section className="premium-page th-onb space-y-4">
+    <section className="premium-page th-onb th-page-fill flex flex-col gap-4">
       <PageHeader
         title="Credential Vault"
         description="AES-256-GCM envelope encryption. Using a credential never exposes it; revealing one needs a reason and is audited."

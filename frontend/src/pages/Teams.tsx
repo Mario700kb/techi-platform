@@ -366,7 +366,7 @@ export default function Teams() {
   };
 
   return (
-    <section className="premium-page th-onb space-y-4">
+    <section className="premium-page th-onb th-page-fill flex flex-col gap-4">
       <PageHeader
         title="Teams"
         description="Teams group operators and grant them visibility over clients, device groups or single devices."
