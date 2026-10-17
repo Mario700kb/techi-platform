@@ -5,6 +5,21 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-17] ACTIVITY-SESSIONS-2026-10-17 — session duration on the entry that started it (`fc0d2d0`)
+
+**Backend + frontend deployed 20:22 (Tirana), no migration.** The owner asked
+for the duration of every way into a device in the client's activity log.
+Entries that start a session (Connect click, Remote Support session started,
+terminal/PowerShell/SSH opened) now show how long it lasted, or "Live · N
+min" while it is open. A terminal session's end is audited once (one
+conditional UPDATE decides which of the two sockets or the watchdog ended
+it; before, both sockets audited it 15 ms apart). Checked live: 17 of the
+last 60 TECHI shpk entries carry a duration (e.g. PowerShell on 781 55 s,
+Remote Support on 924 18 min). Dump
+`/opt/backups/techi/pre-activity-sessions-20261017-202056.sql.gz`, rollback
+`techi-platform-{backend,frontend}:pre-activity-sessions-19ecfa2`; guard,
+smoke passed, 0 errors. Disk 2.0 GB free (92%).
+
 ## [2026-10-17] AGENT-2.1.30-PILOT-2026-10-17 — console command reporting on 781 and 924
 
 On the owner's word ("jam dakord per 2.1.30"): 2.1.30 (`fda15de7…`, package
