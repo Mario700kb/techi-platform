@@ -5,6 +5,44 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-17] POWERSHELL-UI-2026-10-17 — monitoring UI, administrator PowerShell, agent 2.1.29 pilot (`8dbdecb`, `99f3c05`)
+
+**Backend + frontend deployed 18:25 (Tirana), no migration.** Phases 2 and 3
+of the telemetry pipeline the owner asked for ("beji te gjitha").
+
+- Agent 2.1.29 (CI run 39044825614: Windows tests including a real PowerShell
+  in a pseudo console, MSI install/upgrade): every-minute samples written
+  through to a checksummed on-disk buffer, uploaded gzip every 15 minutes and
+  forgotten only once acknowledged; monitoring policy from the heartbeat or
+  the channel; monitors evaluated on the device and sent live; Windows
+  `open_terminal` = PowerShell in ConPTY as SYSTEM, kill-on-close job, one-hour
+  cap; capability "powershell" where ConPTY exists.
+- Backend: a Windows device's console is always PowerShell and opens only with
+  a current two-factor code (refusals audited); sessions recorded as asciicast
+  in `/app/data/terminal-recordings` (5 MB cap, 180 days), listed per device,
+  served to admins (viewing audited).
+- UI: device Monitoring tab and "Last 24 hours" card, Maintenance (was
+  Management) with the PowerShell console and its history/replay, client
+  Analytics on the monitoring data, `/monitoring` policies page with pipeline
+  health, labels for `disk_forecast` / `high_network`. Windows devices always
+  open the classic drawer (they now report a capability).
+
+Dump `/opt/backups/techi/pre-powershell-ui-20261017-182245.sql.gz` (140 MB),
+rollback `techi-platform-{backend,frontend}:pre-powershell-ui-cef4417`.
+Backend ready 5 s; guard and smoke passed; 0 errors; recordings directory
+writable; backend 170 MB. Pytest 1502, Vitest 286, Playwright 182, agent tests
+on darwin and Windows CI.
+
+Pilot: 2.1.29 (`c2ebf0ce…`, package `edc86c4b…`) is the active Windows
+`agent_binary`; self_update sent to Mario-Lenovo (924) only — on 2.1.29 after
+~100 s, reports `powershell`, channel back in 3 s. First upload at 18:41 (random spread
+after the restart): 13 one-minute samples 16:29–16:41 UTC without a gap,
+stored as agent data, 4 five-minute rollups, clock offset 0.6 s (no
+correction), 0 dropped, no false alerts. 20 minutes after the deploy: 0
+errors, 0 5xx, backend 185 MB, load 0.5, disk 2.6 GB free. The administrator
+PowerShell still needs a first real session by the owner (it asks for his
+two-factor code).
+
 ## [2026-10-17] TELEMETRY-PIPELINE-2026-10-17 — store-and-forward telemetry backend, monitoring policies, monitor alerts (`eff3cf2`, `2d4d77a`)
 
 **Backend + database deployed 17:01 (Tirana), migration `m3n4o5p6q7r8`.**
