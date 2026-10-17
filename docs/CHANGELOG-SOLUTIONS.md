@@ -5,6 +5,29 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-17] PS-CONSOLE-2026-10-17 — enterprise PowerShell console, saved scripts (`28929be`, `e74ab15`, `818fa20`)
+
+**Backend + database deployed 19:16, frontend 19:41 (Tirana); migration
+`p4q5r6s7t8u9`.** The owner asked for the console to look like his reference:
+coloured text, session details on the side, saved scripts, enterprise.
+
+- Backend: `console_scripts` library (five seeded: print queue, DNS, free
+  disk space, last 50 system errors, disk usage), admin CRUD with versions;
+  running one in the caller's own open PowerShell session returns one base64
+  line that runs it exactly and audits name, version and sha256.
+- Agent 2.1.30 (built, CI 39052485808 green incl. a real console test; not
+  uploaded): TECHI prompt in blue; after each command the window title
+  carries history id, failed flag, duration and the command, forwarded by
+  the pseudo console as OSC 0 and never drawn.
+- UI: one console for the own window and the drawer — header (Recording,
+  idle countdown, End session), themed console, command bar, Session /
+  Saved scripts / This session panel, script library, fullscreen, transcript.
+
+Dump `/opt/backups/techi/pre-console-scripts-20261017-191454.sql.gz`,
+rollback `techi-platform-backend:pre-console-scripts-c41cdab`,
+`techi-platform-frontend:pre-ps-console-e74ab15`. Guard and smoke passed,
+0 errors. Pytest 1507, Vitest 313, Playwright 186. Disk 2.2 GB free (91%).
+
 ## [2026-10-17] WIDE-DRAWER-2026-10-17 — wider device drawer (`8435222`)
 
 **Frontend deployed 18:58 (Tirana).** The owner asked for a wider device
