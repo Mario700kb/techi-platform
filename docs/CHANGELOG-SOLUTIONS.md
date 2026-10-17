@@ -5,6 +5,50 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-17] TELEMETRY-PIPELINE-2026-10-17 — store-and-forward telemetry backend, monitoring policies, monitor alerts (`eff3cf2`, `2d4d77a`)
+
+**Backend + database deployed 17:01 (Tirana), migration `m3n4o5p6q7r8`.**
+Phase 1 of the owner's request that the platform become a monitoring system
+which loses no sample: agents (from 2.1.29, not yet built) keep every 1-minute
+sample on the device and upload them every 15 minutes.
+
+- `POST /api/v1/agent/telemetry`: gzip, the device's own agent_id (403
+  otherwise), samples stored exactly once on (device_id, ts) and acknowledged
+  by the highest seq; samples older than 7 days rejected, late ones marked,
+  device clock skew above 2 s corrected.
+- `telemetry_samples` partitioned by day (7 days kept, partitions made at
+  start, on demand and nightly), 5-minute rollups (30 days), hourly (13 months)
+  with samples / expected / late.
+- Monitoring policies (`/monitoring/policies`, admin to change, audited):
+  default "Workstations" and "Servers" (device type) seeded; group > client >
+  device type > default; sent in the heartbeat response and pushed over the
+  live channel on change.
+- Monitor events from the agent open and resolve alerts; the platform itself
+  evaluates "no data while on" and the disk-full forecast (sweep every 5 min).
+  New alert kinds `disk_forecast`, `high_network`. Heartbeat CPU/RAM/disk
+  alerts are skipped for a device that monitors itself.
+- Read APIs: `/devices/{id}/metrics?range=`, `/devices/{id}/monitoring`,
+  `/clients/{id}/monitoring`, `/monitoring/pipeline` — for the UI of phase 3.
+
+Until an agent sends uploads nothing changes for the fleet: no device has
+pipeline state, so alerting and pages behave as before.
+
+The first migration run stopped at `ALTER TYPE alertkind`: the type belongs to
+the database owner `techi`, migrations run as `techi_app`, and ALTER TYPE
+checks ownership even with IF NOT EXISTS. Nothing was applied (transactional).
+`2d4d77a` adds a value only when missing; the two values were added as `techi`
+and the migration then ran. On a scratch PostgreSQL before the deploy the
+pipeline showed two faults SQLite did not: an ORM insert with ON CONFLICT
+reports rowcount -1 (now counted with RETURNING) and a missing partition is a
+check violation (now retried).
+
+Dump `/opt/backups/techi/pre-telemetry-pipeline-20261017-165857.sql.gz`
+(140 MB), rollback `techi-platform-backend:pre-telemetry-pipeline-8534ef1`.
+Backend ready 5 s; guard and smoke passed; 0 errors in the first 4 minutes,
+88 heartbeats a minute; new endpoints answer 401 without a session and 403 to
+a wrong agent_id; 11 daily partitions, both policies present; backend 150 MB.
+Pytest 1490.
+
 ## [2026-10-17] PRESENCE-2026-10-17 — one source per value on the device page; online/offline from the live channel (`d5cfa14`, `80f9765`)
 
 **Backend + frontend deployed 15:28 (Tirana), no migration.** From the owner's
