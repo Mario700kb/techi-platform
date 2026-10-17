@@ -5,6 +5,26 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-17] MONITORING-PAGE-2026-10-17 — monitoring policies page redesigned; server policy by category (`0fb7f1b`, `a837296`)
+
+**Backend + frontend deployed 22:19 (Tirana), no migration.** The owner asked
+for the Monitoring page to be enterprise and symmetric. Four equal KPI tiles;
+policy list and editor of equal height; monitors table without the key rows;
+sticky action bar (Publish only when something changed, with the count and
+Discard); honest coverage ("N of M reporting agents on vX", older agents
+apart); calm Storage tiers.
+
+Found on the way: a "device type" policy matched the legacy device_type
+column, so servers the console classifies by their Servers group
+(HV-PROD-01, Techi-Server: UNASSIGNED there) never got the Servers policy
+(disk forecast). It now matches the console category (any category; legacy
+server/client still accepted). Live after the deploy: Servers covers 136
+devices (was 110); 12 and 781 resolve to Workstations + Servers (1.1,2.1).
+Dump `/opt/backups/techi/pre-monitoring-page-20261017-221720.sql.gz`,
+rollback `techi-platform-{backend,frontend}:pre-monitoring-page-fa33489`;
+guard, smoke passed, 0 errors. Pytest 1521, Vitest 321, Playwright 192.
+Disk 1.9 GB free (93%).
+
 ## [2026-10-17] JOINED-2026-10-17 — a click into an open session joins it (`fa33489`)
 
 **Backend + frontend deployed 21:23 (Tirana), no migration.** A second
