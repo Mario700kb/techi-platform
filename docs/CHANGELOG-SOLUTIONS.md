@@ -5,6 +5,16 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-17] MSI-2.1.30-2026-10-17 — Endpoint MSI and Update Bridge at 2.1.30
+
+On the owner's word: the Endpoint Deployment MSI (`887163de…`, package
+`2d950f7c…`) and the Agent Update Bridge MSI (`a0df73dc…`, package
+`609c4b47…`) from CI run 39052485808 — the same build as the active agent
+binary — are now the active `msi` and `agent_update_msi`; 2.1.26 packages
+(`eb8d8986…`, `7501d36f…`) kept inactive for rollback. The three public
+download endpoints serve 2.1.30 and `active-version` reports 2.1.30. A new
+install or a bridge update now lands on 2.1.30 directly.
+
 ## [2026-10-17] ACTIVITY-SESSIONS-2026-10-17 — session duration on the entry that started it (`fc0d2d0`)
 
 **Backend + frontend deployed 20:22 (Tirana), no migration.** The owner asked
