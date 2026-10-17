@@ -192,7 +192,12 @@ def test_an_open_page_starts_the_agent_streaming_and_receives_its_frames(world):
             assert frame["data"]["processes"][0]["name"] == "sqlservr.exe"
 
         # The page closed and nobody else watches: the agent is told to stop.
-        assert agent.receive_json() == {"type": "live_stop"}
+        # A repeated live_start may come first (the agent connected while the
+        # page opened); it only extends the stream, so skip it.
+        message = agent.receive_json()
+        while message["type"] == "live_start":
+            message = agent.receive_json()
+        assert message == {"type": "live_stop"}
 
 
 def test_a_page_says_when_the_agent_is_not_connected(world):
