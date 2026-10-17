@@ -5,6 +5,22 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-17] PAGE-FILL-2026-10-17 — Clients table fills the screen; app shell fits short screens (`c7af232`)
+
+**Frontend deployed.** On a 2560×1265 monitor the Clients table stopped at a
+fixed 640px box with half the screen empty. `.th-page-fill` makes a list page
+exactly the viewport on desktop, the table taking the rest (rows scroll under
+the sticky head, pagination in view); applied to Clients. Found on the way:
+the shell grid had no row size, so on screens shorter than the sidebar (~790px,
+e.g. 1366×768 laptops) every page ran ~25px past the bottom edge; the row is
+now the screen height.
+
+Rollback `techi-platform-frontend:pre-page-fill-be44b79`; guard and smoke
+passed; the served CSS carries both rules. Playwright checks 2560×1265,
+1920×1080 and 1366×768. Vitest 253, Playwright 158. Same 640px cap remains on
+Operators, Teams, Audit, Agent Packages, Credential Vault, Deployment,
+Enrollment and Reports.
+
 ## [2026-10-17] LIVE-DEDUPE-2026-10-17 — one history entry per live action; live panel on the Linux drawer (`be44b79`)
 
 **Frontend deployed (no backend or database change).** The owner queued one
