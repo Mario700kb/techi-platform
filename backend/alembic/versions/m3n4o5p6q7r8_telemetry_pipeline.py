@@ -59,9 +59,17 @@ def _rollup(name: str) -> None:
 def upgrade() -> None:
     bind = op.get_bind()
     if bind.dialect.name == "postgresql":
-        # Monitors raise two new kinds of alert.
-        op.execute("ALTER TYPE alertkind ADD VALUE IF NOT EXISTS 'disk_forecast'")
-        op.execute("ALTER TYPE alertkind ADD VALUE IF NOT EXISTS 'high_network'")
+        # Monitors raise two new kinds of alert. alertkind belongs to the
+        # database owner, not the application role that runs migrations, and
+        # ALTER TYPE checks ownership even with IF NOT EXISTS: add a value
+        # only when it is missing (the owner can add it beforehand).
+        for value in ("disk_forecast", "high_network"):
+            present = bind.execute(sa.text(
+                "SELECT 1 FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid "
+                "WHERE t.typname = 'alertkind' AND e.enumlabel = :v"
+            ), {"v": value}).first()
+            if present is None:
+                op.execute(f"ALTER TYPE alertkind ADD VALUE IF NOT EXISTS '{value}'")
         op.execute(
             """
             CREATE TABLE telemetry_samples (
