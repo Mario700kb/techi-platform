@@ -46,7 +46,7 @@ test("an action that runs live appears once, completed", async ({ page }, testIn
 
   await page.goto("/devices");
   await page.locator("tr", { hasText: "NW-RECEPTION-01" }).getByText("NW-RECEPTION-01").first().click();
-  await page.getByRole("tab", { name: "Management" }).click();
+  await page.getByRole("tab", { name: "Maintenance" }).click();
   await expect(page.getByText("Device is connected live. Actions run within seconds.")).toBeVisible();
 
   expect(realtime.length, "the dashboard opened its realtime socket").toBeGreaterThan(0);

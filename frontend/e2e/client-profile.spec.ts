@@ -45,9 +45,11 @@ for (const theme of ["dark", "light"] as const) {
     await page.getByRole("tab", { name: /Activity/ }).click();
     await expect(page.getByText("NW-SRV-01").first()).toBeVisible();
     await page.getByRole("tab", { name: /Analytics/ }).click();
+    // Monitoring first (client-analytics.spec.ts covers it in depth), the
+    // 30-day status and alert history below, its bar chart with a legend.
+    await expect(page.locator(".th-onb-stat", { hasText: "Devices reporting" })).toContainText("3 / 4");
+    await expect(page.getByRole("heading", { name: "CPU by device and hour" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Availability" })).toBeVisible();
-    // Every figure names its period, and the bar chart carries its legend.
-    await expect(page.getByText(/^Alerts opened · \d+ days$/)).toBeVisible();
     await expect(page.locator(".th-cp-chart-meta", { hasText: "Resolved" })).toBeVisible();
     await page.screenshot({ path: test.info().outputPath(`profile-analytics-${theme}.png`), fullPage: true });
     await expect(page.getByRole("tab", { name: /Tickets/ })).toBeDisabled();

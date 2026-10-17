@@ -99,7 +99,9 @@ import { deviceSite } from "../utils/location";
 import { cpuView, osView, storageView } from "../utils/system";
 import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
 import DeviceLivePanel, { HeartbeatValues } from "./DeviceLivePanel";
-import DeviceTrendPanel from "./DeviceTrendPanel";
+import DeviceLast24hCard from "./DeviceLast24hCard";
+import DeviceMonitoringPanel from "./DeviceMonitoringPanel";
+import DevicePowerShellPanel from "./DevicePowerShellPanel";
 import { addQueuedAction } from "../utils/remoteActions";
 import { useDeviceLive } from "../hooks/useDeviceLive";
 
@@ -116,13 +118,16 @@ interface DeviceDrawerProps {
   onToggleFavorite?: (deviceId: number) => void;
 }
 
-type DrawerTab = "overview" | "remote_support" | "terminal" | "software" | "management" | "notes" | "timeline";
+type DrawerTab =
+  "overview" | "monitoring" | "remote_support" | "terminal" | "software" | "management" | "notes" | "timeline";
 
+// "management" is the Maintenance tab (id kept to limit churn).
 const drawerTabs: Array<{ id: DrawerTab; label: string }> = [
   { id: "overview", label: "Overview" },
+  { id: "monitoring", label: "Monitoring" },
   { id: "remote_support", label: "Remote Support" },
   { id: "software", label: "Software" },
-  { id: "management", label: "Management" },
+  { id: "management", label: "Maintenance" },
   { id: "notes", label: "Notes" },
   { id: "timeline", label: "Timeline" },
 ];
@@ -669,8 +674,13 @@ export default function DeviceDrawer({
   const hasTerminal =
     platformFeatures.FEATURE_TERMINAL && Boolean(device.capabilities && "terminal" in device.capabilities);
   const visibleDrawerTabs = hasTerminal
-    ? [...drawerTabs.slice(0, 2), { id: "terminal" as DrawerTab, label: "Terminal" }, ...drawerTabs.slice(2)]
+    ? [...drawerTabs.slice(0, 3), { id: "terminal" as DrawerTab, label: "Terminal" }, ...drawerTabs.slice(3)]
     : drawerTabs;
+  // Administrator PowerShell (Windows, agent 2.1.29+): admin/owner only, behind
+  // the same platform flag as the terminal. The backend enforces both again.
+  const isWindows = !device.platform || /^windows/i.test(device.platform);
+  const showPowerShell = isWindows && platformFeatures.FEATURE_TERMINAL && can("admin");
+  const powerShellCapable = Boolean(device.capabilities && "powershell" in device.capabilities);
 
   return (
     <>
@@ -1053,6 +1063,13 @@ export default function DeviceDrawer({
                 )}
               </div>
             </section>
+
+            {/* History only: current values are in the Live panel above. */}
+            <DeviceLast24hCard
+              deviceId={device.id}
+              active={isOpen && activeTab === "overview"}
+              onOpenMonitoring={() => setActiveTab("monitoring")}
+            />
 
             {/* Services */}
             <section className="mb-5">
@@ -1500,9 +1517,13 @@ export default function DeviceDrawer({
             </div>
           </div>
 
-          <div className={activeTab === "overview" ? "th-tab-panel" : "hidden"}>
-            {/* History only: current values are in the panel at the top. */}
-            <DeviceTrendPanel deviceId={device.id} enabled={isOpen && activeTab === "overview"} />
+          <div className={activeTab === "monitoring" ? "th-tab-panel" : "hidden"}>
+            <DeviceMonitoringPanel
+              key={device.id}
+              deviceId={device.id}
+              active={isOpen && activeTab === "monitoring"}
+              onShowAlerts={() => setActiveTab("overview")}
+            />
           </div>
 
           {archiveConfirmOpen && (
@@ -1844,6 +1865,17 @@ export default function DeviceDrawer({
                 )}
               </div>
             </section>
+
+            {showPowerShell && (
+              <DevicePowerShellPanel
+                key={device.id}
+                deviceId={device.id}
+                deviceName={displayName}
+                capable={powerShellCapable}
+                active={isOpen && activeTab === "management"}
+                offline={offline}
+              />
+            )}
           </div>
 
           <div className={activeTab === "software" ? "th-tab-panel" : "hidden"}>

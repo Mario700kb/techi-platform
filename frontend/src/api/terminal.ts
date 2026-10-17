@@ -1,4 +1,4 @@
-import { fetchJson } from "./client";
+import { ApiError, fetchJson, fetchText } from "./client";
 
 export interface TerminalSession {
   session_id: string;
@@ -18,6 +18,55 @@ export async function createTerminalSession(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ engine }),
   });
+}
+
+// ── Administrator PowerShell (Windows, agent 2.1.29+) ───────────────────
+// Same session/relay stack; the platform opens it only with a current
+// two-factor code and records everything the console shows.
+
+export class PowerShellStepUpError extends Error {
+  constructor(
+    public code: "mfa_not_enabled" | "mfa_invalid",
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+export async function createPowerShellSession(deviceId: number, mfaCode: string): Promise<TerminalSession> {
+  try {
+    return await fetchJson<TerminalSession>(`/api/v1/devices/${deviceId}/terminal/sessions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ engine: "powershell", mfa_code: mfaCode }),
+    });
+  } catch (err) {
+    if (err instanceof ApiError && (err.code === "mfa_not_enabled" || err.code === "mfa_invalid")) {
+      throw new PowerShellStepUpError(err.code, err.message);
+    }
+    throw err;
+  }
+}
+
+export interface ConsoleSessionSummary {
+  session_id: string;
+  engine: string;
+  operator_username: string | null;
+  status: string;
+  created_at: string;
+  started_at: string | null;
+  ended_at: string | null;
+  disconnect_reason: string | null;
+  recording_bytes: number | null;
+}
+
+export async function listConsoleSessions(deviceId: number, limit = 20): Promise<ConsoleSessionSummary[]> {
+  return fetchJson<ConsoleSessionSummary[]>(`/api/v1/devices/${deviceId}/terminal/sessions?limit=${limit}`);
+}
+
+// The asciicast recording (one JSON header line, then [seconds, "o"|"r", text]).
+export async function getConsoleRecording(deviceId: number, sessionId: string): Promise<string> {
+  return fetchText(`/api/v1/devices/${deviceId}/terminal/sessions/${sessionId}/recording`);
 }
 
 // ── Embedded SSH Connect ────────────────────────────────────────────────

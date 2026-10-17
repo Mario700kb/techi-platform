@@ -1,0 +1,412 @@
+/* Client profile → Analytics (ClientAnalytics.tsx). Built on the app's tokens
+   (--th-*), so both themes follow; status tones come from --th-status-*. */
+
+.th-ca-body {
+  transition: opacity 200ms var(--th-ease);
+}
+.th-ca-body[data-stale] {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* Toolbar: the range switch, and what the figures are made of. */
+.th-ca-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+.th-ca-range {
+  min-width: 320px;
+}
+.th-ca-range > button {
+  padding: 0 12px;
+}
+.th-ca-note {
+  font-size: 12px;
+  color: var(--th-text-muted);
+}
+@media (max-width: 639px) {
+  .th-ca-range {
+    width: 100%;
+    min-width: 0;
+  }
+  .th-ca-range > button {
+    padding: 0 4px;
+  }
+}
+
+.th-ca-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--th-text-secondary);
+  background: color-mix(in srgb, var(--th-status-info) 8%, var(--th-bg-card));
+  border: 1px solid color-mix(in srgb, var(--th-status-info) 28%, var(--th-border-card));
+}
+.th-ca-callout > svg {
+  margin-top: 1px;
+  color: var(--th-status-info);
+}
+
+/* Two-column rows: the wide card and its companion keep one column split on
+   every row, so the page reads as one grid; one column below desktop. */
+.th-ca-row {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 1024px) {
+  .th-ca-row {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  }
+}
+
+.th-ca-foot {
+  display: flex;
+  align-items: center;
+  min-height: 41px;
+}
+.th-ca-strong {
+  font-weight: 600;
+  color: var(--th-text-primary);
+}
+.th-ca-muted {
+  font-size: 12px;
+  color: var(--th-text-faint);
+}
+.th-ca-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+}
+.th-ca-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.th-ca-legend > span > i:not(.th-legend-swatch) {
+  display: inline-block;
+  width: 12px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--cell);
+}
+.th-ca-legend > span > i:not(.th-legend-swatch) + i {
+  margin-left: -4px;
+}
+
+/* ── Heatmap: device × hour of the average day ── */
+:root {
+  --th-ca-off: rgba(255, 255, 255, 0.05);
+}
+html.light {
+  --th-ca-off: rgba(19, 19, 22, 0.06);
+}
+.th-ca-heat-row,
+.th-ca-heat-axis {
+  display: grid;
+  grid-template-columns: minmax(72px, 148px) repeat(24, minmax(0, 1fr)) 44px;
+  column-gap: 2px;
+  align-items: center;
+  width: 100%;
+}
+.th-ca-heat-row {
+  height: 26px;
+  padding: 0 4px;
+  margin: 0 -4px;
+  width: calc(100% + 8px);
+  border-radius: 6px;
+  text-align: left;
+  transition: background-color 150ms var(--th-ease);
+  animation: th-rise 280ms var(--th-ease-out) backwards;
+  animation-delay: calc(min(var(--row, 0), 14) * 22ms);
+}
+.th-ca-heat-row:hover,
+.th-ca-heat-row:focus-visible {
+  background: var(--th-table-hover);
+  outline: none;
+}
+.th-ca-heat-row:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--th-accent);
+}
+.th-ca-heat-name {
+  overflow: hidden;
+  padding-right: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--th-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.th-ca-heat-row:hover .th-ca-heat-name {
+  color: var(--th-text-primary);
+}
+.th-ca-heat-cell {
+  height: 18px;
+  border-radius: 3px;
+  background: var(--cell);
+}
+.th-ca-heat-cell:hover {
+  box-shadow: 0 0 0 1.5px var(--th-text-primary);
+}
+.th-ca-heat-peak {
+  font-size: 12px;
+  font-weight: 600;
+  text-align: right;
+  color: var(--th-text-primary);
+}
+.th-ca-heat-axis {
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--th-text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.th-ca-heat-axis .th-ca-heat-peak {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--th-text-faint);
+}
+.th-ca-heat .th-chart-tip {
+  top: 0;
+}
+@media (max-width: 639px) {
+  .th-ca-heat-row,
+  .th-ca-heat-axis {
+    grid-template-columns: minmax(64px, 96px) repeat(24, minmax(0, 1fr)) 36px;
+    column-gap: 1px;
+  }
+  .th-ca-heat-cell {
+    border-radius: 2px;
+  }
+}
+
+/* ── Needs attention ── fills the height its row neighbour sets on desktop
+   and scrolls inside it, so the two cards stay one height. */
+.th-ca-scroll {
+  flex: 1;
+  min-height: 0;
+}
+@media (min-width: 1024px) {
+  .th-ca-scroll {
+    position: relative;
+    min-height: 260px;
+  }
+  .th-ca-scroll > .th-ca-attn {
+    position: absolute;
+    inset: 0;
+    overflow-y: auto;
+  }
+}
+.th-ca-attn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px 16px;
+}
+.th-ca-attn-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  text-align: left;
+  border: 1px solid var(--th-border-subtle);
+  background: var(--th-bg-card-soft);
+  box-shadow: inset 3px 0 0 var(--tone);
+  transition:
+    background-color 150ms var(--th-ease),
+    border-color 150ms var(--th-ease);
+  animation: th-rise 280ms var(--th-ease-out) backwards;
+  animation-delay: calc(min(var(--row, 0), 14) * 30ms);
+}
+.th-ca-attn-item:hover,
+.th-ca-attn-item:focus-visible {
+  outline: none;
+  background: var(--th-table-hover);
+  border-color: color-mix(in srgb, var(--tone) 35%, var(--th-border-default));
+}
+.th-ca-attn-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--tone);
+  background: color-mix(in srgb, var(--tone) 12%, transparent);
+}
+.th-ca-attn-title {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  color: var(--th-text-primary);
+  overflow-wrap: anywhere;
+}
+.th-ca-attn-detail {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--th-text-muted);
+}
+.th-ca-attn-open {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  align-self: center;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--th-text-faint);
+}
+.th-ca-attn-item:hover .th-ca-attn-open {
+  color: var(--th-text-primary);
+}
+@media (max-width: 639px) {
+  /* Phones: the chevron alone, so the wording keeps the width. */
+  .th-ca-attn-open-label {
+    display: none;
+  }
+}
+
+/* ── Trend ── CPU in series 2 with its p95 band, memory in series 1. */
+.th-ca-trend {
+  height: 240px;
+}
+.th-ca-line-mem {
+  stroke: var(--th-series-1);
+  stroke-width: 1.75;
+}
+.th-ca-band {
+  fill: color-mix(in srgb, var(--th-series-2) 16%, transparent);
+  stroke: none;
+  animation: th-fade 600ms 250ms var(--th-ease) both;
+}
+.th-ca-dot-mem {
+  fill: var(--th-series-1);
+}
+.th-legend-swatch.th-ca-swatch-band {
+  background: color-mix(in srgb, var(--th-series-2) 30%, transparent);
+}
+
+/* ── Coverage ── */
+.th-ca-big {
+  font-size: 32px;
+  font-weight: 650;
+  line-height: 1.15;
+  color: var(--th-text-primary);
+}
+.th-ca-stack {
+  display: flex;
+  gap: 2px;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--th-ring-track);
+}
+.th-ca-stack > span {
+  flex-basis: 0;
+  min-width: 3px;
+  background: var(--tone);
+  animation: th-fade 600ms var(--th-ease) both;
+}
+.th-ca-cov {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+}
+.th-ca-cov > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+.th-ca-cov dt {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--th-text-secondary);
+}
+.th-ca-cov dt > i {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--tone);
+}
+.th-ca-cov dd {
+  display: inline-flex;
+  flex: none;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+}
+.th-ca-cov dd strong {
+  font-weight: 600;
+  color: var(--th-text-primary);
+}
+.th-ca-cov dd small {
+  min-width: 7ch;
+  font-size: 11px;
+  text-align: right;
+  color: var(--th-text-faint);
+}
+
+/* ── Devices table ── */
+.th-ca-spark {
+  display: block;
+  max-width: 180px;
+}
+.th-ca-spark path {
+  fill: none;
+  stroke: var(--th-series-2);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.th-ca-load {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  color: var(--th-text-primary);
+}
+.th-ca-load > i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--tone);
+}
+.th-ca-mlabel {
+  display: none;
+}
+@media (max-width: 767px) {
+  .th-ca-mlabel {
+    display: inline;
+    font-size: 12px;
+    color: var(--th-text-faint);
+  }
+  .th-ca-devices[data-mobile="cards"] tbody td.th-ca-spark-cell {
+    flex-basis: 100%;
+  }
+  .th-ca-devices[data-mobile="cards"] tbody td {
+    font-size: 12px;
+  }
+  .th-ca-devices .th-ca-spark {
+    max-width: none;
+  }
+}

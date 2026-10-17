@@ -60,7 +60,7 @@ for (const theme of ["dark", "light"] as const) {
     // and the old "now" telemetry block is gone (the trend is history).
     await expect(page.getByText("Live now")).toBeVisible();
     await expect(page.getByText("NORTHWIND\\dr.hoxha")).toBeVisible();
-    await expect(page.getByRole("region", { name: "Trend" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Last 24 hours" })).toBeVisible();
     await expect(page.locator(".premium-kicker", { hasText: /^Telemetry$/ })).toHaveCount(0);
     await panel.screenshot({ path: testInfo.outputPath(`device-live-${theme}.png`) });
   });

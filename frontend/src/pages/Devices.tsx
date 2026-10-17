@@ -24,6 +24,7 @@ import {
 import { PatchStatus } from "../api/inventory";
 import DeviceDrawer from "../components/DeviceDrawer";
 import GenericDeviceDrawer from "../components/GenericDeviceDrawer";
+import { usesRegistryDrawer } from "../utils/drawerChoice";
 import DeviceTree from "../components/DeviceTree";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import DevicesTable, { type ActiveActionEntry, type QuickFilter } from "../components/DevicesTable";
@@ -1089,11 +1090,9 @@ export default function Devices() {
       </div>
 
       {drawerDevice &&
-        // Registry selects the renderer: a device that reports capabilities
-        // (Linux + future platforms) uses the generic registry-driven Drawer;
-        // a device with no capabilities (every Windows agent) uses the classic
-        // DeviceDrawer, unchanged and byte-identical.
-        (drawerDevice.capabilities && Object.keys(drawerDevice.capabilities).length > 0 ? (
+        // Windows: the classic DeviceDrawer; other platforms reporting
+        // capabilities: the registry-driven drawer (utils/drawerChoice).
+        (usesRegistryDrawer(drawerDevice) ? (
           <GenericDeviceDrawer
             device={drawerDevice}
             isOpen={drawerOpen}

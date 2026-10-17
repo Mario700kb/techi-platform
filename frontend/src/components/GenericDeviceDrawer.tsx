@@ -29,7 +29,9 @@ import PlatformIcon from "./PlatformIcon";
 import VersionBadge from "./VersionBadge";
 import { Button, EmptyState, SelectField } from "./ui";
 import DeviceLivePanel, { HeartbeatValues } from "./DeviceLivePanel";
-import DeviceTrendPanel from "./DeviceTrendPanel";
+import DeviceDrawer from "./DeviceDrawer";
+import DeviceLast24hCard from "./DeviceLast24hCard";
+import DeviceMonitoringPanel from "./DeviceMonitoringPanel";
 import { useDeviceLive } from "../hooks/useDeviceLive";
 
 const DeviceTerminal = lazy(() => import("./DeviceTerminal"));
@@ -71,7 +73,32 @@ const TABLE_ROW_LIMIT = 200;
 
 type InventoryState = "loading" | "error" | "ready";
 
-export default function GenericDeviceDrawer({
+/**
+ * Render site helper: a device "reports capabilities" once its agent does,
+ * and Windows agents from 2.1.29 report one ("powershell"). Windows stays on
+ * the classic drawer, which owns the Windows-only sections (Maintenance with
+ * the administrator PowerShell, Remote Support), whichever page opens it.
+ */
+export default function GenericDeviceDrawer(props: Props) {
+  const platform = props.device.platform || "";
+  if (/^windows/i.test(platform)) {
+    return (
+      <DeviceDrawer
+        device={props.device}
+        isOpen={props.isOpen}
+        onClose={props.onClose}
+        latestEvent={props.latestEvent}
+        clients={props.clients}
+        groups={props.groups}
+        onDeviceUpdated={props.onDeviceUpdated}
+        canOperate={props.canOperate}
+      />
+    );
+  }
+  return <RegistryDeviceDrawer {...props} />;
+}
+
+function RegistryDeviceDrawer({
   device,
   isOpen,
   onClose,
@@ -162,16 +189,19 @@ export default function GenericDeviceDrawer({
     [],
   );
 
+  const agentPlatform = /^(windows|linux)/i.test(device.platform || "");
   const tabs = useMemo(() => {
     const t: Array<{ id: string; label: string }> = [{ id: "overview", label: "Overview" }];
+    // Agents (Linux, Windows) send the 1-minute metrics pipeline.
+    if (agentPlatform) t.push({ id: "monitoring", label: "Monitoring" });
     if (meta?.remote_support) t.push({ id: "remote_support", label: TERMS.remoteSupport });
     if (meta?.terminal && features.FEATURE_TERMINAL) t.push({ id: "terminal", label: "Terminal" });
     (meta?.capability_tabs ?? []).forEach((c) => t.push({ id: c, label: CAP_TAB_LABELS[c] ?? humanize(c) }));
-    if (meta?.actions?.length) t.push({ id: "management", label: "Management" });
+    if (meta?.actions?.length) t.push({ id: "management", label: "Maintenance" });
     t.push({ id: "notes", label: "Notes" });
     t.push({ id: "timeline", label: "Timeline" });
     return t;
-  }, [meta, features.FEATURE_TERMINAL]);
+  }, [meta, features.FEATURE_TERMINAL, agentPlatform]);
 
   const flash = (message: string, ok: boolean) => {
     if (toastTimer.current != null) window.clearTimeout(toastTimer.current);
@@ -180,7 +210,7 @@ export default function GenericDeviceDrawer({
   };
 
   // Live view while Overview is open (Linux and Windows agents from 2.1.27).
-  const livePlatform = /^(windows|linux)/i.test(device.platform || "");
+  const livePlatform = agentPlatform;
   const live = useDeviceLive(device.id, isOpen && tab === "overview" && livePlatform && !device.is_archived);
   const streaming = live.state === "live" && live.snapshot !== null;
   const heartbeatValues: HeartbeatValues | null = snapshot
@@ -379,6 +409,8 @@ export default function GenericDeviceDrawer({
                     onDeviceUpdated={onDeviceUpdated}
                     onOpenTerminal={openTerminal}
                     onRemoteSupport={meta.remote_support ? () => setTab("remote_support") : undefined}
+                    active={isOpen}
+                    onOpenMonitoring={agentPlatform ? () => setTab("monitoring") : undefined}
                   />
                 </div>
               )}
@@ -398,6 +430,11 @@ export default function GenericDeviceDrawer({
                       />
                     </div>
                   </section>
+                </div>
+              )}
+              {tab === "monitoring" && (
+                <div className="th-tab-panel">
+                  <DeviceMonitoringPanel key={device.id} deviceId={device.id} active={isOpen} />
                 </div>
               )}
               {tab === "terminal" && (
@@ -641,6 +678,8 @@ function Overview({
   onDeviceUpdated,
   onOpenTerminal,
   onRemoteSupport,
+  active,
+  onOpenMonitoring,
 }: {
   device: Device;
   meta: DrawerMeta;
@@ -655,6 +694,8 @@ function Overview({
   onDeviceUpdated?: (device: Device) => void;
   onOpenTerminal?: () => void;
   onRemoteSupport?: () => void;
+  active: boolean;
+  onOpenMonitoring?: () => void;
 }) {
   const board = captionValue(device.os_caption, "Board");
   const availableGroups = groups.filter((g) => g.client_id === device.client_id);
@@ -739,8 +780,8 @@ function Overview({
         </dl>
       </Section>
 
-      {/* History only: current values are in the panel at the top. */}
-      <DeviceTrendPanel deviceId={device.id} enabled />
+      {/* History only: current values are in the Live panel at the top. */}
+      <DeviceLast24hCard deviceId={device.id} active={active} onOpenMonitoring={onOpenMonitoring} />
 
       <Section title="Client assignment">
         <dl className="th-dl">

@@ -9,6 +9,7 @@ import {
   getSshSessionDetail,
   SSH_FAILURE_MESSAGES,
   type SSHSessionCreateOptions,
+  type TerminalSession,
 } from "../api/terminal";
 
 // Lazy-loaded (see DeviceDrawer) so xterm.js never ships on the main path — the
@@ -25,6 +26,18 @@ interface Props {
   mode?: "agent" | "ssh";
   sshOptions?: SSHSessionCreateOptions;
   onSessionId?: (sessionId: string) => void;
+  /** A session created by the caller (the administrator PowerShell, which
+   *  needs a two-factor code first). The console attaches to it once and never
+   *  opens a new one by itself: a new session needs a new code. */
+  session?: TerminalSession;
+  /** The attached session ended (operator, device, idle or time limit). */
+  onClosed?: (message: string) => void;
+  /** The console socket is open. */
+  onOpen?: () => void;
+  /** Bytes flowed either way; feeds the caller's idle countdown. */
+  onActivity?: () => void;
+  /** Hide the status strip while open (the caller draws its own header). */
+  bare?: boolean;
 }
 
 // WS close codes the backend never retries on its own — the session/ticket
@@ -40,7 +53,17 @@ function themeToken(name: string): string | undefined {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || undefined;
 }
 
-export default function DeviceTerminal({ deviceId, mode = "agent", sshOptions, onSessionId }: Props) {
+export default function DeviceTerminal({
+  deviceId,
+  mode = "agent",
+  sshOptions,
+  onSessionId,
+  session: presetSession,
+  onClosed,
+  onOpen,
+  onActivity,
+  bare = false,
+}: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [phase, setPhase] = useState<Phase>("connecting");
   const [message, setMessage] = useState<string>("Requesting terminal session…");
@@ -59,10 +82,17 @@ export default function DeviceTerminal({ deviceId, mode = "agent", sshOptions, o
 
     const connect = async () => {
       setPhase(attempt === 0 ? "connecting" : "reconnecting");
-      setMessage(attempt === 0 ? "Requesting terminal session…" : "Reconnecting…");
+      setMessage(
+        presetSession ? "Connecting to the console…" : attempt === 0 ? "Requesting terminal session…" : "Reconnecting…",
+      );
       try {
-        const session =
-          mode === "ssh"
+        // Yield once: a mount that is torn down at once (React StrictMode)
+        // must not spend a one-time ticket on a socket it closes straight away.
+        await Promise.resolve();
+        if (disposed) return;
+        const session = presetSession
+          ? presetSession
+          : mode === "ssh"
             ? await createSshTerminalSession(deviceId, sshOptions)
             : await createTerminalSession(deviceId, "bash");
         if (disposed || !containerRef.current) return;
@@ -85,7 +115,10 @@ export default function DeviceTerminal({ deviceId, mode = "agent", sshOptions, o
           term.open(containerRef.current);
           fit.fit();
           term.onData((data) => {
-            if (ws && ws.readyState === WebSocket.OPEN) ws.send(data);
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(data);
+              onActivity?.();
+            }
           });
         } else {
           // Reconnect got a fresh backend session (fresh shell — the prior
@@ -111,14 +144,23 @@ export default function DeviceTerminal({ deviceId, mode = "agent", sshOptions, o
           setPhase("open");
           setMessage("");
           sendResize();
+          onOpen?.();
         };
         ws.onmessage = (ev) => {
           if (!term) return;
+          onActivity?.();
           if (ev.data instanceof ArrayBuffer) term.write(new Uint8Array(ev.data));
           else term.write(ev.data as string);
         };
         ws.onclose = (ev) => {
           if (disposed) return;
+          if (presetSession) {
+            const text = ev.code === 4001 ? "The console ticket expired. Open a new session." : "Session ended.";
+            setPhase("closed");
+            setMessage(text);
+            onClosed?.(text);
+            return;
+          }
           const retryable = !NON_RETRYABLE_CODES.has(ev.code);
           if (retryable && autoReconnects < MAX_AUTO_RECONNECTS) {
             const delay = AUTO_RECONNECT_DELAY_MS[autoReconnects] ?? 3000;
@@ -192,11 +234,11 @@ export default function DeviceTerminal({ deviceId, mode = "agent", sshOptions, o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deviceId, attempt]);
 
-  const canManualReconnect = phase === "closed" || phase === "error";
+  const canManualReconnect = !presetSession && (phase === "closed" || phase === "error");
 
   return (
-    <div className="flex h-full min-h-[320px] flex-col gap-2">
-      {phase !== "open" && (
+    <div className={bare ? "flex h-full min-h-0 flex-col gap-2" : "flex h-full min-h-[320px] flex-col gap-2"}>
+      {phase !== "open" && (!bare || phase === "error") && (
         <div
           className="flex items-center justify-between gap-3 rounded-md px-3 py-2 text-xs"
           style={{
@@ -220,8 +262,13 @@ export default function DeviceTerminal({ deviceId, mode = "agent", sshOptions, o
       )}
       <div
         ref={containerRef}
-        className="min-h-[300px] flex-1 overflow-hidden rounded-lg p-2"
-        style={{ background: "var(--th-bg-card)", border: "1px solid var(--th-border-drawer-section)" }}
+        data-testid="terminal-screen"
+        className={bare ? "min-h-0 flex-1 overflow-hidden p-2" : "min-h-[300px] flex-1 overflow-hidden rounded-lg p-2"}
+        style={
+          bare
+            ? { background: "var(--th-bg-card)" }
+            : { background: "var(--th-bg-card)", border: "1px solid var(--th-border-drawer-section)" }
+        }
       />
     </div>
   );

@@ -20,6 +20,7 @@ const Reenrollment = lazy(pageLoaders.Reenrollment);
 const Teams = lazy(pageLoaders.Teams);
 const TeamDetailPage = lazy(pageLoaders.TeamDetail);
 const AgentConfigPage = lazy(pageLoaders.AgentConfig);
+const MonitoringPoliciesPage = lazy(pageLoaders.MonitoringPolicies);
 const Alerts = lazy(pageLoaders.Alerts);
 const More = lazy(pageLoaders.More);
 const Settings = lazy(pageLoaders.Settings);
@@ -181,6 +182,18 @@ export default function AppRoutes() {
             <RequireAuth>
               <RequirePermission perm="system_settings">
                 <AgentConfigPage />
+              </RequirePermission>
+            </RequireAuth>
+          }
+        />
+        {/* Any operator who sees devices can read the policies; changing them
+            and the pipeline health are admin-only (the page and the API agree). */}
+        <Route
+          path="/monitoring"
+          element={
+            <RequireAuth>
+              <RequirePermission perm="view_devices">
+                <MonitoringPoliciesPage />
               </RequirePermission>
             </RequireAuth>
           }

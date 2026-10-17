@@ -34,7 +34,11 @@ vi.mock("../../hooks/useDeviceTelemetry", () => ({
     healthState: "healthy",
   }),
 }));
-vi.mock("../../api/telemetry", () => ({ getDeviceTelemetryHistory: vi.fn().mockResolvedValue([]) }));
+vi.mock("../../api/monitoring", async (importActual) => ({
+  ...(await importActual<typeof import("../../api/monitoring")>()),
+  getDeviceMetrics: vi.fn().mockRejectedValue(new Error("not here")),
+  getDeviceMonitoring: vi.fn().mockRejectedValue(new Error("not here")),
+}));
 vi.mock("../../hooks/usePlatformFeatures", () => ({ usePlatformFeatures: () => ({ FEATURE_TERMINAL: false }) }));
 vi.mock("../ComponentStatesPanel", () => ({ default: () => null }));
 vi.mock("../ConnectMenu", () => ({ default: () => null }));
@@ -82,7 +86,12 @@ describe("GenericDeviceDrawer", () => {
     expect(within(now).getByText("40%")).toBeInTheDocument();
     expect(within(now).getByText("88% used")).toBeInTheDocument();
     // History has its own section and no duplicate current bars.
-    expect(screen.getByRole("region", { name: "Trend" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Last 24 hours" })).toBeInTheDocument();
+    // Linux agents send the metrics pipeline: Monitoring sits after Overview,
+    // and actions live under Maintenance.
+    const tabs = screen.getAllByRole("tab").map((t) => t.textContent);
+    expect(tabs.slice(0, 2)).toEqual(["Overview", "Monitoring"]);
+    expect(tabs).toContain("Maintenance");
     expect(screen.queryByText("Resources")).toBeNull();
     expect(document.querySelector(".th-drawer.th-drawer-panel")).not.toBeNull();
   });

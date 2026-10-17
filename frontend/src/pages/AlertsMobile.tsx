@@ -57,6 +57,8 @@ function applyFilter(alerts: Alert[], f: FilterId): Alert[] {
   if (f === "critical") return alerts.filter((a) => a.severity === "critical");
   if (f === "warning") return alerts.filter((a) => a.severity === "warning");
   if (f === "token") return alerts.filter((a) => a.kind === "token_usage_warning" || a.kind === "token_usage_critical");
+  // Disk covers both a full disk and one forecast to fill up.
+  if (f === "low_disk") return alerts.filter((a) => a.kind === "low_disk" || a.kind === "disk_forecast");
   return alerts.filter((a) => a.kind === f);
 }
 

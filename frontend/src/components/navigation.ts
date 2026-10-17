@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 import {
+  Activity,
   Bell,
   BellRing,
   Building2,
@@ -161,6 +162,14 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Platform",
     items: [
       {
+        label: "Monitoring",
+        to: "/monitoring",
+        icon: Activity,
+        permission: "view_devices",
+        mobile: "desktop",
+        keywords: "monitoring policies monitors thresholds metrics cpu memory disk network telemetry pipeline storage",
+      },
+      {
         label: "Agent Config",
         to: "/agent-config",
         icon: SlidersHorizontal,
@@ -245,6 +254,12 @@ export const SEARCH_DESTINATIONS: SearchDestination[] = [
     context: "Onboarding",
     to: "/onboarding?tab=installer",
     keywords: "powershell script bootstrap one-click trusted domain",
+  },
+  {
+    label: "Pipeline health",
+    context: "Monitoring",
+    to: "/monitoring",
+    keywords: "telemetry uploads backlog delay storage",
   },
   { label: "Heartbeat policy", context: "Agent Config", to: "/agent-config", keywords: "interval inventory threshold" },
   {

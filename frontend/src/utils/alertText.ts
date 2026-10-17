@@ -9,6 +9,8 @@ export interface AlertDescription {
 
 const PERCENT = /(\d+(?:\.\d+)?)\s*%/;
 const TIMES = /(\d+)\s*×/;
+// Monitor alerts end with the measured value: "… on SRV-01 (now 9 days)".
+const NOW_VALUE = /\(now ([^)]+)\)\s*$/;
 
 const METRIC_NAME: Partial<Record<Alert["kind"], string>> = {
   high_cpu: "CPU usage",
@@ -39,6 +41,15 @@ export function describeAlert(alert: Alert): AlertDescription {
     case "repeated_reconnects": {
       const match = TIMES.exec(alert.message);
       return { summary: "Connection keeps dropping", value: match ? `${match[1]}×` : null };
+    }
+    case "disk_forecast": {
+      const match = NOW_VALUE.exec(alert.message);
+      return { summary: "Disk forecast to fill up", value: match ? match[1] : null };
+    }
+    case "high_network": {
+      const match = NOW_VALUE.exec(alert.message);
+      const direction = /network send/i.test(alert.message) ? "send" : "receive";
+      return { summary: `Network ${direction} high`, value: match ? match[1] : null };
     }
     case "rustdesk_sync_failure":
       return { summary: alert.detail?.trim() || "Remote Support could not sync", value: null };

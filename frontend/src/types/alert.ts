@@ -6,6 +6,8 @@ export type AlertKind =
   | "high_cpu"
   | "high_ram"
   | "low_disk"
+  | "disk_forecast"
+  | "high_network"
   | "rustdesk_sync_failure"
   | "heartbeat_stale"
   | "telemetry_missing"
@@ -47,6 +49,8 @@ export const ALERT_KIND_LABELS: Record<AlertKind, string> = {
   high_cpu: "High CPU",
   high_ram: "High memory",
   low_disk: "Low disk space",
+  disk_forecast: "Disk full forecast",
+  high_network: "High network",
   rustdesk_sync_failure: "Remote Support sync failed",
   heartbeat_stale: "Heartbeat stale",
   telemetry_missing: "Telemetry missing",
