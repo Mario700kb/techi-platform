@@ -30,26 +30,54 @@ const (
 )
 
 type inventorySection[T any] struct {
-	every       time.Duration
-	collect     func() T
+	every   time.Duration
+	collect func() T
+	// Optional, per part:
+	// resend replaces inventoryResendEvery for this part;
+	// usable says whether a collected value is good — a failed collection
+	// keeps the last good value and is tried again after retry (when set);
+	// hashOf replaces contentHash, e.g. to leave a timestamp out.
+	resend      time.Duration
+	usable      func(T) bool
+	retry       time.Duration
+	hashOf      func(T) string
 	value       T
 	hash        string
 	collectedAt time.Time
+	attemptedAt time.Time
+	failed      bool
 	sentHash    string
 	sentAt      time.Time
 }
 
 func (s *inventorySection[T]) due(now time.Time) bool {
-	return s.collectedAt.IsZero() || now.Sub(s.collectedAt) >= s.every
+	if s.attemptedAt.IsZero() {
+		return true
+	}
+	wait := s.every
+	if s.failed && s.retry > 0 && s.retry < wait {
+		wait = s.retry
+	}
+	return now.Sub(s.attemptedAt) >= wait
 }
 
 func (s *inventorySection[T]) markDue() {
-	s.collectedAt = time.Time{}
+	s.attemptedAt = time.Time{}
 }
 
 func (s *inventorySection[T]) store(value T, now time.Time) {
+	s.attemptedAt = now
+	if s.usable != nil && !s.usable(value) {
+		s.failed = true
+		return
+	}
+	s.failed = false
 	s.value = value
-	s.hash = contentHash(value)
+	if s.hashOf != nil {
+		s.hash = s.hashOf(value)
+	} else {
+		s.hash = contentHash(value)
+	}
 	s.collectedAt = now
 }
 
@@ -60,7 +88,11 @@ func (s *inventorySection[T]) pending(now time.Time) (T, bool) {
 	if s.collectedAt.IsZero() {
 		return zero, false
 	}
-	if s.hash != s.sentHash || now.Sub(s.sentAt) >= inventoryResendEvery {
+	resend := inventoryResendEvery
+	if s.resend > 0 {
+		resend = s.resend
+	}
+	if s.hash != s.sentHash || now.Sub(s.sentAt) >= resend {
 		return s.value, true
 	}
 	return zero, false
@@ -88,6 +120,9 @@ type backgroundInventory struct {
 	services  inventorySection[[]ServiceInfo]
 	software  inventorySection[[]SoftwareInfo]
 	patch     inventorySection[*PatchStatus]
+	// security is collected only where a collector exists (Windows).
+	security        inventorySection[*SecurityPosture]
+	securityEnabled bool
 }
 
 func newBackgroundInventory(
@@ -96,6 +131,7 @@ func newBackgroundInventory(
 	services func() []ServiceInfo,
 	software func() []SoftwareInfo,
 	patch func() *PatchStatus,
+	security func() *SecurityPosture,
 ) *backgroundInventory {
 	return &backgroundInventory{
 		now:       now,
@@ -103,6 +139,15 @@ func newBackgroundInventory(
 		services:  inventorySection[[]ServiceInfo]{every: serviceRefreshEvery, collect: services},
 		software:  inventorySection[[]SoftwareInfo]{every: softwareRefreshEvery, collect: software},
 		patch:     inventorySection[*PatchStatus]{every: patchRefreshEvery, collect: patch},
+		security: inventorySection[*SecurityPosture]{
+			every:   securityPostureRefreshEvery,
+			resend:  securityPostureResendEvery,
+			retry:   securityPostureRetryEvery,
+			collect: security,
+			usable:  securityPostureCollected,
+			hashOf:  securityPostureHash,
+		},
+		securityEnabled: security != nil,
 	}
 }
 
@@ -112,6 +157,7 @@ var heavyInventory = newBackgroundInventory(
 	collectServices,
 	collectSoftwareInventory,
 	collectPatchStatus,
+	securityPostureCollector(),
 )
 
 // refresh starts one background pass over the parts that are due; it never
@@ -140,10 +186,12 @@ func (b *backgroundInventory) collectDue(cfg *Config) {
 	collectSection(b, &b.services, cfg.CollectServices)
 	collectSection(b, &b.software, cfg.CollectSoftware)
 	collectSection(b, &b.patch, true)
+	collectSection(b, &b.security, b.securityEnabled)
 }
 
 // forceCollect refreshes every enabled part now, synchronously, so the next
-// heartbeat carries current software, services and patch status. Used by the
+// heartbeat carries current software, services, patch status and security
+// posture. Used by the
 // "Refresh inventory" / "Heartbeat now" actions and by `-once`, where waiting
 // out the schedule (up to an hour) or the background pass would be wrong.
 func (b *backgroundInventory) forceCollect(cfg *Config) {
@@ -152,6 +200,7 @@ func (b *backgroundInventory) forceCollect(cfg *Config) {
 	b.services.markDue()
 	b.software.markDue()
 	b.patch.markDue()
+	b.security.markDue()
 	b.mu.Unlock()
 	b.collectDue(cfg)
 }
@@ -180,6 +229,7 @@ type inventoryForHeartbeat struct {
 	Services  []ServiceInfo
 	Software  []SoftwareInfo
 	Patch     *PatchStatus
+	Security  *SecurityPosture
 	sent      func()
 }
 
@@ -216,6 +266,13 @@ func (b *backgroundInventory) forHeartbeat(cfg *Config) inventoryForHeartbeat {
 		hash := b.patch.hash
 		marks = append(marks, func(at time.Time) { b.patch.markSent(hash, at) })
 	}
+	if b.securityEnabled {
+		if v, ok := b.security.pending(now); ok {
+			out.Security = v
+			hash := b.security.hash
+			marks = append(marks, func(at time.Time) { b.security.markSent(hash, at) })
+		}
+	}
 
 	out.sent = func() {
 		b.mu.Lock()
@@ -226,8 +283,8 @@ func (b *backgroundInventory) forHeartbeat(cfg *Config) inventoryForHeartbeat {
 		}
 	}
 	if len(marks) > 0 {
-		log.Printf("inventory: sending %d processes, %d services, %d software entries, patch status %t",
-			len(out.Processes), len(out.Services), len(out.Software), out.Patch != nil)
+		log.Printf("inventory: sending %d processes, %d services, %d software entries, patch status %t, security posture %t",
+			len(out.Processes), len(out.Services), len(out.Software), out.Patch != nil, out.Security != nil)
 	}
 	return out
 }

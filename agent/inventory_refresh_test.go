@@ -35,6 +35,7 @@ func newFakeInventory() (*fakeInventory, *backgroundInventory) {
 			f.patch.Add(1)
 			return &PatchStatus{PendingUpdates: f.pendingUpdates, PatchState: "up_to_date"}
 		},
+		nil,
 	)
 	return f, b
 }
@@ -176,6 +177,7 @@ func TestRefreshNeverWaitsForTheCollection(t *testing.T) {
 			<-release // a Windows Update search that hangs
 			return &PatchStatus{PatchState: "up_to_date"}
 		},
+		nil,
 	)
 
 	done := make(chan struct{})

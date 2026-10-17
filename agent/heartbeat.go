@@ -21,53 +21,56 @@ var agentSHA256Cache struct {
 }
 
 type HeartbeatPayload struct {
-	AgentID               string         `json:"agent_id,omitempty"`
-	DeviceID              int            `json:"device_id,omitempty"`
-	RustDeskID            string         `json:"rustdesk_id,omitempty"`
-	RustDeskEncID         string         `json:"rustdesk_enc_id,omitempty"`
-	Hostname              string         `json:"hostname"`
-	CurrentUser           string         `json:"current_user"`
-	UserSource            string         `json:"user_source,omitempty"`
-	UserSessionState      string         `json:"user_session_state,omitempty"`
-	Domain                string         `json:"domain"`
-	LocalIP               string         `json:"local_ip"`
-	OSName                string         `json:"os_name"`
-	OSVersion             string         `json:"os_version"`
-	OSCaption             string         `json:"os_caption,omitempty"`
-	OSBuild               string         `json:"os_build,omitempty"`
-	WindowsProductType    int            `json:"windows_product_type"`
-	Platform              string         `json:"platform"`
-	CPU                   string         `json:"cpu"`
-	RAM                   string         `json:"ram"`
-	Storage               string         `json:"storage"`
+	AgentID            string `json:"agent_id,omitempty"`
+	DeviceID           int    `json:"device_id,omitempty"`
+	RustDeskID         string `json:"rustdesk_id,omitempty"`
+	RustDeskEncID      string `json:"rustdesk_enc_id,omitempty"`
+	Hostname           string `json:"hostname"`
+	CurrentUser        string `json:"current_user"`
+	UserSource         string `json:"user_source,omitempty"`
+	UserSessionState   string `json:"user_session_state,omitempty"`
+	Domain             string `json:"domain"`
+	LocalIP            string `json:"local_ip"`
+	OSName             string `json:"os_name"`
+	OSVersion          string `json:"os_version"`
+	OSCaption          string `json:"os_caption,omitempty"`
+	OSBuild            string `json:"os_build,omitempty"`
+	WindowsProductType int    `json:"windows_product_type"`
+	Platform           string `json:"platform"`
+	CPU                string `json:"cpu"`
+	RAM                string `json:"ram"`
+	Storage            string `json:"storage"`
 	// Platform Expansion additive fields — omitempty; empty on Windows.
-	FQDN                  string         `json:"fqdn,omitempty"`
-	KernelVersion         string         `json:"kernel_version,omitempty"`
-	Architecture          string         `json:"architecture,omitempty"`
-	MACAddress            string         `json:"mac_address,omitempty"`
-	Timezone              string         `json:"timezone,omitempty"`
-	LastBootAt            string         `json:"last_boot_at,omitempty"`
-	Capabilities          []string       `json:"capabilities,omitempty"`
-	RustDeskInstallStatus string         `json:"rustdesk_install_status"`
-	RustDeskStatus        string         `json:"rustdesk_status"`
-	RustDeskVersion       string         `json:"rustdesk_version"`
-	RustDeskInstallPath   string         `json:"rustdesk_install_path"`
-	RustDeskLastRepairAt  string         `json:"rustdesk_last_repair_at,omitempty"`
-	RustDeskRepairCount   int            `json:"rustdesk_repair_count,omitempty"`
+	FQDN                  string   `json:"fqdn,omitempty"`
+	KernelVersion         string   `json:"kernel_version,omitempty"`
+	Architecture          string   `json:"architecture,omitempty"`
+	MACAddress            string   `json:"mac_address,omitempty"`
+	Timezone              string   `json:"timezone,omitempty"`
+	LastBootAt            string   `json:"last_boot_at,omitempty"`
+	Capabilities          []string `json:"capabilities,omitempty"`
+	RustDeskInstallStatus string   `json:"rustdesk_install_status"`
+	RustDeskStatus        string   `json:"rustdesk_status"`
+	RustDeskVersion       string   `json:"rustdesk_version"`
+	RustDeskInstallPath   string   `json:"rustdesk_install_path"`
+	RustDeskLastRepairAt  string   `json:"rustdesk_last_repair_at,omitempty"`
+	RustDeskRepairCount   int      `json:"rustdesk_repair_count,omitempty"`
 	// A live Remote Support session (nil: not known on this platform or
 	// unreadable); the server turns changes into its session audit trail.
-	RemoteSessionActive *bool `json:"remote_session_active,omitempty"`
-	CPUPercent            float64        `json:"cpu_percent"`
-	RAMPercent            float64        `json:"ram_percent"`
-	DiskPercent           float64        `json:"disk_percent"`
-	UptimeSeconds         uint64         `json:"uptime_seconds"`
-	HeartbeatLatencyMs    int64          `json:"heartbeat_latency_ms"`
-	Processes             []ProcessInfo  `json:"processes,omitempty"`
-	Services              []ServiceInfo  `json:"services,omitempty"`
-	Software              []SoftwareInfo `json:"software,omitempty"`
-	PatchStatus           *PatchStatus   `json:"patch_status,omitempty"`
-	AgentVersion          string         `json:"agent_version,omitempty"`
-	AgentSHA256           string         `json:"agent_sha256,omitempty"`
+	RemoteSessionActive *bool          `json:"remote_session_active,omitempty"`
+	CPUPercent          float64        `json:"cpu_percent"`
+	RAMPercent          float64        `json:"ram_percent"`
+	DiskPercent         float64        `json:"disk_percent"`
+	UptimeSeconds       uint64         `json:"uptime_seconds"`
+	HeartbeatLatencyMs  int64          `json:"heartbeat_latency_ms"`
+	Processes           []ProcessInfo  `json:"processes,omitempty"`
+	Services            []ServiceInfo  `json:"services,omitempty"`
+	Software            []SoftwareInfo `json:"software,omitempty"`
+	PatchStatus         *PatchStatus   `json:"patch_status,omitempty"`
+	// Windows only, sent when it changed or every six hours (see
+	// security_posture.go); absent otherwise and the platform keeps its copy.
+	SecurityPosture *SecurityPosture `json:"security_posture,omitempty"`
+	AgentVersion    string           `json:"agent_version,omitempty"`
+	AgentSHA256     string           `json:"agent_sha256,omitempty"`
 }
 
 func buildHeartbeatPayload(cfg *Config, inv *Inventory, rustdesk RustDeskInfo, tel *Telemetry, procs []ProcessInfo, svcs []ServiceInfo, software []SoftwareInfo, patchStatus *PatchStatus) *HeartbeatPayload {
