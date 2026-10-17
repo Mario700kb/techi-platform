@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Suspense, lazy } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
+import { getDevice, type Device } from "../api/devices";
 import type { TerminalSession } from "../api/terminal";
 import { PowerShellCodeForm } from "../components/PowerShellStepUp";
-import { Button } from "../components/ui";
+import PowerShellConsole from "../components/powershell/PowerShellConsole";
 
 const DeviceTerminal = lazy(() => import("../components/DeviceTerminal"));
 
@@ -30,9 +31,18 @@ export default function TerminalWindow() {
   const name = params.get("name") || `Device #${deviceId}`;
   const powershell = params.get("engine") === "powershell";
   const [session, setSession] = useState<TerminalSession | null>(null);
-  const [ended, setEnded] = useState<string | null>(null);
-  // The operator ended it: the console is unmounted, which closes the socket.
-  const [stopped, setStopped] = useState(false);
+  // Client, signed-in user and OS for the header and side panel; best-effort.
+  const [device, setDevice] = useState<Device | null>(null);
+  useEffect(() => {
+    if (!powershell || !Number.isFinite(deviceId) || deviceId <= 0) return;
+    let cancelled = false;
+    getDevice(deviceId)
+      .then((d) => !cancelled && setDevice(d))
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [deviceId, powershell]);
 
   useEffect(() => {
     const previous = document.title;
@@ -50,61 +60,38 @@ export default function TerminalWindow() {
 
   if (powershell) {
     return (
-      <div className="flex h-screen flex-col th-bg">
-        <div className="flex items-center gap-3 border-b th-border px-3 py-1.5">
-          <div className="min-w-0 truncate text-[12px] font-semibold th-text">{name} · PowerShell (Administrator)</div>
-          <div className="ml-auto flex-none text-[11px] th-text-muted">
-            {session ? (ended ?? "Session open") : "Two-factor code needed"} · runs as SYSTEM · recorded
-          </div>
-          {session && !ended && (
-            <Button
-              size="sm"
-              variant="danger"
-              className="!min-h-7"
-              onClick={() => {
-                setStopped(true);
-                setEnded("Session ended");
-              }}
-            >
-              End session
-            </Button>
-          )}
-          {ended && (
-            <Button size="sm" variant="secondary" className="!min-h-7" onClick={() => setSession(null)}>
-              New session
-            </Button>
-          )}
-        </div>
-        <div className="min-h-0 flex-1">
-          {!session ? (
-            <div className="flex h-full items-center justify-center p-6">
-              <div className="th-drawer-card w-full max-w-sm">
-                <p className="mb-3 text-[14px] font-semibold th-text">Open PowerShell as administrator</p>
-                <PowerShellCodeForm
-                  deviceId={deviceId}
-                  formId="ps-window"
-                  onOpened={(s) => {
-                    setEnded(null);
-                    setStopped(false);
-                    setSession(s);
-                  }}
-                />
+      <div className="fixed inset-0 overflow-hidden th-bg max-[860px]:overflow-y-auto">
+        {session ? (
+          <PowerShellConsole
+            key={session.session_id}
+            layout="window"
+            deviceId={deviceId}
+            deviceName={params.get("name") || device?.display_name || device?.hostname || name}
+            clientName={device?.client_name ?? device?.resolved_client_name}
+            signedInUser={device?.current_user}
+            osCaption={device?.os_caption}
+            session={session}
+            onEnd={() => undefined}
+            onNewSession={() => setSession(null)}
+          />
+        ) : (
+          <div className="flex h-full flex-col">
+            <div className="flex items-center gap-3 border-b th-border px-4 py-3">
+              <div className="min-w-0 truncate text-[14px] font-semibold th-text">
+                {name} · PowerShell (Administrator)
+              </div>
+              <div className="ml-auto flex-none text-[12px] th-text-muted">
+                Two-factor code needed · runs as SYSTEM · recorded
               </div>
             </div>
-          ) : stopped ? (
-            <div className="flex h-full items-center justify-center text-sm th-text-muted">Session ended.</div>
-          ) : (
-            <Suspense fallback={fallback}>
-              <DeviceTerminal
-                key={session.session_id}
-                deviceId={deviceId}
-                session={session}
-                bare
-                onClosed={(text) => setEnded(text)}
-              />
-            </Suspense>
-          )}
-        </div>
+            <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+              <div className="th-drawer-card w-full max-w-sm">
+                <p className="mb-3 text-[14px] font-semibold th-text">Open PowerShell as administrator</p>
+                <PowerShellCodeForm deviceId={deviceId} formId="ps-window" onOpened={setSession} />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

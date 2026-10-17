@@ -16,6 +16,7 @@ vi.mock("../../api/terminal", async (importActual) => ({
   createPowerShellSession: (...a: unknown[]) => createSession(...a),
   listConsoleSessions: (...a: unknown[]) => listSessions(...a),
   getConsoleRecording: (...a: unknown[]) => getRecording(...a),
+  listConsoleScripts: () => Promise.resolve([]),
 }));
 
 // The real console needs a socket and a canvas; the panel only hands it the session.
@@ -60,7 +61,15 @@ const SESSION = {
 
 function renderPanel(capable = true) {
   return render(
-    <DevicePowerShellPanel deviceId={9} deviceName="Mario-Lenovo" capable={capable} active offline={false} />,
+    <DevicePowerShellPanel
+      deviceId={9}
+      deviceName="Mario-Lenovo"
+      clientName="Northwind Clinic"
+      currentUser="mario"
+      capable={capable}
+      active
+      offline={false}
+    />,
   );
 }
 
@@ -107,8 +116,12 @@ describe("DevicePowerShellPanel", () => {
     expect(await screen.findByTestId("fake-terminal")).toHaveTextContent("new-1");
     expect(screen.queryByRole("dialog")).toBeNull();
     const console = screen.getByTestId("powershell-console");
-    expect(within(console).getByText(/runs as SYSTEM · recorded/)).toBeInTheDocument();
+    expect(within(console).getByText("Mario-Lenovo · PowerShell (Administrator)")).toBeInTheDocument();
+    expect(
+      within(console).getByText("Northwind Clinic · #9 · runs as NT AUTHORITY\\SYSTEM over the live channel"),
+    ).toBeInTheDocument();
     expect(within(console).getByText(/idle closes in 1[45]:\d\d/)).toBeInTheDocument();
+    expect(within(console).getByText("mario")).toBeInTheDocument();
     expect(terminalProps).toHaveBeenLastCalledWith(expect.objectContaining({ session: SESSION, bare: true }));
 
     fireEvent.click(within(console).getByRole("button", { name: "End session" }));

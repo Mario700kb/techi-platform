@@ -1,18 +1,15 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { Download, ExternalLink, Loader2, PlaySquare, RotateCcw, Terminal as TerminalIcon } from "lucide-react";
+import { lazy, Suspense, useState } from "react";
+import { Download, ExternalLink, PlaySquare, RotateCcw, Terminal as TerminalIcon } from "lucide-react";
 import { listConsoleSessions, type ConsoleSessionSummary, type TerminalSession } from "../api/terminal";
 import { formatDuration } from "../api/monitoring";
 import { useCachedQuery } from "../hooks/useCachedQuery";
 import { formatLocalDateTime, parseUTC, timeAgo } from "../utils/time";
 import { downloadConsoleRecording } from "./consoleDownload";
 import { POWERSHELL_TERMS, PowerShellOpenModal } from "./PowerShellStepUp";
+import PowerShellConsole from "./powershell/PowerShellConsole";
 import { Button } from "./ui";
 
-const DeviceTerminal = lazy(() => import("./DeviceTerminal"));
 const ConsoleReplayModal = lazy(() => import("./ConsoleReplayModal"));
-
-const IDLE_LIMIT_S = 15 * 60;
-const MAX_LIMIT_S = 60 * 60;
 
 const END_REASON: Record<string, string> = {
   operator_closed: "Ended by operator",
@@ -35,11 +32,6 @@ function bytes(n: number | null): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function mmss(seconds: number): string {
-  const s = Math.max(0, Math.floor(seconds));
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-}
-
 export function endReason(s: ConsoleSessionSummary): string {
   if (s.disconnect_reason) return END_REASON[s.disconnect_reason] ?? s.disconnect_reason.replace(/_/g, " ");
   if (s.status === "active") return "Open now";
@@ -55,12 +47,19 @@ export function endReason(s: ConsoleSessionSummary): string {
 export default function DevicePowerShellPanel({
   deviceId,
   deviceName,
+  clientName,
+  currentUser,
+  osCaption,
   capable,
   active,
   offline,
 }: {
   deviceId: number;
   deviceName: string;
+  clientName?: string | null;
+  /** Who is signed in on the device. */
+  currentUser?: string | null;
+  osCaption?: string | null;
   /** The device reports the "powershell" capability (agent 2.1.29+). */
   capable: boolean;
   /** The Maintenance tab is showing; history loads on first show. */
@@ -69,7 +68,6 @@ export default function DevicePowerShellPanel({
 }) {
   const [askCode, setAskCode] = useState(false);
   const [session, setSession] = useState<TerminalSession | null>(null);
-  const [state, setState] = useState<"connecting" | "open" | "ended">("connecting");
   const [endedText, setEndedText] = useState("");
   const [replay, setReplay] = useState<ConsoleSessionSummary | null>(null);
 
@@ -83,53 +81,18 @@ export default function DevicePowerShellPanel({
 
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
-  // Idle and hard limits, counted locally from the last byte either way.
-  const openedAt = useRef(0);
-  const lastActivity = useRef(0);
-  const [left, setLeft] = useState({ idle: IDLE_LIMIT_S, max: MAX_LIMIT_S });
-  useEffect(() => {
-    if (!session || state === "ended") return;
-    const tick = () => {
-      const now = Date.now();
-      setLeft({
-        idle: IDLE_LIMIT_S - (now - lastActivity.current) / 1000,
-        max: MAX_LIMIT_S - (now - openedAt.current) / 1000,
-      });
-    };
-    tick();
-    const timer = window.setInterval(tick, 1000);
-    return () => window.clearInterval(timer);
-  }, [session, state]);
-
   const onOpened = (s: TerminalSession) => {
-    openedAt.current = Date.now();
-    lastActivity.current = Date.now();
-    setLeft({ idle: IDLE_LIMIT_S, max: MAX_LIMIT_S });
     setEndedText("");
-    setState("connecting");
     setAskCode(false);
     setSession(s);
   };
-  const onOpen = useCallback(() => setState("open"), []);
-  const onActivity = useCallback(() => {
-    lastActivity.current = Date.now();
-  }, []);
-  const onClosed = useCallback(
-    (text: string) => {
-      setState("ended");
-      setEndedText(text);
-      void reloadHistory();
-    },
-    [reloadHistory],
-  );
   const endSession = () => {
     setSession(null);
-    setState("ended");
+    setEndedText("Ended by you");
     // The relay records the end when the socket closes; give it a moment.
     window.setTimeout(() => void reloadHistory(), 800);
   };
 
-  const countdown = left.idle <= left.max ? `idle closes in ${mmss(left.idle)}` : `closes in ${mmss(left.max)}`;
   const download = (sessionId: string) => {
     setDownloadError(null);
     downloadConsoleRecording(deviceId, sessionId).catch(() => setDownloadError("Couldn't download the recording."));
@@ -169,68 +132,19 @@ export default function DevicePowerShellPanel({
           </p>
         </div>
       ) : session ? (
-        <div
-          className="overflow-hidden rounded-[10px]"
-          style={{ border: "1px solid var(--th-border-drawer-section)", background: "var(--th-bg-card)" }}
-          data-testid="powershell-console"
-        >
-          <div
-            className="flex items-center gap-2 px-3 py-2 text-[12px]"
-            style={{
-              background: "var(--th-bg-drawer-section)",
-              borderBottom: "1px solid var(--th-border-drawer-section)",
-            }}
-          >
-            <span
-              className={state === "open" ? "sys-dot" : "inline-block h-2 w-2 flex-none rounded-full"}
-              style={
-                state === "open"
-                  ? undefined
-                  : { background: state === "ended" ? "var(--th-text-faint)" : "var(--th-status-warning)" }
-              }
-              aria-hidden="true"
-            />
-            <span className="min-w-0 truncate font-medium" style={{ color: "var(--th-text-primary)" }}>
-              {state === "open" ? "Session open" : state === "ended" ? endedText || "Session ended" : "Connecting"}
-              <span style={{ color: "var(--th-text-muted)" }}> · runs as SYSTEM · recorded</span>
-            </span>
-            {state !== "ended" && (
-              <span className="ml-auto flex-none tabular-nums" style={{ color: "var(--th-text-muted)" }}>
-                {countdown}
-              </span>
-            )}
-            {state === "ended" ? (
-              <Button size="sm" variant="secondary" className="ml-auto !min-h-7" onClick={() => setAskCode(true)}>
-                <RotateCcw className="h-3.5 w-3.5" />
-                New session
-              </Button>
-            ) : (
-              <Button size="sm" variant="danger" className="!min-h-7" onClick={endSession}>
-                End session
-              </Button>
-            )}
-          </div>
-          <div className="h-[320px]">
-            <Suspense
-              fallback={
-                <div className="flex h-full items-center justify-center gap-2 text-[13px]">
-                  <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--th-text-muted)" }} />
-                  <span style={{ color: "var(--th-text-muted)" }}>Loading console…</span>
-                </div>
-              }
-            >
-              <DeviceTerminal
-                key={session.session_id}
-                deviceId={deviceId}
-                session={session}
-                bare
-                onOpen={onOpen}
-                onActivity={onActivity}
-                onClosed={onClosed}
-              />
-            </Suspense>
-          </div>
-        </div>
+        <PowerShellConsole
+          key={session.session_id}
+          layout="drawer"
+          deviceId={deviceId}
+          deviceName={deviceName}
+          clientName={clientName}
+          signedInUser={currentUser}
+          osCaption={osCaption}
+          session={session}
+          onEnd={endSession}
+          onNewSession={() => setAskCode(true)}
+          onClosed={() => void reloadHistory()}
+        />
       ) : (
         <div className="th-drawer-card">
           <div className="flex items-start gap-3">
@@ -260,7 +174,7 @@ export default function DevicePowerShellPanel({
               Open PowerShell
             </Button>
           </div>
-          {state === "ended" && endedText && (
+          {endedText && (
             <p className="mt-3 text-[12px]" style={{ color: "var(--th-text-muted)" }}>
               {endedText}
             </p>

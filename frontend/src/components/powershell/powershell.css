@@ -1,0 +1,567 @@
+/* ── Administrator PowerShell console ──────────────────────────────────
+   Chrome (header, command bar, side panel) follows the app theme through the
+   --th-* tokens; the console itself is always a dark terminal. */
+
+.ps-root {
+  --ps-red: var(--th-status-critical);
+  --ps-console-bg: #0c0c0e;
+  --ps-console-fg: #d4d4d8;
+  --ps-mono: "Geist Mono", "JetBrains Mono", Consolas, "Cascadia Mono", ui-monospace, monospace;
+  color: var(--th-text-primary);
+}
+
+.ps-root[data-layout="window"] {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--th-bg-page);
+}
+
+/* Drawer: header + console + command bar in one framed block. */
+.ps-frame {
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid var(--th-border-drawer-section);
+  background: var(--th-bg-drawer-section);
+}
+
+/* ── Header ── */
+.ps-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 10px 16px;
+  background: var(--th-bg-drawer-section);
+  border-bottom: 1px solid var(--th-border-drawer-section);
+}
+.ps-header[data-compact] {
+  min-height: 0;
+  gap: 10px;
+  padding: 9px 12px;
+}
+.ps-header-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  color: var(--th-accent);
+  background: var(--th-accent-dim-bg);
+  border: 1px solid var(--th-accent-border);
+}
+.ps-header[data-compact] .ps-header-icon {
+  width: 28px;
+  height: 28px;
+}
+.ps-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.3;
+  color: var(--th-text-primary);
+}
+.ps-header[data-compact] .ps-title {
+  font-size: 13px;
+}
+.ps-subtitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--th-text-muted);
+}
+.ps-header-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+}
+.ps-header[data-compact] .ps-header-actions {
+  gap: 8px;
+}
+.ps-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid var(--th-border-drawer-section);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--th-text-secondary);
+}
+.ps-chip[data-tone="recording"] {
+  color: var(--ps-red);
+  border-color: color-mix(in srgb, var(--ps-red) 38%, transparent);
+  background: color-mix(in srgb, var(--ps-red) 10%, transparent);
+}
+.ps-chip[data-tone="pending"] {
+  color: var(--th-status-warning);
+}
+.ps-chip[data-tone="ended"] {
+  color: var(--th-text-muted);
+}
+.ps-rec-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--ps-red);
+  animation: ps-rec 1.6s ease-in-out infinite;
+}
+@keyframes ps-rec {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ps-rec-dot {
+    animation: none;
+  }
+}
+.ps-countdown {
+  font-family: var(--ps-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--th-text-muted);
+}
+.ps-outline-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 7px;
+  border: 1px solid var(--th-border-input);
+  background: transparent;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--th-text-primary);
+  transition:
+    background 140ms ease,
+    border-color 140ms ease;
+}
+.ps-outline-btn:hover {
+  background: var(--th-bg-card-hover);
+}
+.ps-outline-btn[data-tone="danger"] {
+  color: var(--ps-red);
+  border-color: color-mix(in srgb, var(--ps-red) 55%, transparent);
+}
+.ps-outline-btn[data-tone="danger"]:hover {
+  background: color-mix(in srgb, var(--ps-red) 12%, transparent);
+}
+.ps-outline-btn[data-tone="accent"] {
+  color: var(--th-on-accent);
+  border-color: var(--th-accent-fill);
+  background: var(--th-accent-fill);
+}
+.ps-outline-btn[data-tone="accent"]:hover {
+  background: var(--th-accent-fill-hover);
+}
+.ps-outline-btn:focus-visible,
+.ps-icon-btn:focus-visible,
+.ps-link:focus-visible,
+.ps-script-run:focus-visible,
+.ps-library-item:focus-visible {
+  outline: 2px solid var(--th-accent);
+  outline-offset: 2px;
+}
+.ps-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--th-border-drawer-section);
+}
+.ps-icon-btn {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  border: 1px solid var(--th-border-drawer-section);
+  color: var(--th-text-secondary);
+}
+.ps-icon-btn:hover {
+  color: var(--th-text-primary);
+  background: var(--th-bg-card-hover);
+}
+.ps-notice {
+  padding: 6px 16px;
+  font-size: 12px;
+  color: var(--th-status-critical);
+  background: var(--th-bg-drawer-section);
+  border-bottom: 1px solid var(--th-border-drawer-section);
+}
+
+/* ── Body: console | side panel ── */
+.ps-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.ps-work {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  /* Under the (translucent) command-bar token, so the bar matches the side panel. */
+  background: var(--th-bg-page);
+}
+.ps-root[data-layout="drawer"] .ps-work {
+  background: var(--th-bg-drawer);
+}
+.ps-work:fullscreen {
+  width: 100vw;
+  height: 100vh;
+}
+.ps-screen {
+  min-width: 0;
+  background: var(--ps-console-bg);
+}
+.ps-screen .xterm {
+  padding: 4px 6px;
+}
+.ps-screen .xterm-viewport {
+  scrollbar-color: #3f3f46 transparent;
+}
+.ps-side {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: 340px;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--th-bg-drawer-section);
+  border-left: 1px solid var(--th-border-drawer-section);
+}
+@media (max-width: 860px) {
+  .ps-root[data-layout="window"] {
+    height: auto;
+    min-height: 100%;
+  }
+  .ps-body {
+    flex-direction: column;
+  }
+  .ps-work {
+    height: 62vh;
+    flex: none;
+  }
+  .ps-side {
+    width: auto;
+    overflow: visible;
+    border-left: 0;
+    border-top: 1px solid var(--th-border-drawer-section);
+  }
+}
+
+/* ── Command bar / ended bar ── */
+.ps-command-input {
+  font-family: var(--ps-mono);
+  max-height: 120px;
+}
+.ps-ended {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  background: var(--th-bg-drawer-section);
+  border-top: 1px solid var(--th-border-drawer-section);
+}
+
+/* ── Side panel sections ── */
+.ps-section {
+  padding: 14px 16px;
+}
+.ps-side > .ps-section + .ps-section {
+  border-top: 1px solid var(--th-border-drawer-section);
+}
+.ps-card {
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid var(--th-border-drawer-section);
+  background: var(--th-bg-drawer-section);
+}
+.ps-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 20px;
+  margin-bottom: 10px;
+}
+.ps-section-title {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--th-text-muted);
+}
+.ps-link {
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--th-accent);
+}
+.ps-link:hover {
+  text-decoration: underline;
+}
+.ps-muted {
+  color: var(--th-text-muted);
+}
+.ps-empty {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--th-text-muted);
+}
+.ps-dl {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 7px 12px;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.ps-dl dt {
+  color: var(--th-text-muted);
+}
+.ps-dl dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--th-text-primary);
+}
+
+/* Saved scripts */
+.ps-scripts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 -8px;
+}
+.ps-script {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  transition: background 120ms ease;
+}
+.ps-script:hover,
+.ps-script:focus-within {
+  background: var(--th-bg-card-hover);
+}
+.ps-script-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--th-text-primary);
+}
+.ps-script-desc {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--th-text-muted);
+}
+.ps-script-run {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--th-on-accent);
+  background: var(--th-accent-fill);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.ps-script:hover .ps-script-run,
+.ps-script:focus-within .ps-script-run {
+  opacity: 1;
+}
+.ps-script-run:disabled {
+  cursor: not-allowed;
+  color: var(--th-text-muted);
+  background: var(--th-chip-bg);
+}
+@media (hover: none) {
+  .ps-script-run {
+    opacity: 1;
+  }
+}
+
+/* This session */
+.ps-commands {
+  margin: 0 -6px;
+  font-family: var(--ps-mono);
+  font-size: 12px;
+}
+.ps-command {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+  border-radius: 6px;
+}
+.ps-command:hover {
+  background: var(--th-bg-card-hover);
+}
+.ps-command-time {
+  font-variant-numeric: tabular-nums;
+  color: var(--th-text-muted);
+}
+.ps-command-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--th-text-primary);
+}
+.ps-command-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.ps-command-failed {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ps-red);
+}
+.ps-fail-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--ps-red);
+}
+.ps-command-took {
+  display: none;
+  font-size: 11px;
+  color: var(--th-text-muted);
+}
+.ps-command:hover .ps-command-took {
+  display: inline;
+}
+
+/* Script body (run confirmation) */
+.ps-code {
+  display: block;
+  max-height: 46vh;
+  overflow: auto;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid #27272a;
+  background: var(--ps-console-bg, #0c0c0e);
+  color: #d4d4d8;
+  font-family: "Geist Mono", "JetBrains Mono", Consolas, ui-monospace, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre;
+}
+
+/* ── Library ── */
+.ps-library {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  height: min(70vh, 620px);
+}
+.ps-library-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--th-border-drawer-section);
+}
+.ps-library-item {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 7px;
+  text-align: left;
+}
+.ps-library-item:hover {
+  background: var(--th-bg-card-hover);
+}
+.ps-library-item[aria-current="true"] {
+  background: var(--th-accent-dim-bg);
+}
+.ps-library-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  padding: 16px;
+}
+.ps-editor {
+  display: flex;
+  flex: 1;
+  min-height: 200px;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid var(--th-border-input);
+  background: #0c0c0e;
+  font-family: "Geist Mono", "JetBrains Mono", Consolas, ui-monospace, monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.ps-editor:focus-within {
+  border-color: var(--th-accent);
+}
+.ps-editor-gutter {
+  flex: none;
+  min-width: 40px;
+  overflow: hidden;
+  padding: 10px 8px 10px 10px;
+  text-align: right;
+  color: #52525b;
+  user-select: none;
+  border-right: 1px solid #1f1f23;
+}
+.ps-editor-text {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  resize: none;
+  outline: none;
+  white-space: pre;
+  overflow: auto;
+  font: inherit;
+  color: #d4d4d8;
+  background: transparent;
+}
+@media (max-width: 720px) {
+  .ps-library {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+  .ps-library-list {
+    max-height: 220px;
+    border-right: 0;
+    border-bottom: 1px solid var(--th-border-drawer-section);
+  }
+}
+
+/* The long hint stays on one line (clipped) instead of growing the bar. */
+.ps-command-input:placeholder-shown {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

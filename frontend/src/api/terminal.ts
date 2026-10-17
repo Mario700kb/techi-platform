@@ -161,3 +161,56 @@ export const SSH_FAILURE_MESSAGES: Record<string, string> = {
   connection_refused: "Connection refused — is SSH running on the device?",
   network_error: "A network error occurred while connecting.",
 };
+
+// ── Saved PowerShell scripts (administrator console) ────────────────────
+
+export interface ConsoleScriptBody {
+  name: string;
+  description?: string | null;
+  body: string;
+}
+
+export interface ConsoleScript extends ConsoleScriptBody {
+  id: number;
+  version: number;
+  uses: number;
+  last_used_at: string | null;
+  updated_by: string | null;
+  updated_at: string;
+}
+
+export async function listConsoleScripts(): Promise<ConsoleScript[]> {
+  return fetchJson<ConsoleScript[]>(`/api/v1/console/scripts`);
+}
+
+export async function createConsoleScript(body: ConsoleScriptBody): Promise<ConsoleScript> {
+  return fetchJson<ConsoleScript>(`/api/v1/console/scripts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function updateConsoleScript(id: number, body: ConsoleScriptBody): Promise<ConsoleScript> {
+  return fetchJson<ConsoleScript>(`/api/v1/console/scripts/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteConsoleScript(id: number): Promise<void> {
+  return fetchJson<void>(`/api/v1/console/scripts/${id}`, { method: "DELETE" });
+}
+
+// Audited on the platform; returns the one line to type into the open console.
+export async function runConsoleScript(
+  deviceId: number,
+  sessionId: string,
+  scriptId: number,
+): Promise<{ command: string; script: ConsoleScript }> {
+  return fetchJson<{ command: string; script: ConsoleScript }>(
+    `/api/v1/devices/${deviceId}/terminal/sessions/${sessionId}/scripts/${scriptId}`,
+    { method: "POST" },
+  );
+}

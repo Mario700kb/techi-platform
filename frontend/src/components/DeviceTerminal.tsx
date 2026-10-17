@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Terminal } from "@xterm/xterm";
+import { useEffect, useRef, useState, type MutableRefObject } from "react";
+import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 
@@ -21,6 +21,23 @@ import {
 
 type Phase = "connecting" | "open" | "closed" | "error" | "reconnecting";
 
+/** What a caller can do with an open console (the PowerShell command bar). */
+export interface TerminalHandle {
+  /** Send to the device as if typed; false when the socket is not open. */
+  send: (data: string) => boolean;
+  /** Close the socket: the operator ended the session. */
+  close: () => void;
+  focus: () => void;
+}
+
+export interface TerminalAppearance {
+  theme: ITheme;
+  fontFamily: string;
+  fontSize: number;
+  lineHeight: number;
+  cursorStyle: "block" | "bar" | "underline";
+}
+
 interface Props {
   deviceId: number;
   mode?: "agent" | "ssh";
@@ -38,6 +55,14 @@ interface Props {
   onActivity?: () => void;
   /** Hide the status strip while open (the caller draws its own header). */
   bare?: boolean;
+  /** Own colours and font instead of the app theme's (the PowerShell console). */
+  appearance?: TerminalAppearance;
+  /** Written locally before connecting; never sent to the device. */
+  banner?: string;
+  /** OSC 0/2 title changes from the device (never drawn). */
+  onTitleChange?: (title: string) => void;
+  /** Filled while the console is mounted. */
+  handleRef?: MutableRefObject<TerminalHandle | null>;
 }
 
 // WS close codes the backend never retries on its own — the session/ticket
@@ -63,6 +88,10 @@ export default function DeviceTerminal({
   onOpen,
   onActivity,
   bare = false,
+  appearance,
+  banner,
+  onTitleChange,
+  handleRef,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [phase, setPhase] = useState<Phase>("connecting");
@@ -77,6 +106,7 @@ export default function DeviceTerminal({
     let term: Terminal | null = null;
     let fit: FitAddon | null = null;
     let onResize: (() => void) | null = null;
+    let observer: ResizeObserver | null = null;
     let autoReconnects = 0;
     let sessionId: string | null = null;
 
@@ -100,20 +130,26 @@ export default function DeviceTerminal({
         onSessionId?.(session.session_id);
 
         if (!term) {
-          term = new Terminal({
-            fontFamily: '"JetBrains Mono", monospace',
-            fontSize: 13,
-            theme: {
-              background: themeToken("--th-bg-card"),
-              foreground: themeToken("--th-text-primary"),
-              cursor: themeToken("--th-accent"),
-            },
-            cursorBlink: true,
-          });
+          term = new Terminal(
+            appearance
+              ? { ...appearance, cursorBlink: true }
+              : {
+                  fontFamily: '"JetBrains Mono", monospace',
+                  fontSize: 13,
+                  theme: {
+                    background: themeToken("--th-bg-card"),
+                    foreground: themeToken("--th-text-primary"),
+                    cursor: themeToken("--th-accent"),
+                  },
+                  cursorBlink: true,
+                },
+          );
           fit = new FitAddon();
           term.loadAddon(fit);
           term.open(containerRef.current);
           fit.fit();
+          if (banner) term.writeln(banner);
+          if (onTitleChange) term.onTitleChange(onTitleChange);
           term.onData((data) => {
             if (ws && ws.readyState === WebSocket.OPEN) {
               ws.send(data);
@@ -132,6 +168,20 @@ export default function DeviceTerminal({
         // the session token stays out of the URL (and out of access logs).
         ws = new WebSocket(session.operator_ws_path);
         ws.binaryType = "arraybuffer";
+        if (handleRef) {
+          const socket = ws;
+          const screen = term;
+          handleRef.current = {
+            send: (data) => {
+              if (socket.readyState !== WebSocket.OPEN) return false;
+              socket.send(data);
+              onActivity?.();
+              return true;
+            },
+            close: () => socket.close(),
+            focus: () => screen.focus(),
+          };
+        }
 
         const sendResize = () => {
           if (!term || !ws || ws.readyState !== WebSocket.OPEN) return;
@@ -208,6 +258,17 @@ export default function DeviceTerminal({
           sendResize();
         };
         window.addEventListener("resize", onResize);
+        // A caller-sized console (side panel, growing command bar, fullscreen)
+        // changes size without the window resizing.
+        if (presetSession && typeof ResizeObserver !== "undefined" && containerRef.current) {
+          let frame = 0;
+          const refit = onResize;
+          observer = new ResizeObserver(() => {
+            cancelAnimationFrame(frame);
+            frame = requestAnimationFrame(refit);
+          });
+          observer.observe(containerRef.current);
+        }
       } catch (e) {
         if (disposed) return;
         setPhase("error");
@@ -220,6 +281,8 @@ export default function DeviceTerminal({
     return () => {
       disposed = true;
       if (onResize) window.removeEventListener("resize", onResize);
+      observer?.disconnect();
+      if (handleRef) handleRef.current = null;
       try {
         ws?.close();
       } catch {
@@ -266,7 +329,7 @@ export default function DeviceTerminal({
         className={bare ? "min-h-0 flex-1 overflow-hidden p-2" : "min-h-[300px] flex-1 overflow-hidden rounded-lg p-2"}
         style={
           bare
-            ? { background: "var(--th-bg-card)" }
+            ? { background: appearance?.theme.background ?? "var(--th-bg-card)" }
             : { background: "var(--th-bg-card)", border: "1px solid var(--th-border-drawer-section)" }
         }
       />

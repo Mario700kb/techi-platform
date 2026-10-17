@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import { metricsFixture, monitoringFixture } from "../src/components/__tests__/monitoringFixtures";
+import { fakePowerShell, mockPowerShellSession, mockScripts } from "./fakePowerShell";
 import { DEVICES } from "./mockApi";
 import { expect, test } from "./test";
 
@@ -84,28 +85,9 @@ test("PowerShell opens only with a valid two-factor code", async ({ page }, test
   test.skip(testInfo.project.name !== "desktop", "the drawer is the desktop device view");
   await mockDevice(page);
   await page.route("**/api/v1/devices/1/terminal/sessions?**", (route) => route.fulfill({ json: [] }));
-  await page.route("**/api/v1/devices/1/terminal/sessions", (route) => {
-    const body = route.request().postDataJSON() as { engine: string; mfa_code: string };
-    expect(body.engine).toBe("powershell");
-    if (body.mfa_code !== "123456") {
-      return route.fulfill({
-        status: 403,
-        json: { detail: { code: "mfa_invalid", detail: "Enter a current two-factor code." } },
-      });
-    }
-    const origin = new URL(page.url()).origin.replace(/^http/, "ws");
-    return route.fulfill({
-      json: {
-        session_id: "ps-1",
-        operator_ws_path: `${origin}/ws/terminal/ps-1?ticket=t`,
-        operator_ticket: "t",
-        expires_in_seconds: 60,
-      },
-    });
-  });
-  await page.routeWebSocket(/\/ws\/terminal\/ps-1/, (ws) => {
-    ws.send("PS C:\\Windows\\system32> ");
-  });
+  await mockPowerShellSession(page, 1, "ps-1");
+  await mockScripts(page);
+  const shell = await fakePowerShell(page, "ps-1");
 
   await openReception(page);
   await page.getByRole("tab", { name: "Maintenance" }).click();
@@ -122,9 +104,32 @@ test("PowerShell opens only with a valid two-factor code", async ({ page }, test
   await dialog.getByRole("button", { name: "Open PowerShell" }).click();
   await expect(dialog).toHaveCount(0);
   const consoleBox = section.getByTestId("powershell-console");
-  await expect(consoleBox.getByText("Session open")).toBeVisible();
+  await expect(consoleBox.locator(".ps-chip", { hasText: "Recording" })).toBeVisible();
   await expect(consoleBox.getByText(/idle closes in/)).toBeVisible();
   await expect(consoleBox.locator(".xterm")).toBeVisible();
+  await expect(consoleBox.getByRole("heading", { name: "NW-RECEPTION-01 · PowerShell (Administrator)" })).toBeVisible();
+
+  // Compact layout: console 360 px tall, then Session | Saved scripts side by side, then the command list.
+  const screenBox = await consoleBox.locator(".ps-screen").boundingBox();
+  expect(screenBox?.height).toBe(360);
+  const session = await consoleBox
+    .getByTestId("ps-session-details")
+    .locator("xpath=ancestor::section[1]")
+    .boundingBox();
+  const scripts = await consoleBox.locator("section", { hasText: "Saved scripts" }).boundingBox();
+  expect(Math.abs((session?.width ?? 0) - (scripts?.width ?? 1))).toBeLessThanOrEqual(1);
+  expect(Math.abs((session?.y ?? 0) - (scripts?.y ?? 1))).toBeLessThanOrEqual(1);
+
+  await consoleBox.getByRole("textbox", { name: "Command" }).fill("hostname");
+  await consoleBox.getByRole("textbox", { name: "Command" }).press("Enter");
+  await expect.poll(() => shell.received).toContain("hostname\r");
+  await expect(consoleBox.getByRole("list", { name: "Commands this session" }).getByText("hostname")).toBeVisible();
+  await expect(consoleBox.getByTestId("ps-command-count")).toHaveText("1 · 0 failed");
+  const drawer = page.locator(".th-drawer-panel");
+  expect(await drawer.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
+  // Tall enough to show the whole section (the drawer scrolls inside itself).
+  await page.setViewportSize({ width: 1440, height: 1700 });
+  await section.scrollIntoViewIfNeeded();
   await section.screenshot({ path: testInfo.outputPath("powershell-open.png") });
 
   await consoleBox.getByRole("button", { name: "End session" }).click();

@@ -1871,6 +1871,9 @@ export default function DeviceDrawer({
                 key={device.id}
                 deviceId={device.id}
                 deviceName={displayName}
+                clientName={device.client_name ?? device.resolved_client_name}
+                currentUser={device.current_user}
+                osCaption={device.os_caption}
                 capable={powerShellCapable}
                 active={isOpen && activeTab === "management"}
                 offline={offline}
