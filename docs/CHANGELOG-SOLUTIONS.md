@@ -5,6 +5,20 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-17] HEADER-SWITCH-2026-10-17 — device header by category; slim switches in tables (`ceb6d9e`, `622a6a4`)
+
+**Backend + frontend deployed 22:37 (Tirana), no migration.** The drawer
+header read the legacy device_type column and said "Unclassified" for devices
+the console classifies by group (Mario-Lenovo: Client PC); it now names the
+console category and does not repeat a standard group. Client analytics'
+device rows take the category from the backend. A table touch-target rule
+(min-height 28 px) stretched switches in tables to 34x28; switches are left
+out of it (34x20 everywhere, checked by a test). Also confirmed: 12 and 781
+report the Workstations + Servers policy (1.1,2.1) since about 22:30.
+Dump `/opt/backups/techi/pre-header-switch-20261017-223553.sql.gz`, rollback
+`techi-platform-{backend,frontend}:pre-header-switch-96a58dd`; guard, smoke
+passed, 0 errors. Disk 1.6 GB free (94%).
+
 ## [2026-10-17] MONITORING-PAGE-2026-10-17 — monitoring policies page redesigned; server policy by category (`0fb7f1b`, `a837296`)
 
 **Backend + frontend deployed 22:19 (Tirana), no migration.** The owner asked
