@@ -5,6 +5,30 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-17] PRESENCE-2026-10-17 — one source per value on the device page; online/offline from the live channel (`d5cfa14`, `80f9765`)
+
+**Backend + frontend deployed 15:28 (Tirana), no migration.** From the owner's
+request for live data without overlap or server load (plan steps A and B):
+
+- A: the device drawer (both renderers) and the mobile page show current
+  values once — the Live panel streams them or shows the last heartbeat's,
+  labelled with its age. The duplicate Telemetry/Resources bars and the mobile
+  vitals strip are gone; Trend (last day of heartbeats) is history only.
+  While streaming, Last seen reads "Live now" and Current user is the live one.
+- B: an agent opening its command channel is online at once; a channel that
+  drops and neither reconnects nor heartbeats within 150 s is offline at once
+  (connection_lost). Known offline (shutdown, sleep, connection_lost) counts as
+  offline everywhere through one rule (freshness_conditions) instead of six
+  copies of the 6/25-minute windows. Reconciliation skips open channels;
+  shutdown cancels pending checks.
+
+Dump `/opt/backups/techi/pre-presence-20261017-152633.sql.gz` (139 MB),
+rollback `techi-platform-{backend,frontend}:pre-presence-82e9105`. Backend
+ready 10 s; guard and smoke passed. After restart the four channel devices
+reconnected by themselves (924, 12, 781 within 50 s; Linux 812 at 145 s) and
+no device was marked offline (0 connection_lost); 513 online before and after
+within normal churn; backend 165 MB. Pytest 1470, Vitest 255, Playwright 164.
+
 ## [2026-10-17] AGENT-2.1.28-PILOT-2026-10-17 — pending updates count only real patches (`7e672e4`)
 
 The owner saw "1 patch pending" on Mario-Lenovo that Windows Update on the PC
