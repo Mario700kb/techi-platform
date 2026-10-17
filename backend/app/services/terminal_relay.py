@@ -19,6 +19,8 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import WebSocket
 
+from app.services.terminal_recording import resize_from_frame
+
 logger = logging.getLogger(__name__)
 
 # The operator always attaches first — the agent only learns the session exists
@@ -39,6 +41,8 @@ class _Pair:
     last_activity_monotonic: float = field(default_factory=time.monotonic)
     # Operator frames received before the agent attached, replayed on attach.
     pending_to_agent: List[Dict[str, Any]] = field(default_factory=list)
+    # Administrator PowerShell sessions are recorded (terminal_recording).
+    recorder: Optional[Any] = None
 
 
 class TerminalRelay:
@@ -90,6 +94,14 @@ class TerminalRelay:
                 logger.info("terminal relay: dropping buffered frames, agent went away")
                 return
 
+    async def start_recording(self, session_id: str, recorder) -> None:
+        """Record what the device's console sends from now on."""
+        pair = await self._pair(session_id)
+        if pair.recorder is None:
+            pair.recorder = recorder
+        else:
+            recorder.close()
+
     def is_active(self, session_id: str) -> bool:
         pair = self._pairs.get(session_id)
         return bool(pair and pair.operator and pair.agent and not pair.closed)
@@ -120,6 +132,8 @@ class TerminalRelay:
                         pair.pending_to_agent.append(message)
                     continue
                 pair.last_activity_monotonic = time.monotonic()
+                if pair.recorder is not None:
+                    self._record(pair.recorder, message, is_operator)
                 if message.get("bytes") is not None:
                     await target.send_bytes(message["bytes"])
                 elif message.get("text") is not None:
@@ -127,12 +141,27 @@ class TerminalRelay:
         except Exception:
             pass
 
+    @staticmethod
+    def _record(recorder, message: Dict[str, Any], is_operator: bool) -> None:
+        try:
+            if not is_operator:
+                recorder.output(message.get("bytes") if message.get("bytes") is not None else message.get("text"))
+            elif message.get("text") is not None:
+                size = resize_from_frame(message["text"])
+                if size:
+                    recorder.resize(*size)
+        except Exception:
+            # A recording problem never interrupts the session itself.
+            logger.exception("terminal relay: recording failed")
+
     async def close(self, session_id: str) -> None:
         async with self._lock:
             pair = self._pairs.pop(session_id, None)
         if pair is None:
             return
         pair.closed = True
+        if pair.recorder is not None:
+            pair.recorder.close()
         for ws in (pair.operator, pair.agent):
             if ws is not None:
                 try:

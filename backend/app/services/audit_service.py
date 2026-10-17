@@ -82,6 +82,7 @@ class AuditAction:
     UPDATE_OPERATOR = "operator_updated"
     TERMINAL_SESSION_OPENED = "terminal_session_opened"
     TERMINAL_SESSION_DENIED = "terminal_session_denied"
+    TERMINAL_RECORDING_VIEWED = "terminal_recording_viewed"
     TERMINAL_SESSION_CLOSED = "terminal_session_closed"
     TERMINAL_SESSION_EXPIRED = "terminal_session_expired"
     # Embedded SSH Connect — same session/relay/watchdog stack as the Web

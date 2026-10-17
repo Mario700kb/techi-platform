@@ -55,10 +55,11 @@ const (
 )
 
 type commandEnvelope struct {
-	Type            string        `json:"type"`
-	Action          PendingAction `json:"action"`
-	IntervalSeconds int           `json:"interval_seconds"`
-	TTLSeconds      int           `json:"ttl_seconds"`
+	Type            string          `json:"type"`
+	Action          PendingAction   `json:"action"`
+	IntervalSeconds int             `json:"interval_seconds"`
+	TTLSeconds      int             `json:"ttl_seconds"`
+	Policy          json.RawMessage `json:"policy"`
 }
 
 // channelWriter serialises writes: gorilla/websocket allows one writer at a
@@ -209,6 +210,9 @@ func serveCommandChannel(ctx context.Context, cfg *Config, endpoint string) erro
 	writer := &channelWriter{conn: conn}
 	// A live view never outlives the connection it was requested on.
 	defer agentLive.stop()
+	// Monitor state changes go out on this connection while it is open.
+	telemetryRuntime.setChannel(writer.write)
+	defer telemetryRuntime.setChannel(nil)
 
 	// Keep the socket warm so idle NAT/proxy timeouts do not silently kill it,
 	// and so the server's idle sweep can tell a live agent from a dead one.
@@ -260,6 +264,8 @@ func serveCommandChannel(ctx context.Context, cfg *Config, endpoint string) erro
 			agentLive.request(env.IntervalSeconds, env.TTLSeconds, writer.write)
 		case "live_stop":
 			agentLive.stop()
+		case "policy":
+			applyMonitoringPolicy(env.Policy)
 		}
 	}
 }

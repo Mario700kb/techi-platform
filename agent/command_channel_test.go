@@ -69,12 +69,19 @@ func TestOtherPlatformsOpenNothing(t *testing.T) {
 	}
 }
 
-func TestWindowsStillRefusesOpenTerminal(t *testing.T) {
-	// The channel now reaches Windows, but the Web Terminal stays Linux-only:
-	// Windows must keep refusing open_terminal whichever path delivers it.
-	win := readAgentFile(t, "actions_windows.go")
-	if !strings.Contains(win, "not supported on Windows") {
-		t.Fatal("actions_windows.go must keep refusing open_terminal")
+func TestWindowsOpensOnlyPowerShellInAPseudoConsole(t *testing.T) {
+	// Until 2.1.29 Windows refused open_terminal. Since the owner asked for an
+	// administrator PowerShell (2026-10-17) it opens exactly that — never a
+	// shell the caller names — and refuses where there is no pseudo console.
+	// The two-factor check that guards it is on the platform.
+	win := readAgentFile(t, "terminal_windows.go")
+	for _, want := range []string{"conPTYAvailable()", "powershell.exe", "JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE", "powershellSessionMax"} {
+		if !strings.Contains(win, want) {
+			t.Fatalf("terminal_windows.go must contain %q", want)
+		}
+	}
+	if strings.Contains(win, `params["engine"]`) {
+		t.Fatal("the Windows console must not take its program from the action")
 	}
 }
 

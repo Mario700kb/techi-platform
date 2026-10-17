@@ -49,6 +49,9 @@ type HeartbeatResponse struct {
 	// applies it to RustDesk and persists it so the heartbeat loop stops using
 	// the old fleet-wide default.
 	RemoteSupportPassword string `json:"remote_support_password,omitempty"`
+	// What to collect and which monitors to evaluate (backend with the
+	// telemetry pipeline); absent from older backends.
+	MonitoringPolicy json.RawMessage `json:"monitoring_policy,omitempty"`
 }
 
 type actionResult struct {

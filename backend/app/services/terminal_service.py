@@ -98,7 +98,7 @@ class TerminalService:
             device_id=device_id,
             operator_id=operator_id,
             operator_username=operator_username,
-            engine=engine if engine in ("bash", "sh") else "bash",
+            engine=engine if engine in ("bash", "sh", "powershell") else "bash",
             status=TerminalSessionStatus.PENDING.value,
             operator_ticket_hash=_hash_ticket(operator_ticket),
             agent_ticket_hash=_hash_ticket(agent_ticket),

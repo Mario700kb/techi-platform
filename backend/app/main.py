@@ -62,6 +62,11 @@ def _run_heartbeat_cleanup() -> None:
         rotate_remote_support_passwords,
     )
     from app.services.telemetry_ingest_service import cleanup_telemetry_pipeline
+    from app.services.terminal_recording import cleanup_recordings
+
+    def cleanup_terminal_recordings(_db) -> int:
+        return cleanup_recordings()
+
     tasks = (
         resolve_stale_alerts,
         rotate_remote_support_passwords,
@@ -76,6 +81,7 @@ def _run_heartbeat_cleanup() -> None:
         cleanup_old_enrollment_audit,
         cleanup_old_remote_support_connections,
         cleanup_telemetry_pipeline,
+        cleanup_terminal_recordings,
     )
     from app.core import worker_health
     from app.services.audit_service import system_audit_log

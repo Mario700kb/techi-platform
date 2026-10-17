@@ -67,6 +67,9 @@ func runAgent(ctx context.Context, configPath string, enrollmentToken string, on
 	// heartbeat path exactly as before.
 	if !once {
 		go runCommandChannel(ctx, configPath)
+		// Every-minute samples kept on disk and uploaded every 15 minutes,
+		// once the platform has sent a monitoring policy.
+		go runTelemetryPipeline(ctx, configPath)
 	}
 
 	if err := runSingleHeartbeat(configPath, enrollmentToken); err != nil {

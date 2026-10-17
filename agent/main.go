@@ -137,6 +137,7 @@ func runSingleHeartbeat(configPath string, enrollmentToken string) error {
 	heavy.sent()
 
 	log.Printf("heartbeat sent successfully to %s", cfg.BackendURL)
+	applyMonitoringPolicy(hbResp.MonitoringPolicy)
 	processActions(cfg, hbResp.PendingActions)
 
 	// Adopt the server-authoritative per-device RS password. Persisting it into

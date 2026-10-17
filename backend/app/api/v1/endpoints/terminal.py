@@ -56,6 +56,9 @@ _require_admin = require_min_role(OperatorRole.ADMIN.value)
 
 class TerminalSessionCreate(BaseModel):
     engine: str = "bash"
+    # Administrator PowerShell (Windows): a current two-factor code, asked for
+    # every time a session is opened.
+    mfa_code: Optional[str] = None
 
 
 class TerminalSessionResponse(BaseModel):
@@ -74,9 +77,38 @@ def _ws_base() -> str:
     return base
 
 
+def _is_windows(device) -> bool:
+    descriptor = resolve_platform(device.platform)
+    return (descriptor.id if descriptor is not None else "windows") == "windows"
+
+
 def _has_terminal_capability(device) -> bool:
     caps = device.capabilities or {}
-    return isinstance(caps, dict) and "terminal" in caps
+    if not isinstance(caps, dict):
+        return False
+    # Windows agents from 2.1.29 open an administrator PowerShell console.
+    return "terminal" in caps or (_is_windows(device) and "powershell" in caps)
+
+
+def _require_powershell_step_up(db: Session, operator: Operator, device_id: int, code: Optional[str]) -> None:
+    """A console with full rights on a Windows device: the operator proves it
+    is them again with a two-factor code, whatever their session says."""
+    from app.services.mfa_service import MfaService
+
+    reason = None
+    if not operator.mfa_enabled:
+        reason = "mfa_not_enabled"
+    elif not (code or "").strip() or MfaService(db).verify(operator, code.strip().replace(" ", "")) is None:
+        reason = "mfa_invalid"
+    if reason is None:
+        return
+    audit_log(db, operator=operator, action=AuditAction.TERMINAL_SESSION_DENIED, entity_type="device",
+              entity_id=device_id, details={"reason": reason, "engine": "powershell"})
+    detail = (
+        "Turn on two-factor authentication to open an administrator PowerShell."
+        if reason == "mfa_not_enabled" else "Enter a current two-factor code to open an administrator PowerShell."
+    )
+    raise HTTPException(status_code=403, detail={"code": reason, "detail": detail})
 
 
 # The push helper is shared with the other single-device action endpoints.
@@ -113,12 +145,19 @@ def create_terminal_session(
         )
         raise HTTPException(status_code=403, detail="Terminal is not yet enabled for this device (rollout scope)")
 
+    engine = payload.engine
+    if _is_windows(device):
+        # Whatever the caller asked for, a Windows device opens PowerShell —
+        # and only after the two-factor check.
+        engine = "powershell"
+        _require_powershell_step_up(db, operator, device_id, payload.mfa_code)
+
     svc = TerminalService(db)
     session, operator_ticket, agent_ticket = svc.create_session(
         device_id=device_id,
         operator_id=operator.id,
         operator_username=operator.username,
-        engine=payload.engine,
+        engine=engine,
     )
 
     # Tell the agent to dial the terminal WS (delivered via heartbeat
@@ -180,6 +219,73 @@ def create_terminal_session(
         operator_ticket=operator_ticket,
         expires_in_seconds=svc.ticket_ttl_for_device(device_id),
     )
+
+
+class TerminalSessionSummary(BaseModel):
+    session_id: str
+    engine: str
+    operator_username: Optional[str] = None
+    status: str
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    ended_at: Optional[datetime] = None
+    disconnect_reason: Optional[str] = None
+    recording_bytes: Optional[int] = None
+
+
+@router.get("/devices/{device_id}/terminal/sessions", response_model=List[TerminalSessionSummary])
+def list_terminal_sessions(
+    device_id: int,
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(_require_admin),
+):
+    """The device's recent console sessions, newest first, with the size of
+    each recording (None when there is none)."""
+    from app.models.terminal_session import TerminalSession
+    from app.services.terminal_recording import recording_path
+
+    if DeviceRepository(db).get(device_id) is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+    rows = (
+        db.query(TerminalSession)
+        .filter(TerminalSession.device_id == device_id, TerminalSession.mode == "agent")
+        .order_by(TerminalSession.created_at.desc())
+        .limit(max(1, min(limit, 100)))
+        .all()
+    )
+    out = []
+    for s in rows:
+        path = recording_path(s.id) if s.recording_path else None
+        size = path.stat().st_size if path is not None and path.is_file() else None
+        out.append(TerminalSessionSummary(
+            session_id=s.id, engine=s.engine, operator_username=s.operator_username, status=s.status,
+            created_at=s.created_at, started_at=s.started_at, ended_at=s.ended_at,
+            disconnect_reason=s.disconnect_reason, recording_bytes=size,
+        ))
+    return out
+
+
+@router.get("/devices/{device_id}/terminal/sessions/{session_id}/recording")
+def get_terminal_recording(
+    device_id: int,
+    session_id: str,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(_require_admin),
+):
+    """The asciicast recording of an administrator PowerShell session."""
+    from fastapi.responses import FileResponse
+
+    from app.models.terminal_session import TerminalSession
+    from app.services.terminal_recording import recording_path
+
+    session = db.get(TerminalSession, session_id)
+    path = recording_path(session_id)
+    if session is None or session.device_id != device_id or path is None or not path.is_file():
+        raise HTTPException(status_code=404, detail="Recording not found")
+    audit_log(db, operator=operator, action=AuditAction.TERMINAL_RECORDING_VIEWED, entity_type="terminal_session",
+              entity_id=None, details={"session_id": session_id, "device_id": device_id})
+    return FileResponse(path, media_type="application/x-asciicast", filename=f"powershell-{session_id}.cast")
 
 
 # ─────────────────────────────────────────────────────────────────────────

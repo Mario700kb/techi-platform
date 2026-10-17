@@ -891,8 +891,5 @@ func handleRunCommand(_ context.Context, _ map[string]interface{}) actionResult 
 	return actionResult{err: fmt.Errorf("run_command: use run_powershell on Windows")}
 }
 
-// handleOpenTerminal: Web Terminal is Linux-first (Phase 5). This stub keeps
-// the shared dispatch compiling on Windows; the backend never sends it here.
-func handleOpenTerminal(_ context.Context, _ *Config, _ map[string]interface{}) actionResult {
-	return actionResult{err: fmt.Errorf("open_terminal: not supported on Windows")}
-}
+// handleOpenTerminal (administrator PowerShell over ConPTY) lives in
+// terminal_windows.go.
