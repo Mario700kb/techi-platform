@@ -155,6 +155,7 @@ class TestWiringBoundary:
             "app/services/device_assignment_service.py",  # Unified Classification Engine consumer (P3)
             "app/services/trusted_domain_service.py",  # Unified Classification Engine consumer (P3)
             "app/services/offline_alerts.py",  # Unified Classification Engine consumer: always-on vs workstation offline policy
+            "app/services/monitoring_policy_service.py",  # Unified Classification Engine consumer: device-category monitoring policies
             "app/services/permission_service.py",  # ACTION_PERMISSION_MAP derives from the Action Registry (Step 1c)
             "app/services/agent_enrollment_service.py",  # registry-driven architecture validation (MikroTik phase)
             "app/services/version_service.py",  # Version Service reads Platform Registry's latest_connector_version

@@ -335,3 +335,31 @@ def test_retention_keeps_seven_days_of_minutes(db):
     db.commit()
     assert cleanup_telemetry_pipeline(db) == 2
     assert db.query(TelemetrySample).count() == 0
+
+
+def test_a_device_in_the_servers_group_gets_the_server_policy_whatever_its_type_column(db):
+    """HV-PROD-01: in the Servers group, device_type UNASSIGNED — it ran only
+    the Workstations policy, so the disk forecast never applied to it."""
+    from app.models.device_group import DeviceGroup
+
+    db.add(DeviceGroup(id=5, name="Servers", client_id=1))
+    db.add(Device(id=12, agent_id="agent_ts", hostname="Techi-Server", platform="windows", client_id=1,
+                  group_id=5, device_type=DeviceType.UNASSIGNED, status=DeviceStatus.ONLINE,
+                  last_seen=utcnow_naive()))
+    db.commit()
+    mps.invalidate_cache()
+    policy = effective_policy(db, db.get(Device, 12))
+    assert "Servers" in policy.policies and "disk_forecast" in {m.key for m in policy.monitors}
+
+
+def test_coverage_counts_only_agents_that_report_their_policy(db):
+    _ingest(db, _minutes(utcnow_naive() - timedelta(minutes=5), 1))  # 924 reports 1.1
+    workstations = next(p for p in mps.MonitoringPolicyService(db).list() if p.name == "Workstations")
+    assert (workstations.devices, workstations.devices_reporting, workstations.devices_current) == (3, 1, 1)
+
+
+def test_a_device_type_policy_takes_a_category_and_the_old_values():
+    from app.services.monitoring_policy_service import device_category_value
+
+    assert device_category_value("server") == "servers" and device_category_value("client") == "clientpc"
+    assert device_category_value("hypervisors") == "hypervisors"

@@ -21,6 +21,19 @@ from app.models.telemetry_pipeline import DeviceTelemetryState, MonitoringPolicy
 from app.schemas.telemetry_pipeline import EffectivePolicy, Monitor, PolicyBody, PolicyOut
 
 SPECIFICITY = {"default": 0, "device_type": 1, "client": 2, "group": 3}
+
+# A "device type" policy follows the category the console shows everywhere
+# (classify_category: the standard group first, then the OS), not the legacy
+# device_type column — HV-PROD-01 is in Servers but its column says
+# UNASSIGNED, so a column match never gave it the Servers monitors.
+DEVICE_CATEGORIES = ("servers", "clientpc", "network", "storage", "hypervisors", "printers", "iot", "other")
+_LEGACY_TYPES = {"server": "servers", "client": "clientpc"}
+
+
+def device_category_value(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    return _LEGACY_TYPES.get(value, value)
 _CACHE_TTL = 60.0
 _cache_lock = threading.Lock()
 _cache: Tuple[float, List[dict]] = (0.0, [])
@@ -64,8 +77,9 @@ def _matches(policy: dict, device: Device) -> bool:
     if scope == "default":
         return True
     if scope == "device_type":
-        dtype = getattr(device.device_type, "value", device.device_type)
-        return value is not None and dtype == value
+        from app.platform_core.classification import classify_category
+
+        return value is not None and classify_category(device) == device_category_value(value)
     if scope == "client":
         return device.client_id is not None and value == str(device.client_id)
     if scope == "group":
@@ -109,11 +123,13 @@ class MonitoringPolicyService:
         for policy in policies:
             snap = _snapshot(policy)
             covered = [d for d in devices if _matches(snap, d)] if policy.enabled else []
-            current = 0
+            current = reporting = 0
             for device in covered:
                 reported = states.get(device.id)
-                if reported and f"{policy.id}.{policy.version}" in reported.split(","):
-                    current += 1
+                if reported:
+                    reporting += 1  # agent 2.1.29+: it reports the policy it runs
+                    if f"{policy.id}.{policy.version}" in reported.split(","):
+                        current += 1
             out.append(PolicyOut(
                 id=policy.id, name=policy.name, description=policy.description, scope=policy.scope,
                 scope_value=policy.scope_value, enabled=policy.enabled, version=policy.version,
@@ -121,7 +137,7 @@ class MonitoringPolicyService:
                 buffer_mb=policy.buffer_mb, keep_days=policy.keep_days,
                 monitors=[Monitor.model_validate(m) for m in (policy.monitors or [])],
                 updated_at=policy.updated_at, updated_by=policy.updated_by,
-                devices=len(covered), devices_current=current,
+                devices=len(covered), devices_current=current, devices_reporting=reporting,
             ))
         return out
 
@@ -135,8 +151,8 @@ class MonitoringPolicyService:
             return
         if not body.scope_value:
             raise ValueError("Choose what the policy applies to")
-        if body.scope == "device_type" and body.scope_value not in ("server", "client"):
-            raise ValueError("Device type must be server or client")
+        if body.scope == "device_type" and device_category_value(body.scope_value) not in DEVICE_CATEGORIES:
+            raise ValueError("Choose a device category")
         if body.scope in ("client", "group") and not body.scope_value.isdigit():
             raise ValueError("Scope value must be an id")
         keys = [m.key for m in body.monitors]

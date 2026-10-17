@@ -117,6 +117,9 @@ class PolicyOut(PolicyBody):
     updated_by: Optional[str] = None
     devices: int = 0
     devices_current: int = 0
+    # Of `devices`, those whose agent reports the policy it runs (2.1.29+);
+    # older agents cannot, so they are neither current nor behind.
+    devices_reporting: int = 0
 
 
 class EffectivePolicy(BaseModel):
