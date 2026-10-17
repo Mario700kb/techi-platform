@@ -61,6 +61,7 @@ def _run_heartbeat_cleanup() -> None:
         resolve_stale_alerts,
         rotate_remote_support_passwords,
     )
+    from app.services.telemetry_ingest_service import cleanup_telemetry_pipeline
     tasks = (
         resolve_stale_alerts,
         rotate_remote_support_passwords,
@@ -74,6 +75,7 @@ def _run_heartbeat_cleanup() -> None:
         cleanup_old_audit_logs,
         cleanup_old_enrollment_audit,
         cleanup_old_remote_support_connections,
+        cleanup_telemetry_pipeline,
     )
     from app.core import worker_health
     from app.services.audit_service import system_audit_log
@@ -138,6 +140,46 @@ def _run_location_sweep() -> None:
         db.close()
 
 
+MONITOR_SWEEP_INTERVAL_S = 300
+
+
+def _run_monitor_sweep() -> None:
+    """Server-side monitors (telemetry not arriving, disks that will fill);
+    the agent evaluates the rest on the device."""
+    from app.db.session import SessionLocal
+    from app.services.monitor_alert_service import MonitorAlertService
+
+    db = SessionLocal()
+    try:
+        MonitorAlertService(db).sweep()
+    except Exception:
+        logger.exception("Monitor sweep failed")
+        db.rollback()
+    finally:
+        db.close()
+
+
+async def _monitor_sweep_scheduler() -> None:
+    await asyncio.sleep(90)
+    while True:
+        await asyncio.to_thread(_run_monitor_sweep)
+        await asyncio.sleep(MONITOR_SWEEP_INTERVAL_S)
+
+
+def _ensure_telemetry_partitions() -> None:
+    from app.db.session import SessionLocal
+    from app.services.telemetry_ingest_service import ensure_partitions
+
+    db = SessionLocal()
+    try:
+        ensure_partitions(db)
+    except Exception:
+        logger.exception("Telemetry partitions could not be checked")
+        db.rollback()
+    finally:
+        db.close()
+
+
 async def _location_sweep_scheduler() -> None:
     await asyncio.sleep(LOCATION_SWEEP_FIRST_DELAY_S)
     while True:
@@ -187,6 +229,8 @@ async def lifespan(app: FastAPI):
     device_reconciliation_worker.start()
     cleanup_task = asyncio.create_task(_heartbeat_cleanup_scheduler())
     location_sweep_task = asyncio.create_task(_location_sweep_scheduler())
+    await asyncio.to_thread(_ensure_telemetry_partitions)
+    monitor_sweep_task = asyncio.create_task(_monitor_sweep_scheduler())
     # Only runs when the feature is actually reachable — flag OFF stays
     # zero-extra-behavior (no new periodic queries).
     if feature_enabled("FEATURE_TERMINAL"):
@@ -215,7 +259,7 @@ async def lifespan(app: FastAPI):
 
     cancel_presence_checks()
 
-    for task in (cleanup_task, location_sweep_task):
+    for task in (cleanup_task, location_sweep_task, monitor_sweep_task):
         task.cancel()
         try:
             await task

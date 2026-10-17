@@ -735,12 +735,18 @@ class DeviceHeartbeatService:
             dedupe_key=f"telemetry:{device.id}",
         )
 
-        AlertEngine(self.db).evaluate_telemetry(
-            device,
-            cpu_percent=payload.cpu_percent,
-            ram_percent=payload.ram_percent,
-            disk_percent=payload.disk_percent,
-        )
+        # An agent that evaluates its own policy monitors (>= 2.1.29) raises
+        # CPU/memory/disk alerts itself, every minute; evaluating the 5-minute
+        # heartbeat too would open the same alerts twice.
+        from app.services.telemetry_ingest_service import devices_with_agent_monitoring
+
+        if not devices_with_agent_monitoring(self.db, {device.id}):
+            AlertEngine(self.db).evaluate_telemetry(
+                device,
+                cpu_percent=payload.cpu_percent,
+                ram_percent=payload.ram_percent,
+                disk_percent=payload.disk_percent,
+            )
 
         if prev_state == new_state:
             return

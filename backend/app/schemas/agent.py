@@ -114,6 +114,9 @@ class AgentHeartbeatResponse(BaseModel):
     # (>= 2.1.5). Replaces the fleet-wide default. Sent every heartbeat so a
     # wiped RS config self-heals to the server-authoritative value.
     remote_support_password: Optional[str] = None
+    # What the agent collects and the monitors it evaluates (>= 2.1.29). Sent
+    # to an agent that proves its identity; older agents ignore it.
+    monitoring_policy: Optional[dict] = None
 
 
 class AgentPowerEventPayload(BaseModel):

@@ -6,7 +6,7 @@ from urllib.parse import urlsplit, urlunsplit
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
-from app.core.agent_auth import enroll_limiter
+from app.core.agent_auth import _SlidingWindowRateLimiter, enroll_limiter
 from app.core.config import settings
 from app.db.session import get_db, SessionLocal
 from app.repositories.device_repository import DeviceRepository
@@ -22,6 +22,9 @@ from app.services.agent_enrollment_service import AgentEnrollmentService
 from app.services.device_heartbeat_service import DeviceHeartbeatService
 from app.services.device_status_service import DeviceStatusService
 from app.services.remote_action_service import RemoteActionService
+from app.schemas.telemetry_pipeline import TelemetryAck, TelemetryUpload
+from app.services.monitoring_policy_service import agent_policy_payload, effective_policy
+from app.services.telemetry_ingest_service import TelemetryIngestService
 from app.services.remote_support_password_service import RemoteSupportPasswordService
 
 logger = logging.getLogger(__name__)
@@ -107,6 +110,17 @@ def agent_enroll(
         raise HTTPException(status_code=400, detail=detail)
 
 
+def _monitoring_policy(db: Session, device) -> Optional[dict]:
+    """The heartbeat never fails because monitoring could not be read: the
+    agent keeps the policy it has and gets the next one later."""
+    try:
+        return agent_policy_payload(effective_policy(db, device))
+    except Exception:
+        logger.exception("heartbeat: monitoring policy for device %s could not be read", device.id)
+        db.rollback()
+        return None
+
+
 @router.post("/heartbeat", response_model=AgentHeartbeatResponse)
 def agent_heartbeat(
     payload: AgentHeartbeatPayload,
@@ -182,6 +196,7 @@ def agent_heartbeat(
         "heartbeat_interval_seconds": interval,
         "agent_update": None,  # populated in Faza 3 when agent-packages service is ready
         "remote_support_password": rs_password,
+        "monitoring_policy": _monitoring_policy(db, device) if authenticated else None,
     }
     # Hand the connection back before the side effects open their own session.
     # get_db would only close it after them, so every heartbeat held two pool
@@ -207,3 +222,56 @@ def agent_power_event(payload: AgentPowerEventPayload, db: Session = Depends(get
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Unknown device or agent_id")
     DeviceStatusService(db).mark_offline_from_power_event(device, payload.state)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ── telemetry uploads (agent >= 2.1.29) ─────────────────────────────────────
+
+# An agent uploads every 15 minutes, in chunks after an outage; this is far
+# above that and only stops a misbehaving one.
+_telemetry_limiter = _SlidingWindowRateLimiter(limit=30, window_seconds=60)
+_MAX_TELEMETRY_BYTES = 4 * 1024 * 1024  # decompressed
+
+
+@router.post("/telemetry", response_model=TelemetryAck)
+async def agent_telemetry(request: Request):
+    """Store a batch of the device's samples exactly once and acknowledge the
+    highest sequence number, so the agent can drop them from its buffer.
+
+    The body may be gzip-compressed (Content-Encoding: gzip). The caller must
+    present the device's own agent_id, like a power event: a missing device
+    and a wrong agent_id get the same 403."""
+    import gzip
+    import io
+    import json
+
+    from fastapi.concurrency import run_in_threadpool
+    from pydantic import ValidationError
+
+    raw = await request.body()
+    if request.headers.get("content-encoding", "").lower() == "gzip":
+        try:
+            with gzip.GzipFile(fileobj=io.BytesIO(raw)) as stream:
+                raw = stream.read(_MAX_TELEMETRY_BYTES + 1)
+        except OSError:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Body is not valid gzip")
+    if len(raw) > _MAX_TELEMETRY_BYTES:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Upload too large")
+    try:
+        upload = TelemetryUpload.model_validate(json.loads(raw))
+    except (ValueError, ValidationError) as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)[:500])
+    if not _telemetry_limiter.is_allowed(f"device:{upload.device_id}"):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many uploads")
+
+    def store() -> TelemetryAck:
+        db = SessionLocal()
+        try:
+            device = DeviceRepository(db).get(upload.device_id)
+            if device is None or not _agent_id_matches(upload.agent_id, device.agent_id):
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Unknown device or agent_id")
+            policy = effective_policy(db, device)
+            return TelemetryIngestService(db).ingest(device, upload, policy)
+        finally:
+            db.close()
+
+    return await run_in_threadpool(store)

@@ -28,6 +28,8 @@ class AlertKind(str, Enum):
     HEARTBEAT_STALE = "heartbeat_stale"
     TELEMETRY_MISSING = "telemetry_missing"
     ARCHIVED_CHECKIN = "archived_checkin"
+    DISK_FORECAST = "disk_forecast"
+    HIGH_NETWORK = "high_network"
 
 
 class DeviceAlert(Base):

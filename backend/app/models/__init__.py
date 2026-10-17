@@ -20,6 +20,13 @@ from app.models.operator import Operator
 from app.models.operator_session import OperatorSession
 from app.models.remote_action import RemoteAction
 from app.models.reenrollment_request import ReenrollmentRequest
+from app.models.telemetry_pipeline import (
+    DeviceTelemetryState,
+    MonitoringPolicy,
+    TelemetryRollup1h,
+    TelemetryRollup5m,
+    TelemetrySample,
+)
 from app.models.remote_support_connection import RemoteSupportConnection
 from app.models.team import Team, TeamClientAccess, TeamDeviceAccess, TeamGroupAccess, TeamMember
 from app.models.trusted_domain import TrustedDomain
@@ -59,6 +66,11 @@ __all__ = [
     "RemoteAction",
     "ReenrollmentRequest",
     "RemoteSupportConnection",
+    "DeviceTelemetryState",
+    "MonitoringPolicy",
+    "TelemetryRollup1h",
+    "TelemetryRollup5m",
+    "TelemetrySample",
     "TerminalSession",
     "TrustedDomain",
     "VaultCredential",

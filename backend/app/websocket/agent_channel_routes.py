@@ -22,6 +22,7 @@ from typing import Set
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from app.core.agent_auth import _SlidingWindowRateLimiter
 from app.core.time import utcnow
 from app.db.session import SessionLocal
 from app.repositories.device_repository import DeviceRepository
@@ -81,6 +82,34 @@ async def _offline_after_grace(device_id: int, disconnected_at) -> None:
     await asyncio.to_thread(_mark_lost, device_id, disconnected_at)
 
 
+# A device reports a monitor only when it changes state; this ceiling stops a
+# flapping or misbehaving agent from flooding the alert engine.
+_monitor_limiter = _SlidingWindowRateLimiter(limit=60, window_seconds=60)
+
+
+def _apply_monitor_event(device_id: int, raw) -> None:
+    from pydantic import ValidationError
+
+    from app.schemas.telemetry_pipeline import MonitorEvent
+    from app.services.monitor_alert_service import MonitorAlertService
+    from app.services.monitoring_policy_service import effective_policy
+
+    try:
+        event = MonitorEvent.model_validate(raw)
+    except ValidationError:
+        logger.info("[agent-channel] device #%d sent a malformed monitor event; dropped", device_id)
+        return
+    db = SessionLocal()
+    try:
+        device = DeviceRepository(db).get(device_id)
+        if device is not None and not device.is_archived:
+            MonitorAlertService(db).apply(device, event, effective_policy(db, device))
+    except Exception:
+        logger.exception("[agent-channel] device #%d: monitor event failed", device_id)
+    finally:
+        db.close()
+
+
 def cancel_presence_checks() -> None:
     """Shutdown: every channel drops with the process, which says nothing
     about the devices."""
@@ -132,6 +161,9 @@ async def agent_command_ws(websocket: WebSocket, device_id: int = 0, agent_id: s
             message = parse_agent_message(text)
             if message is not None and message.get("type") == "live":
                 await device_live_hub.publish(device_id, message.get("data"))
+            elif message is not None and message.get("type") == "monitor":
+                if _monitor_limiter.is_allowed(f"device:{device_id}"):
+                    await asyncio.to_thread(_apply_monitor_event, device_id, message.get("event"))
     except WebSocketDisconnect:
         pass
     except asyncio.TimeoutError:

@@ -21,6 +21,8 @@ ALERT_RULES: dict[AlertKind, AlertRule] = {
     # Cooldown of 3600s prevents spam when an archived device sends frequent heartbeats.
     # The alert stays open (deduped by open-alert check) until the device is restored.
     AlertKind.ARCHIVED_CHECKIN: AlertRule(severity=AlertSeverity.WARNING, cooldown_seconds=3600),
+    AlertKind.DISK_FORECAST: AlertRule(severity=AlertSeverity.WARNING, cooldown_seconds=86400),
+    AlertKind.HIGH_NETWORK: AlertRule(severity=AlertSeverity.INFO, cooldown_seconds=600),
 }
 
 # CPU and memory alert only on sustained load. A single sample above the line
