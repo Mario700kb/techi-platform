@@ -16,7 +16,10 @@ from app.services.alert_rules import (
     RAM_CRIT,
     RAM_WARN,
     RECONNECT_THRESHOLD,
-    RESOLVE_HYSTERESIS,
+    CPU_RESOLVE_BELOW,
+    DISK_RESOLVE_BELOW,
+    RAM_RESOLVE_BELOW,
+    RESOLVE_SAMPLES,
     STALE_WHEN_OFFLINE,
     SUSTAINED_SAMPLES,
 )
@@ -167,19 +170,30 @@ class AlertEngine:
         hostname = device.hostname or f"device-{device.id}"
         recent = None
 
-        def sustained(attr: str, threshold: float) -> bool:
+        window = max(SUSTAINED_SAMPLES, RESOLVE_SAMPLES)
+
+        def latest(attr: str, n: int) -> list:
             # The current sample is stored before alerts are evaluated, so the
-            # latest SUSTAINED_SAMPLES rows include it.
+            # latest rows include it.
             nonlocal recent
             if recent is None:
-                recent = DeviceTelemetryRepository(self.repo.db).get_recent_by_device(device.id, limit=SUSTAINED_SAMPLES)
-            if len(recent) < SUSTAINED_SAMPLES:
-                return False
-            return all((getattr(sample, attr) or 0) > threshold for sample in recent)
+                recent = DeviceTelemetryRepository(self.repo.db).get_recent_by_device(device.id, limit=window)
+            values = [getattr(sample, attr) for sample in recent[:n]]
+            return values if len(values) == n and all(v is not None for v in values) else []
 
-        for kind, attr, label, value, warn, crit in (
-            (AlertKind.HIGH_CPU, "cpu_percent", "CPU", cpu_percent, CPU_WARN, CPU_CRIT),
-            (AlertKind.HIGH_RAM, "ram_percent", "RAM", ram_percent, RAM_WARN, RAM_CRIT),
+        def sustained(attr: str, threshold: float) -> bool:
+            values = latest(attr, SUSTAINED_SAMPLES)
+            return bool(values) and all(v > threshold for v in values)
+
+        def settled(attr: str, below: float) -> bool:
+            # Closing needs the same patience as opening: one low sample in a
+            # busy period does not end it.
+            values = latest(attr, RESOLVE_SAMPLES)
+            return bool(values) and all(v < below for v in values)
+
+        for kind, attr, label, value, warn, crit, below in (
+            (AlertKind.HIGH_CPU, "cpu_percent", "CPU", cpu_percent, CPU_WARN, CPU_CRIT, CPU_RESOLVE_BELOW),
+            (AlertKind.HIGH_RAM, "ram_percent", "RAM", ram_percent, RAM_WARN, RAM_CRIT, RAM_RESOLVE_BELOW),
         ):
             if value is None:
                 continue
@@ -187,7 +201,7 @@ class AlertEngine:
                 self._open_alert(device.id, kind, AlertSeverity.CRITICAL, f"{label} critical on {hostname}: {value:.1f}%", device=device)
             elif value > warn and sustained(attr, warn):
                 self._open_alert(device.id, kind, AlertSeverity.WARNING, f"{label} elevated on {hostname}: {value:.1f}%", device=device)
-            elif value < warn - RESOLVE_HYSTERESIS:
+            elif value < below and settled(attr, below):
                 self._resolve(device.id, kind, reason=f"{label.lower()}_normalized")
 
         if disk_percent is not None:
@@ -195,7 +209,7 @@ class AlertEngine:
                 self._open_alert(device.id, AlertKind.LOW_DISK, AlertSeverity.CRITICAL, f"Disk critical on {hostname}: {disk_percent:.1f}% used", device=device)
             elif disk_percent > DISK_WARN:
                 self._open_alert(device.id, AlertKind.LOW_DISK, AlertSeverity.WARNING, f"Disk high on {hostname}: {disk_percent:.1f}% used", device=device)
-            else:
+            elif disk_percent < DISK_RESOLVE_BELOW:
                 self._resolve(device.id, AlertKind.LOW_DISK, reason="disk_normalized")
 
     def evaluate_rustdesk_sync(self, device) -> None:

@@ -73,7 +73,7 @@ def test_a_cpu_spike_opens_nothing(db, device):
 
 
 def test_sustained_cpu_load_opens_a_warning_then_critical_needs_its_own_run(db, device):
-    _samples(db, device, cpu=[88.0, 91.0, 97.0])
+    _samples(db, device, cpu=[86.0, 88.0, 91.0, 97.0])
     _evaluate(db, device, cpu=97.0)
 
     alert = _open(db, device, AlertKind.HIGH_CPU)
@@ -82,7 +82,7 @@ def test_sustained_cpu_load_opens_a_warning_then_critical_needs_its_own_run(db, 
 
 
 def test_sustained_critical_cpu_opens_critical(db, device):
-    _samples(db, device, cpu=[96.0, 98.0, 100.0])
+    _samples(db, device, cpu=[96.0, 97.0, 98.0, 100.0])
     _evaluate(db, device, cpu=100.0)
 
     assert _open(db, device, AlertKind.HIGH_CPU).severity == AlertSeverity.CRITICAL
@@ -96,17 +96,45 @@ def test_memory_in_the_eighties_is_normal_for_windows(db, device):
 
 
 def test_sustained_high_memory_opens_and_closes_with_hysteresis(db, device):
-    _samples(db, device, ram=[91.0, 92.0, 93.0])
-    _evaluate(db, device, ram=93.0)
+    _samples(db, device, ram=[91.0, 92.0, 93.0, 94.0])
+    _evaluate(db, device, ram=94.0)
     assert _open(db, device, AlertKind.HIGH_RAM) is not None
 
     _samples(db, device, ram=[88.0])
     _evaluate(db, device, ram=88.0)
     assert _open(db, device, AlertKind.HIGH_RAM) is not None, "just under the line must not close it"
 
+    for _ in range(3):
+        _samples(db, device, ram=[83.0])
+        _evaluate(db, device, ram=83.0)
+        assert _open(db, device, AlertKind.HIGH_RAM) is not None, "closing needs four calm samples"
     _samples(db, device, ram=[83.0])
     _evaluate(db, device, ram=83.0)
     assert _open(db, device, AlertKind.HIGH_RAM) is None
+
+
+def test_a_busy_server_dipping_once_keeps_one_alert(db, device):
+    """LogiposSRV-Mensa (17 Oct): heartbeat CPU 100, 100, 50, 92, 100, 0, 100…
+    opened 70 five-minute alerts in 3.5 days; it is one alert now."""
+    _samples(db, device, cpu=[100.0, 100.0, 92.0, 100.0])
+    _evaluate(db, device, cpu=100.0)
+    first = _open(db, device, AlertKind.HIGH_CPU)
+    assert first is not None
+    for value in (0.0, 100.0, 50.0, 100.0, 88.0, 0.0, 100.0):
+        _samples(db, device, cpu=[value])
+        _evaluate(db, device, cpu=value)
+        assert _open(db, device, AlertKind.HIGH_CPU) is not None
+    assert db.query(DeviceAlert).filter_by(device_id=device.id, kind=AlertKind.HIGH_CPU).count() == 1
+
+
+def test_a_disk_hovering_at_the_line_does_not_flap(db, device):
+    engine = AlertEngine(db)
+    engine.evaluate_telemetry(device, cpu_percent=None, ram_percent=None, disk_percent=86.0)
+    assert _open(db, device, AlertKind.LOW_DISK) is not None
+    engine.evaluate_telemetry(device, cpu_percent=None, ram_percent=None, disk_percent=84.0)
+    assert _open(db, device, AlertKind.LOW_DISK) is not None, "84% is not below the 82% resolve line"
+    engine.evaluate_telemetry(device, cpu_percent=None, ram_percent=None, disk_percent=81.0)
+    assert _open(db, device, AlertKind.LOW_DISK) is None
 
 
 def test_reconnect_alert_closes_once_reconnects_settle(db, device):
@@ -119,7 +147,7 @@ def test_reconnect_alert_closes_once_reconnects_settle(db, device):
 
 
 def test_going_offline_closes_readings_alerts(db, device):
-    _samples(db, device, ram=[96.0, 97.0, 98.0])
+    _samples(db, device, ram=[96.0, 97.0, 98.0, 98.0])
     _evaluate(db, device, ram=98.0)
     assert _open(db, device, AlertKind.HIGH_RAM) is not None
 

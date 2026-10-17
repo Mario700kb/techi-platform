@@ -34,13 +34,24 @@ CPU_WARN = 85.0
 CPU_CRIT = 95.0
 RAM_WARN = 90.0
 RAM_CRIT = 95.0
-SUSTAINED_SAMPLES = 3
-# An open CPU/RAM alert closes only once the value is this far below the
-# warning line, so a value hovering at the line does not open and close it.
-RESOLVE_HYSTERESIS = 5.0
+# Re-measured on 3.5 days of production telemetry (2026-10-14..17, 158
+# devices): with 3 samples to open and ONE sample to close, a busy server whose
+# 100 ms heartbeat CPU sample jumps 100 → 0 → 100 opened an alert every time it
+# dipped once (LogiposSRV-Mensa: 70 alerts of 5 min). Opening after 4 samples
+# (~20 min) and closing only after 4 samples below the resolve line gives 118
+# CPU alerts instead of 392, at most 9 on one device, and keeps a sustained
+# load as one long alert. Agents >= 2.1.29 alert from their own 1-minute
+# monitors instead (MonitorAlertService).
+SUSTAINED_SAMPLES = 4
+RESOLVE_SAMPLES = 4
+CPU_RESOLVE_BELOW = 75.0
+RAM_RESOLVE_BELOW = 85.0
 
 DISK_WARN = 85.0
 DISK_CRIT = 95.0
+# A disk alert closes only below this (it opened above 85%): temp files moving
+# a disk across 85% opened and closed it over and over (Mag-Bufe1: 15 a week).
+DISK_RESOLVE_BELOW = 82.0
 
 RECONNECT_WINDOW_SECONDS = 600
 RECONNECT_THRESHOLD = 3
