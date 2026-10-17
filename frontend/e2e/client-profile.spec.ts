@@ -158,8 +158,16 @@ test("activity shows who connected where, for how long, and filters by type and 
   // A session's start shows how long it lasted, or that it is still open.
   await expect(connect.locator(".th-cp-duration")).toHaveText("18 min");
   const live = log.locator("tr.th-alerts-row", { hasText: "powershell" }).locator(".th-cp-duration");
-  await expect(live).toHaveText(/^Live · (1|2|3) min$/);
+  await expect(live).toHaveText(/^Live\s*·\s*(1|2|3) min$/);
   await expect(live).toHaveAttribute("data-live", "true");
+  // One line, the same height and right edge as every other duration chip.
+  await log.screenshot({ path: test.info().outputPath("activity-durations.png") });
+  const done = await connect.locator(".th-cp-duration").boundingBox();
+  const open = await live.boundingBox();
+  expect(open!.height).toBeLessThanOrEqual(24);
+  expect(open!.height).toBe(done!.height);
+  expect(Math.abs(open!.x + open!.width - (done!.x + done!.width))).toBeLessThanOrEqual(1);
+  await log.screenshot({ path: test.info().outputPath("activity-durations.png") });
   await page.screenshot({ path: test.info().outputPath("profile-activity.png"), fullPage: true });
 
   const requests: string[] = [];

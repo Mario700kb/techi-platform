@@ -51,6 +51,9 @@ ALARM_TYPES = {
 # session open after this long.
 OPEN_CONNECTION_LIMIT = timedelta(hours=12)
 
+# A connection younger than this is not called lost on the agent's word.
+LOST_GRACE = timedelta(minutes=2)
+
 # RustDesk repeats an alarm while the caller keeps trying; the same alarm from
 # the same caller on the same device is recorded once in this window.
 ALARM_REPEAT_WINDOW = timedelta(minutes=10)
@@ -120,6 +123,30 @@ class RustDeskAuditService:
             return True
 
         return False
+
+    def close_lost_connections(self, device, now) -> int:
+        """The device's agent reports no Remote Support session running (its
+        connection-manager process is gone), yet connections are still open
+        here: their close reports never arrived (sent while the platform was
+        restarting, or RustDesk was killed). Close them as lost and end the
+        session at RustDesk's last report — the real end — rather than now.
+
+        Connections opened in the last LOST_GRACE are left alone: the agent's
+        view can be a moment behind a connection that just opened."""
+        stale = self.connections.open_before(device.id, now - LOST_GRACE)
+        if not stale:
+            return 0
+        last_report = device.rustdesk_last_report_at
+        newest_open = max(c.opened_at for c in stale)
+        ended = last_report if last_report is not None and last_report >= newest_open else now
+        ended = min(ended, now)
+        for connection in stale:
+            connection.closed_at = max(connection.opened_at, ended)
+            connection.close_reason = "lost"
+        self.db.commit()
+        logger.info("rustdesk audit: device %s had %d connection(s) left open; closed as lost", device.id, len(stale))
+        self._sync_session(device, ended, details={"close_report": "lost"})
+        return len(stale)
 
     def _sync_session(self, device, now, details: Optional[dict] = None) -> None:
         """Drive the device's session flag from the open authorized connections:

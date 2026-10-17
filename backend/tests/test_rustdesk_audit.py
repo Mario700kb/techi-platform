@@ -307,3 +307,45 @@ def test_a_repeated_alarm_is_recorded_once(db, device):
 
     assert len(_audit(db, AuditAction.REMOTE_SUPPORT_ALARM)) == 2
     assert db.query(DeviceActivityEvent).count() == 2
+
+
+def test_a_connection_whose_close_was_lost_ends_when_the_device_says_no_session(db, device):
+    """HV-PROD-01, 17 Oct: a close report lost hours earlier kept a connection
+    open, so the next session never ended ("Live" long after the operator
+    left). The agent's heartbeat says no session runs: the lost connection is
+    closed and the session ends at RustDesk's last report, not at the heartbeat."""
+    from app.services.rustdesk_audit_service import RustDeskAuditService
+
+    db.add(RemoteSupportConnection(device_id=device.id, conn_id=391,
+                                   opened_at=utcnow_naive() - timedelta(hours=6),
+                                   authorized_at=utcnow_naive() - timedelta(hours=6)))
+    db.commit()
+    client = _client(db)
+    _opened(client, 1528)
+    _accepted(client, 1528)
+    _closed(client, 1528)
+    db.refresh(device)
+    assert device.rustdesk_session_active is True  # held open by the lost one
+    last_report = device.rustdesk_last_report_at
+
+    # A connection that opened a moment ago is not called lost.
+    db.add(RemoteSupportConnection(device_id=device.id, conn_id=1600, opened_at=utcnow_naive()))
+    db.commit()
+
+    closed = RustDeskAuditService(db).close_lost_connections(device, utcnow_naive())
+    assert closed == 1
+    db.refresh(device)
+    assert device.rustdesk_session_active is False
+    lost = db.query(RemoteSupportConnection).filter_by(conn_id=391).one()
+    assert lost.close_reason == "lost" and lost.closed_at == last_report
+    assert db.query(RemoteSupportConnection).filter_by(conn_id=1600).one().closed_at is None
+    (ended,) = _audit(db, AuditAction.REMOTE_SESSION_ENDED)
+    assert json.loads(ended.details_json)["close_report"] == "lost"
+    assert ended.created_at is not None
+
+
+def test_nothing_is_closed_while_the_device_has_no_open_connection(db, device):
+    from app.services.rustdesk_audit_service import RustDeskAuditService
+
+    assert RustDeskAuditService(db).close_lost_connections(device, utcnow_naive()) == 0
+    assert _audit(db, AuditAction.REMOTE_SESSION_ENDED) == []

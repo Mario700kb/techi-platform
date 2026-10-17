@@ -47,6 +47,18 @@ class RemoteSupportConnectionRepository:
             row.close_reason = reason
         return len(rows)
 
+    def open_before(self, device_id: int, before: datetime) -> list:
+        """Connections of the device still open that were opened before `before`."""
+        return (
+            self.db.query(RemoteSupportConnection)
+            .filter(
+                RemoteSupportConnection.device_id == device_id,
+                RemoteSupportConnection.closed_at.is_(None),
+                RemoteSupportConnection.opened_at < before,
+            )
+            .all()
+        )
+
     def count_open_authorized(self, device_id: int, *, since: datetime) -> int:
         return (
             self.db.query(RemoteSupportConnection)

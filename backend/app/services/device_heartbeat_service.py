@@ -5,7 +5,7 @@ import secrets
 import time
 from collections import OrderedDict
 from datetime import datetime, timedelta
-from app.core.time import utcnow
+from app.core.time import utcnow, utcnow_naive
 from typing import Optional
 
 from app.models.device import Device, DeviceStatus, DeviceType
@@ -413,6 +413,12 @@ class DeviceHeartbeatService:
         # Only a verified agent may drive the device's Remote Support session
         # flag; an unverified caller (a clone, a probe) must not start or end it.
         if ctx.get("verified"):
+            if payload.remote_session_active is False:
+                # Ground truth from the device: no session runs, so any
+                # connection still open here lost its close report.
+                from app.services.rustdesk_audit_service import RustDeskAuditService
+
+                RustDeskAuditService(self.db).close_lost_connections(device, utcnow_naive())
             RemoteSessionService(self.db).apply_report(device, payload.remote_session_active)
         self._evaluate_post_heartbeat_alerts(device)
 

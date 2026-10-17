@@ -211,6 +211,7 @@ export default function ClientProfilePage() {
   const activityPreview = useCachedQuery(valid ? `mem.client.${clientId}.activity:0` : null, () =>
     getClientActivity(clientId, 6, 0),
   );
+  useRefreshWhileLive(activityPreview.data?.sessions, activityPreview.reload);
   const profile = profileQuery.data;
   const reloadProfile = profileQuery.reload;
 
@@ -1460,8 +1461,8 @@ interface ActivityView {
   ip: string | null;
   status: { label: string; tone: string } | null;
   duration: string | null;
-  /** The session this entry started is still open. */
-  live: boolean;
+  /** The session this entry started is still open, since then. */
+  liveSince: string | null;
   failed: boolean;
 }
 
@@ -1501,9 +1502,9 @@ function describeActivity(entry: AuditLogEntry, span?: ActivitySessionSpan): Act
   const minutes = num("duration_minutes");
   // A session's start shows how long it lasted (or that it is still open),
   // from the session itself; its end entry carries the same figure.
-  const live = Boolean(span?.live_since);
-  const duration = span?.live_since
-    ? `Live · ${formatDuration((Date.now() - new Date(span.live_since).getTime()) / 1000)}`
+  const liveSince = span?.live_since ?? null;
+  const duration = liveSince
+    ? null
     : span?.duration_seconds != null
       ? formatDuration(span.duration_seconds)
       : seconds != null
@@ -1520,9 +1521,46 @@ function describeActivity(entry: AuditLogEntry, span?: ActivitySessionSpan): Act
     ip: text("ip"),
     status,
     duration,
-    live,
+    liveSince,
     failed: FAILED_ACTIONS.has(entry.action),
   };
+}
+
+/** A session still open: elapsed time that keeps counting while on screen. */
+function LiveDuration({ since }: { since: string }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 5_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const seconds = Math.max(0, (now - new Date(since).getTime()) / 1000);
+  return (
+    <span
+      className="th-cp-duration"
+      data-live="true"
+      title={`Open since ${formatDateTime(since)}`}
+      aria-label={`Live for ${formatDuration(seconds)}`}
+    >
+      <span>Live</span>
+      <span className="th-cp-duration-sep" aria-hidden="true">
+        ·
+      </span>
+      <span>{formatDuration(seconds)}</span>
+    </span>
+  );
+}
+
+/** While a session on the page is open, fetch the page again every 30 s so
+ *  an ended session turns into its final duration without a reload. */
+function useRefreshWhileLive(sessions: Record<number, ActivitySessionSpan> | undefined, reload: () => Promise<void>) {
+  const live = Object.values(sessions ?? {}).some((span) => span.live_since);
+  useEffect(() => {
+    if (!live) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void reload();
+    }, 30_000);
+    return () => window.clearInterval(timer);
+  }, [live, reload]);
 }
 
 function KindMark({ kind, failed = false }: { kind: ActivityKind; failed?: boolean }) {
@@ -1585,10 +1623,10 @@ function ActivityList({
               <span style={{ color: "var(--th-text-muted)" }} title={formatDateTime(entry.created_at)}>
                 {timeAgo(entry.created_at)}
               </span>
-              {view.duration && (
-                <span className="th-cp-duration" data-live={view.live || undefined}>
-                  {view.duration}
-                </span>
+              {view.liveSince ? (
+                <LiveDuration since={view.liveSince} />
+              ) : (
+                view.duration && <span className="th-cp-duration">{view.duration}</span>
               )}
             </span>
           </li>
@@ -1625,10 +1663,11 @@ function ActivityTab({ clientId, onOpenDevice }: { clientId: number; onOpenDevic
   const summary = useCachedQuery(`mem.client.${clientId}.activity-summary`, () =>
     getClientActivitySummary(clientId, 30),
   );
-  const { data, loading, refreshing } = useCachedQuery(
+  const { data, loading, refreshing, reload } = useCachedQuery(
     `mem.client.${clientId}.activity:${JSON.stringify({ page, kind, operator })}`,
     () => getClientActivity(clientId, ACTIVITY_PAGE_SIZE, (page - 1) * ACTIVITY_PAGE_SIZE, { kind, operator }),
   );
+  useRefreshWhileLive(data?.sessions, reload);
   const s = summary.data;
   const kindIndex = ACTIVITY_KINDS.findIndex((k) => k.key === kind);
   const topOperator = s?.operators[0];
@@ -1853,7 +1892,7 @@ function ActivityTab({ clientId, onOpenDevice }: { clientId: number; onOpenDevic
                 <col className="w-[24%]" />
                 <col className="w-[17%]" />
                 <col />
-                <col className="w-[110px]" />
+                <col className="w-[144px]" />
               </colgroup>
               <thead>
                 <tr>
@@ -1944,10 +1983,10 @@ function ActivityTab({ clientId, onOpenDevice }: { clientId: number; onOpenDevic
                         {view.ip && <span className="th-alerts-secondary font-mono">from {view.ip}</span>}
                       </td>
                       <td className="text-right">
-                        {view.duration ? (
-                          <span className="th-cp-duration" data-live={view.live || undefined}>
-                            {view.duration}
-                          </span>
+                        {view.liveSince ? (
+                          <LiveDuration since={view.liveSince} />
+                        ) : view.duration ? (
+                          <span className="th-cp-duration">{view.duration}</span>
                         ) : (
                           <span
                             className="th-alerts-secondary !mt-0"

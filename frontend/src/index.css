@@ -7371,8 +7371,13 @@ button.th-client-group:hover {
 .th-cp-duration {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 64px;
   height: 22px;
-  padding: 0 8px;
+  padding: 0 9px;
+  white-space: nowrap;
+  flex: none;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 600;
@@ -7383,14 +7388,17 @@ button.th-client-group:hover {
   animation: th-count-in 260ms var(--th-ease) both;
 }
 /* A session that is still open: green, with a dot that breathes. */
+.th-cp-duration-sep {
+  opacity: 0.55;
+}
 .th-cp-duration[data-live] {
-  gap: 6px;
   color: var(--th-status-online);
   border-color: color-mix(in srgb, var(--th-status-online) 40%, transparent);
   background: color-mix(in srgb, var(--th-status-online) 10%, transparent);
 }
 .th-cp-duration[data-live]::before {
   content: "";
+  flex: none;
   width: 6px;
   height: 6px;
   border-radius: 50%;
