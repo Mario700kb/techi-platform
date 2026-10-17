@@ -87,7 +87,8 @@ def session_spans(db: Session, items: Iterable[AuditLog]) -> Dict[int, SessionSp
     devices = {d for d in (_device_of(e) for e in remote) if d}
     if not devices:
         return spans
-    since = min(ensure_utc(e.created_at) for e in remote) - _SAME_START
+    # Back far enough to find a session a click on this page joined.
+    since = min(ensure_utc(e.created_at) for e in remote) - _LONGEST
     until = max(ensure_utc(e.created_at) for e in remote) + _LONGEST
     rows: List[AuditLog] = (
         db.query(AuditLog)
@@ -133,6 +134,21 @@ def session_spans(db: Session, items: Iterable[AuditLog]) -> Dict[int, SessionSp
             return SessionSpan(live_since=began)
         return None
 
+    def joined_span(device: Optional[int], clicked: datetime) -> Optional[SessionSpan]:
+        for start in reversed(starts):
+            began = ensure_utc(start.created_at)
+            if start.entity_id != device or began > clicked:
+                continue
+            span = span_of_start(start)
+            if span is None:
+                return None
+            if span.live_since is not None or (
+                span.duration_seconds is not None and began + timedelta(seconds=span.duration_seconds) >= clicked
+            ):
+                return span.model_copy(update={"joined": True})
+            return None
+        return None
+
     for entry in remote:
         if entry.action == AuditAction.REMOTE_SESSION_STARTED:
             span = span_of_start(entry)
@@ -147,7 +163,11 @@ def session_spans(db: Session, items: Iterable[AuditLog]) -> Dict[int, SessionSp
                 None,
             )
             span = span_of_start(start) if start is not None else None
-            if start is None and utcnow() - clicked > _NO_SESSION_AFTER:
+            if start is None:
+                # A click while a session on the device was already open joins
+                # it: RustDesk starts no new session for a second connection.
+                span = joined_span(_device_of(entry), clicked)
+            if span is None and utcnow() - clicked > _NO_SESSION_AFTER:
                 # Nothing came of the click (wrong password, nobody answered).
                 span = SessionSpan(no_session=True)
         if span is not None:

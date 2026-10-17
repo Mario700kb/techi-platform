@@ -1527,6 +1527,7 @@ function describeActivity(entry: AuditLogEntry, span?: ActivitySessionSpan): Act
         : text("engine") === "powershell"
           ? "PowerShell session"
           : "Terminal session";
+  if (span?.joined) facts.push("Joined the open session");
   if (span?.end_reason) facts.push(`Ended · ${END_REASON_LABELS[span.end_reason] ?? humanize(span.end_reason)}`);
   const duration = liveSince
     ? null

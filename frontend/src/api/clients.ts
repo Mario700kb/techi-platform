@@ -174,6 +174,8 @@ export interface ActivitySessionSpan {
   end_reason: string | null;
   /** A Connect click that opened no session. */
   no_session?: boolean;
+  /** A Connect click into a session already open on the device. */
+  joined?: boolean;
 }
 
 export interface ClientActivityPage extends AuditLogPage {

@@ -165,3 +165,21 @@ def test_a_connect_click_that_opened_no_session_says_so():
     spans = session_spans(db, [old, fresh])
     assert spans[old.id].no_session is True
     assert fresh.id not in spans  # still within the time a session may start
+
+
+def test_a_second_click_during_an_open_session_joins_it():
+    db = _db()
+    click = utcnow_naive() - timedelta(minutes=40)
+    started = click + timedelta(seconds=2)
+    _audit(db, "remote_connect", click, {}, device_id=781, entity_id=781)
+    _audit(db, "remote_session_started", started,
+           {"attribution": "connect_request", "connect_requested_at": ensure_utc(click).isoformat()},
+           device_id=781, entity_id=781)
+    second = _audit(db, "remote_connect", click + timedelta(seconds=22), {}, device_id=781, entity_id=781)
+    _audit(db, "remote_session_ended", started + timedelta(seconds=54),
+           {"started_at": ensure_utc(started).isoformat(), "ended_at": ensure_utc(started + timedelta(seconds=54)).isoformat()},
+           device_id=781, entity_id=781)
+    later = _audit(db, "remote_connect", click + timedelta(minutes=5), {}, device_id=781, entity_id=781)
+    spans = session_spans(db, [second, later])
+    assert spans[second.id].joined is True and spans[second.id].duration_seconds == 54
+    assert spans[later.id].no_session is True  # after that session ended, nothing joined

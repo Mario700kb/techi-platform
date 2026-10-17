@@ -186,7 +186,7 @@ export async function northwindProfile(page: Page) {
   await page.route("**/api/v1/clients/1/activity?*", (route) =>
     route.fulfill({
       json: {
-        total: 5,
+        total: 6,
         device_names: { "1": "NW-RECEPTION-01", "3": "NW-SRV-01" },
         // The Connect click (9) led to an 18-minute session; the PowerShell
         // console opened 2 minutes ago (10) is still open.
@@ -195,6 +195,7 @@ export async function northwindProfile(page: Page) {
           "10": { duration_seconds: null, live_since: iso(2), end_reason: null },
           "7": { duration_seconds: 1520, live_since: null, end_reason: "operator_closed" },
           "6": { duration_seconds: null, live_since: null, end_reason: null, no_session: true },
+          "5": { duration_seconds: 54, live_since: null, end_reason: "session_closed", joined: true },
         },
         items: [
           {
@@ -256,6 +257,18 @@ export async function northwindProfile(page: Page) {
             client_id: 1,
             details_json: '{"techi_remote_id": "250862989", "remote_support_status": "offline"}',
             created_at: iso(240),
+          },
+          {
+            id: 5,
+            operator_id: 1,
+            operator_username: "mario",
+            action: "remote_connect",
+            entity_type: "device",
+            entity_id: 3,
+            device_id: 3,
+            client_id: 1,
+            details_json: '{"techi_remote_id": "114111225", "remote_support_status": "online"}',
+            created_at: iso(300),
           },
         ],
       },

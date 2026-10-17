@@ -40,6 +40,7 @@ class SessionSpan(BaseModel):
     live_since: Optional[datetime] = None  # still open: started then
     end_reason: Optional[str] = None
     no_session: bool = False  # a Connect click that opened no session
+    joined: bool = False  # a Connect click into a session already open
 
 
 class ClientActivityPage(BaseModel):
