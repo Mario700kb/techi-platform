@@ -5,6 +5,26 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-17] SESSION-ROWS-2026-10-17 — one activity row per session; disk cleanup (`35ab645`)
+
+**Cleanup 21:08, backend + frontend deployed 21:11 (Tirana), no migration.**
+On the owner's "pastroje dhe deploy": the 13 rollback tags of the 16 Oct
+deploys were removed (17 Oct sets kept) and the build cache pruned to 1 GB;
+disk 1.5 → 2.7 GB free (no dangling images; database dumps untouched).
+
+The client's activity log shows a session once, on the entry that started it:
+a Connect click reads "Remote Support session" with its length or Live and
+how it ended; the RustDesk start it was attributed to and the end entries are
+left out of the list (kept in the audit log); a start without a Connect click
+stays, marked; a click that opened nothing in 15 minutes says "No session";
+terminal, PowerShell and SSH sessions are one row with length and end reason.
+Checked live: the last 30 remote entries of TECHI shpk are Connect rows with
+their sessions (e.g. HV-PROD-01 20:58, 39 s). Dump
+`/opt/backups/techi/pre-session-rows-20261017-210914.sql.gz`, rollback
+`techi-platform-backend:pre-session-rows-689bca0`,
+`techi-platform-frontend:pre-session-rows-1394670`; guard, smoke passed,
+0 errors. Disk 2.4 GB free (90%) after the builds.
+
 ## [2026-10-17] ENDED-AT-2026-10-17 — a late-noticed end keeps the real length (`689bca0`)
 
 **Backend deployed 20:54 (Tirana), no migration.** A lost close is written at
