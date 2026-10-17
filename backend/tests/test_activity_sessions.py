@@ -77,7 +77,7 @@ def test_a_connect_click_and_its_remote_session_show_the_session_length():
     assert spans[start.id].duration_seconds == 18 * 60
     assert spans[connect.id].duration_seconds == 18 * 60
     assert spans[start.id].end_reason == "session_closed"
-    assert lonely.id not in spans  # a click that started nothing has no duration
+    assert spans[lonely.id].no_session is True  # a click that started nothing says so
 
 
 def test_a_remote_session_still_open_is_live():
@@ -125,3 +125,43 @@ def test_an_older_lost_close_without_its_end_time_uses_the_recorded_minutes():
            {"duration_minutes": 1, "started_at": ensure_utc(started).isoformat(), "close_report": "lost"},
            device_id=781, entity_id=781)
     assert session_spans(db, [start])[start.id].duration_seconds == 60
+
+
+def test_the_activity_log_shows_one_row_per_session():
+    from app.repositories.audit_log_repository import AuditLogRepository
+
+    db = _db()
+    t0 = utcnow_naive() - timedelta(hours=1)
+
+    def add(action, minutes, details, device_id=924, entity_type="device"):
+        entry = _audit(db, action, t0 + timedelta(minutes=minutes), details, device_id=device_id,
+                       entity_type=entity_type, entity_id=device_id if entity_type == "device" else None)
+        entry.client_id = 1
+        db.commit()
+        return entry
+
+    connect = add("remote_connect", 0, {"ip": "79.98.115.19"})
+    add("remote_session_started", 0.05, {"attribution": "connect_request",
+                                         "connect_requested_at": ensure_utc(t0).isoformat()})
+    add("remote_session_ended", 18, {"started_at": ensure_utc(t0 + timedelta(minutes=0.05)).isoformat(),
+                                     "duration_minutes": 18})
+    stranger = add("remote_session_started", 30, {"attribution": "unattributed"})
+    opened = add("terminal_session_opened", 40, {"session_id": "a" * 32}, device_id=781, entity_type="terminal_session")
+    add("terminal_session_closed", 41, {"session_id": "a" * 32, "duration_seconds": 55},
+        device_id=781, entity_type="terminal_session")
+    queued = add("action_queued", 50, {"action_type": "ping"})
+
+    total, rows = AuditLogRepository(db).for_client(1, None, 50, 0, one_row_per_session=True)
+    assert [r.id for r in rows] == [queued.id, opened.id, stranger.id, connect.id]
+    assert total == 4
+    everything, _ = AuditLogRepository(db).for_client(1, None, 50, 0)
+    assert everything == 7  # nothing is removed from the audit log itself
+
+
+def test_a_connect_click_that_opened_no_session_says_so():
+    db = _db()
+    old = _audit(db, "remote_connect", utcnow_naive() - timedelta(minutes=30), {}, device_id=924, entity_id=924)
+    fresh = _audit(db, "remote_connect", utcnow_naive() - timedelta(minutes=2), {}, device_id=924, entity_id=924)
+    spans = session_spans(db, [old, fresh])
+    assert spans[old.id].no_session is True
+    assert fresh.id not in spans  # still within the time a session may start

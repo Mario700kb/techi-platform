@@ -18,6 +18,7 @@ from app.db.base import Base
 from app.db.session import get_db
 from app.models.alert import DeviceAlert
 from app.models.audit_log import AuditLog
+from app.models.terminal_session import TerminalSession
 from app.models.client import Client
 from app.models.device import Device
 from app.models.client_location import ClientLocation, ClientLocationRule
@@ -37,6 +38,7 @@ TABLES = [
     DeviceInventory.__table__,
     DeviceAlert.__table__,
     AuditLog.__table__,
+    TerminalSession.__table__,
     Operator.__table__,
     Team.__table__,
     TeamMember.__table__,
@@ -220,6 +222,9 @@ def test_activity_filters_by_kind_and_operator(db):
                 entity_id=101)
     repo.create(operator_id=2, operator_username="denis", action="remote_connect", entity_type="device",
                 entity_id=102)
+    repo.create(operator_id=1, operator_username="mario", action="terminal_session_opened",
+                entity_type="terminal_session", details={"device_id": 103, "session_id": "s1"})
+    # The session's end is read from its start row, so the log leaves it out.
     repo.create(operator_id=1, operator_username="mario", action="terminal_session_closed",
                 entity_type="terminal_session", details={"device_id": 103, "session_id": "s1",
                                                          "duration_seconds": 90})
@@ -231,7 +236,7 @@ def test_activity_filters_by_kind_and_operator(db):
         return sorted(item["action"] for item in api.get("/clients/1/activity", params=params).json()["items"])
 
     assert actions(kind="remote") == ["remote_connect", "remote_connect"]
-    assert actions(kind="terminal") == ["terminal_session_closed"]
+    assert actions(kind="terminal") == ["terminal_session_opened"]
     assert actions(kind="actions") == ["action_queued"]
     assert actions(kind="remote", operator="denis") == ["remote_connect"]
     assert len(actions()) == 4

@@ -1443,6 +1443,17 @@ const FAILED_ACTIONS = new Set([
   "action_cancelled",
 ]);
 
+/** Why a session ended, in plain words. */
+const END_REASON_LABELS: Record<string, string> = {
+  session_closed: "closed",
+  operator_closed: "closed by the operator",
+  agent_gone: "closed on the device",
+  idle_timeout: "idle 15 min",
+  max_duration: "60 min limit",
+  device_offline: "device went offline",
+  expired: "never connected",
+};
+
 function formatDuration(seconds: number | null | undefined): string {
   if (seconds == null || !Number.isFinite(seconds)) return "—";
   if (seconds < 60) return `${Math.max(0, Math.round(seconds))} s`;
@@ -1463,6 +1474,8 @@ interface ActivityView {
   duration: string | null;
   /** The session this entry started is still open, since then. */
   liveSince: string | null;
+  /** A Connect click that opened no session. */
+  noSession: boolean;
   failed: boolean;
 }
 
@@ -1503,6 +1516,18 @@ function describeActivity(entry: AuditLogEntry, span?: ActivitySessionSpan): Act
   // A session's start shows how long it lasted (or that it is still open),
   // from the session itself; its end entry carries the same figure.
   const liveSince = span?.live_since ?? null;
+  // One row per session: the row that started it reads as the session.
+  const isSession = Boolean(span && !span.no_session);
+  const sessionLabel = !isSession
+    ? null
+    : entry.action === "remote_connect" || entry.action === "remote_session_started"
+      ? "Remote Support session"
+      : entry.action === "ssh_session_started"
+        ? "SSH session"
+        : text("engine") === "powershell"
+          ? "PowerShell session"
+          : "Terminal session";
+  if (span?.end_reason) facts.push(`Ended · ${END_REASON_LABELS[span.end_reason] ?? humanize(span.end_reason)}`);
   const duration = liveSince
     ? null
     : span?.duration_seconds != null
@@ -1515,13 +1540,14 @@ function describeActivity(entry: AuditLogEntry, span?: ActivitySessionSpan): Act
 
   return {
     kind,
-    label: ACTION_LABELS[entry.action] ?? humanize(entry.action),
+    label: sessionLabel ?? ACTION_LABELS[entry.action] ?? humanize(entry.action),
     method: method ? (METHOD_LABELS[method] ?? humanize(method)) : null,
     facts,
     ip: text("ip"),
     status,
     duration,
     liveSince,
+    noSession: Boolean(span?.no_session),
     failed: FAILED_ACTIONS.has(entry.action),
   };
 }
@@ -1625,6 +1651,10 @@ function ActivityList({
               </span>
               {view.liveSince ? (
                 <LiveDuration since={view.liveSince} />
+              ) : view.noSession ? (
+                <span className="th-cp-duration" data-state="none">
+                  No session
+                </span>
               ) : (
                 view.duration && <span className="th-cp-duration">{view.duration}</span>
               )}
@@ -1985,6 +2015,10 @@ function ActivityTab({ clientId, onOpenDevice }: { clientId: number; onOpenDevic
                       <td className="text-right">
                         {view.liveSince ? (
                           <LiveDuration since={view.liveSince} />
+                        ) : view.noSession ? (
+                          <span className="th-cp-duration" data-state="none">
+                            No session
+                          </span>
                         ) : view.duration ? (
                           <span className="th-cp-duration">{view.duration}</span>
                         ) : (

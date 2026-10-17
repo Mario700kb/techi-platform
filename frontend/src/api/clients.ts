@@ -172,6 +172,8 @@ export interface ActivitySessionSpan {
   duration_seconds: number | null;
   live_since: string | null;
   end_reason: string | null;
+  /** A Connect click that opened no session. */
+  no_session?: boolean;
 }
 
 export interface ClientActivityPage extends AuditLogPage {

@@ -26,6 +26,9 @@ from app.services.audit_service import AuditAction
 
 # remote_session_started is written moments after the start it records.
 _SAME_START = timedelta(seconds=10)
+# A Connect click is credited with a session that starts this long after it
+# (remote_session_service.ATTRIBUTION_WINDOW); past it, it started none.
+_NO_SESSION_AFTER = timedelta(minutes=15)
 # A Remote Support session longer than this is not looked for.
 _LONGEST = timedelta(days=2)
 
@@ -60,7 +63,11 @@ def session_spans(db: Session, items: Iterable[AuditLog]) -> Dict[int, SessionSp
     spans: Dict[int, SessionSpan] = {}
 
     # ── terminal sessions ───────────────────────────────────────────────────
-    opened = {e.id: _details(e).get("session_id") for e in items if e.action == AuditAction.TERMINAL_SESSION_OPENED}
+    opened = {
+        e.id: _details(e).get("session_id")
+        for e in items
+        if e.action in (AuditAction.TERMINAL_SESSION_OPENED, AuditAction.SSH_SESSION_STARTED)
+    }
     session_ids = [sid for sid in opened.values() if isinstance(sid, str)]
     if session_ids:
         sessions = {s.id: s for s in db.query(TerminalSession).filter(TerminalSession.id.in_(session_ids))}
@@ -140,6 +147,9 @@ def session_spans(db: Session, items: Iterable[AuditLog]) -> Dict[int, SessionSp
                 None,
             )
             span = span_of_start(start) if start is not None else None
+            if start is None and utcnow() - clicked > _NO_SESSION_AFTER:
+                # Nothing came of the click (wrong password, nobody answered).
+                span = SessionSpan(no_session=True)
         if span is not None:
             spans[entry.id] = span
     return spans

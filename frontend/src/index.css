@@ -7388,6 +7388,12 @@ button.th-client-group:hover {
   animation: th-count-in 260ms var(--th-ease) both;
 }
 /* A session that is still open: green, with a dot that breathes. */
+.th-cp-duration[data-state="none"] {
+  font-weight: 500;
+  color: var(--th-text-muted);
+  background: transparent;
+  border-style: dashed;
+}
 .th-cp-duration-sep {
   opacity: 0.55;
 }

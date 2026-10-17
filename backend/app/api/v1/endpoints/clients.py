@@ -254,6 +254,7 @@ def get_client_activity(
         offset,
         actions=ACTIVITY_KINDS.get(kind),
         operator_username=operator or None,
+        one_row_per_session=True,
     )
     names = _device_names(db, (item.device_id for item in items))
     from app.services.activity_sessions import session_spans

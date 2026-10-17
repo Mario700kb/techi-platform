@@ -151,13 +151,18 @@ test("activity shows who connected where, for how long, and filters by type and 
 
   const log = page.locator("table.th-cp-log");
   await expect(log.locator("tr.th-cp-day").first()).toContainText("Today");
-  const connect = log.locator("tr.th-alerts-row", { hasText: "Remote connect" });
+  // One row per session: the row that started it, with its length and end.
+  const connect = log.locator("tr.th-alerts-row", { hasText: "Remote Support session" });
   await expect(connect).toContainText("Remote Support online");
   await expect(connect).toContainText("185.66.128.121");
-  await expect(log.locator("tr.th-alerts-row", { hasText: "Terminal closed" })).toContainText("25 min");
-  // A session's start shows how long it lasted, or that it is still open.
+  await expect(connect).toContainText("Ended · closed");
   await expect(connect.locator(".th-cp-duration")).toHaveText("18 min");
-  const live = log.locator("tr.th-alerts-row", { hasText: "powershell" }).locator(".th-cp-duration");
+  const terminal = log.locator("tr.th-alerts-row", { hasText: "Terminal session" });
+  await expect(terminal).toContainText("Ended · closed by the operator");
+  await expect(terminal.locator(".th-cp-duration")).toHaveText("25 min");
+  const missed = log.locator("tr.th-alerts-row", { hasText: "sabina" }).filter({ hasText: "Remote connect" });
+  await expect(missed.locator(".th-cp-duration")).toHaveText("No session");
+  const live = log.locator("tr.th-alerts-row", { hasText: "PowerShell session" }).locator(".th-cp-duration");
   await expect(live).toHaveText(/^Live\s*·\s*(1|2|3) min$/);
   await expect(live).toHaveAttribute("data-live", "true");
   // One line, the same height and right edge as every other duration chip.

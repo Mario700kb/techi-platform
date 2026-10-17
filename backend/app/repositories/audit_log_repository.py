@@ -2,7 +2,7 @@ import json
 from datetime import datetime
 from typing import List, Optional, Tuple
 
-from sqlalchemy import case, func
+from sqlalchemy import and_, case, func
 from sqlalchemy.orm import Session
 
 from app.core.time import utcnow
@@ -16,6 +16,10 @@ def _as_int(value) -> Optional[int]:
     except (TypeError, ValueError):
         return None
 
+
+
+# Entries that end a session; its start entry carries the length instead.
+SESSION_END_ACTIONS = ("remote_session_ended", "terminal_session_closed", "ssh_session_ended")
 
 class AuditLogRepository:
     def __init__(self, db: Session) -> None:
@@ -72,13 +76,27 @@ class AuditLogRepository:
         *,
         actions: Optional[List[str]] = None,
         operator_username: Optional[str] = None,
+        one_row_per_session: bool = False,
     ) -> Tuple[int, List[AuditLog]]:
         """Entries about a client or its devices, newest first.
 
         device_ids None: the whole client. A list: an operator who sees only
         those devices of it gets only their entries.
+
+        one_row_per_session: a session is read from the entry that started it
+        (the Connect click, or a terminal/SSH open), which carries its length;
+        the entries that end sessions, and a Remote Support start that a
+        Connect click already stands for, are left out. A start nobody clicked
+        Connect for stays — that is worth seeing.
         """
         q = self._client_query(client_id, device_ids)
+        if one_row_per_session:
+            q = q.filter(~AuditLog.action.in_(SESSION_END_ACTIONS)).filter(
+                ~and_(
+                    AuditLog.action == "remote_session_started",
+                    func.coalesce(AuditLog.details_json, "").like('%"attribution": "connect_request"%'),
+                )
+            )
         if actions:
             q = q.filter(AuditLog.action.in_(actions))
         if operator_username:
