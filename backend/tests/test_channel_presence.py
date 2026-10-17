@@ -63,9 +63,14 @@ def _client():
 def test_an_agent_opening_its_channel_is_online_at_once(factory):
     assert _device(factory).freshness_state == DeviceFreshnessState.OFFLINE.value
     with _client().websocket_connect(f"/ws/agent/commands?device_id=924&agent_id={AGENT_ID}"):
-        # Recorded right after the channel is accepted.
+        # Recorded right after the channel is accepted, in two commits (last
+        # seen, then status); the test shares the server's one SQLite
+        # connection, so wait for the finished state, not the first write.
         deadline = time.monotonic() + 5
-        while _device(factory).status != DeviceStatus.ONLINE and time.monotonic() < deadline:
+        while time.monotonic() < deadline and not (
+            _device(factory).status == DeviceStatus.ONLINE
+            and _device(factory).freshness_state == DeviceFreshnessState.ONLINE.value
+        ):
             time.sleep(0.02)
         device = _device(factory)
         assert device.status == DeviceStatus.ONLINE
