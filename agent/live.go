@@ -206,9 +206,15 @@ func (s *liveSampler) cpuPercent() *float64 {
 	busy1, total1 := cpuBusyTotal(current)
 	s.lastCPU = &current
 	if total1 <= total0 {
+		// The counters did not move (coarse clock on the first sample of a
+		// stream on Windows): measure directly rather than send no CPU.
+		if pcts, err := cpu.Percent(300*time.Millisecond, false); err == nil && len(pcts) > 0 {
+			pct := round1(clampPercent(pcts[0]))
+			return &pct
+		}
 		return nil
 	}
-	pct := clampPercent((busy1 - busy0) / (total1 - total0) * 100)
+	pct := round1(clampPercent((busy1 - busy0) / (total1 - total0) * 100))
 	return &pct
 }
 

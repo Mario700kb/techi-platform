@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -165,5 +166,15 @@ func TestARealSampleIsSmallAndComplete(t *testing.T) {
 	// The backend drops frames over 16 KB; a snapshot is a few KB.
 	if len(data) > 8*1024 {
 		t.Fatalf("snapshot is %d bytes", len(data))
+	}
+}
+
+func TestThePatchCountLeavesOutWhatWindowsInstallsOnItsOwn(t *testing.T) {
+	// Drivers (Type 2), optional/preview updates (BrowseOnly) and Defender
+	// security-intelligence updates (Definition Updates) are not counted.
+	for _, want := range []string{"$_.Type -eq 1", "-not $_.BrowseOnly", "e0789628-ce08-4437-be74-2495b842f43b"} {
+		if !strings.Contains(windowsPendingUpdatesScript, want) {
+			t.Fatalf("patch count script lacks %q", want)
+		}
 	}
 }

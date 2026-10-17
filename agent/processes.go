@@ -300,11 +300,24 @@ func parseLinuxPackageList(raw string, source string) []SoftwareInfo {
 	return software
 }
 
+// windowsPendingUpdatesScript counts the updates Windows Update will install
+// as patches. The plain search (IsInstalled=0 and IsHidden=0) also returned
+// drivers, optional and preview updates (BrowseOnly) and Microsoft Defender
+// security-intelligence updates, which arrive several times a day and install
+// themselves within minutes: Mario-Lenovo showed "1 patch pending" that the
+// Windows Update page on the PC never listed (2026-10-17). BrowseOnly cannot
+// be a search criterion (0x80240032), so the filter runs on the results.
+// Definition Updates is matched by its category ID, not its localised name.
+const windowsPendingUpdatesScript = "$s=New-Object -ComObject Microsoft.Update.Session; " +
+	"$r=$s.CreateUpdateSearcher().Search('IsInstalled=0 and IsHidden=0'); " +
+	"@($r.Updates | Where-Object { $_.Type -eq 1 -and -not $_.BrowseOnly -and " +
+	"-not ($_.Categories | Where-Object { $_.CategoryID -eq 'e0789628-ce08-4437-be74-2495b842f43b' }) }).Count"
+
 func collectWindowsPatchStatus() *PatchStatus {
 	status := &PatchStatus{PatchState: "unknown"}
 
 	if out, err := runWithTimeout(20*time.Second, "powershell", "-NoProfile", "-NonInteractive", "-Command",
-		"$s=New-Object -ComObject Microsoft.Update.Session; $r=$s.CreateUpdateSearcher().Search('IsInstalled=0 and IsHidden=0'); $r.Updates.Count"); err == nil {
+		windowsPendingUpdatesScript); err == nil {
 		status.PendingUpdates = parseFirstInt(string(out))
 	} else {
 		log.Printf("patch: windows update count failed: %v", err)
