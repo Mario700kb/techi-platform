@@ -112,9 +112,14 @@ def session_spans(db: Session, items: Iterable[AuditLog]) -> Dict[int, SessionSp
             began = _iso(details.get("started_at"))
             if began is not None and abs(began - at) <= _SAME_START:
                 minutes = details.get("duration_minutes")
-                seconds = int((ensure_utc(end.created_at) - began).total_seconds())
-                if isinstance(minutes, (int, float)) and seconds <= 0:
+                ended = _iso(details.get("ended_at"))
+                if ended is not None:
+                    seconds = int((ended - began).total_seconds())
+                elif details.get("close_report") == "lost" and isinstance(minutes, (int, float)):
+                    # Written at the heartbeat that noticed it, not at the end.
                     seconds = int(minutes * 60)
+                else:
+                    seconds = int((ensure_utc(end.created_at) - began).total_seconds())
                 return SessionSpan(duration_seconds=max(0, seconds), end_reason=details.get("reason"))
         began = open_since.get(device)
         if began is not None and abs(began - at) <= _SAME_START and utcnow() - began < _LONGEST:

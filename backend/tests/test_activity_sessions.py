@@ -102,3 +102,26 @@ def test_only_the_first_close_of_a_session_counts():
     assert second.close(s2, "agent_gone") is False
     assert s2.disconnect_reason == "operator_closed" and s2.ended_at is not None
     assert ensure_utc(s2.ended_at) <= utcnow()
+
+
+def test_a_session_whose_end_was_noticed_later_keeps_its_real_length():
+    db = _db()
+    started = utcnow_naive() - timedelta(minutes=30)
+    start = _audit(db, "remote_session_started", started, {}, device_id=781, entity_id=781)
+    # Ended after 54 s; the lost close was noticed 19 minutes later.
+    _audit(db, "remote_session_ended", started + timedelta(minutes=19),
+           {"duration_minutes": 1, "started_at": ensure_utc(started).isoformat(),
+            "ended_at": ensure_utc(started + timedelta(seconds=54)).isoformat(),
+            "close_report": "lost", "reason": "session_closed"},
+           device_id=781, entity_id=781)
+    assert session_spans(db, [start])[start.id].duration_seconds == 54
+
+
+def test_an_older_lost_close_without_its_end_time_uses_the_recorded_minutes():
+    db = _db()
+    started = utcnow_naive() - timedelta(minutes=30)
+    start = _audit(db, "remote_session_started", started, {}, device_id=781, entity_id=781)
+    _audit(db, "remote_session_ended", started + timedelta(minutes=19),
+           {"duration_minutes": 1, "started_at": ensure_utc(started).isoformat(), "close_report": "lost"},
+           device_id=781, entity_id=781)
+    assert session_spans(db, [start])[start.id].duration_seconds == 60

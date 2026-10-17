@@ -124,6 +124,9 @@ class RemoteSessionService:
                 "techi_remote_id": device.rustdesk_id,
                 "duration_minutes": minutes,
                 "started_at": started.isoformat() if started else None,
+                # When it really ended; the entry itself can be written later
+                # (a lost close noticed at the next heartbeat).
+                "ended_at": now.isoformat(),
                 "reason": reason,
                 **(extra or {}),
             },
