@@ -178,7 +178,7 @@ export default function Audit() {
   }
 
   return (
-    <section className="premium-page th-onb space-y-4">
+    <section className="premium-page th-onb th-page-fill flex flex-col gap-4">
       <PageHeader
         title="Audit Log"
         description="Append-only record of operator actions across the platform."
