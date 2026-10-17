@@ -5,6 +5,14 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-17] WIDE-DRAWER-2026-10-17 — wider device drawer (`8435222`)
+
+**Frontend deployed 18:58 (Tirana).** The owner asked for a wider device
+sidebar: at 560 px the seven tabs did not fit (Timeline was cut off). Both
+drawers are now 720 px, 780 px from 1536 px; full width on phones. A
+Playwright check keeps every tab inside the drawer at 1440 px. Rollback
+`techi-platform-frontend:pre-wide-drawer-d5dd58c`; guard and smoke passed.
+
 ## [2026-10-17] POWERSHELL-UI-2026-10-17 — monitoring UI, administrator PowerShell, agent 2.1.29 pilot (`8dbdecb`, `99f3c05`)
 
 **Backend + frontend deployed 18:25 (Tirana), no migration.** Phases 2 and 3
