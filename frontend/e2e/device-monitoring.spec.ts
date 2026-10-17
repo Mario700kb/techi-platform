@@ -130,3 +130,18 @@ test("PowerShell opens only with a valid two-factor code", async ({ page }, test
   await consoleBox.getByRole("button", { name: "End session" }).click();
   await expect(section.getByRole("button", { name: /Open PowerShell/ })).toBeVisible();
 });
+
+test("the drawer is wide enough for every tab on a laptop screen", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "the drawer is the desktop device view");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await mockDevice(page);
+  await openReception(page);
+
+  const panel = page.locator(".th-drawer-panel");
+  await expect(page.getByRole("tab", { name: "Timeline" })).toBeVisible();
+  const box = await panel.boundingBox();
+  expect(box?.width).toBe(720);
+  const last = await page.getByRole("tab", { name: "Timeline" }).boundingBox();
+  expect((last?.x ?? 0) + (last?.width ?? 0)).toBeLessThanOrEqual((box?.x ?? 0) + (box?.width ?? 0));
+  await panel.screenshot({ path: testInfo.outputPath("drawer-1440.png") });
+});

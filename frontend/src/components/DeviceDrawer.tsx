@@ -697,7 +697,7 @@ export default function DeviceDrawer({
 
       {/* Paneli */}
       <div
-        className={`th-drawer th-drawer-panel fixed right-0 top-0 z-50 flex h-full w-full max-w-[560px] flex-col shadow-2xl ${
+        className={`th-drawer th-drawer-panel fixed right-0 top-0 z-50 flex h-full w-full max-w-[720px] 2xl:max-w-[780px] flex-col shadow-2xl ${
           isOpen ? "translate-x-0" : "translate-x-full"
         }`}
         data-open={isOpen}
