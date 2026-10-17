@@ -314,3 +314,20 @@ test.describe("layout", () => {
     });
   }
 });
+
+test("every switch on the page is the app's standard switch", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "measured on the desktop layout");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await mockMonitoring(page);
+  await page.goto("/monitoring");
+  const switches = page.locator('[role="switch"]');
+  await expect(switches.first()).toBeVisible();
+  const sizes = await switches.evaluateAll((els) =>
+    els.map((el) => {
+      const r = el.getBoundingClientRect();
+      return `${Math.round(r.width)}x${Math.round(r.height)}`;
+    }),
+  );
+  expect(sizes.length).toBeGreaterThan(2);
+  for (const size of sizes) expect(size).toBe("34x20");
+});

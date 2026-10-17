@@ -832,7 +832,9 @@ html.light .drawer-table-head {
     line-height: 1.35 !important;
   }
 
-  .premium-page table button,
+  /* A comfortable target for buttons and links in tables — not for a switch,
+     which is drawn at its own size everywhere in the app. */
+  .premium-page table button:not([role="switch"]),
   .premium-page table a {
     min-height: 28px;
   }
