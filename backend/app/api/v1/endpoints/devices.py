@@ -476,7 +476,8 @@ def read_device_telemetry_history(
     *,
     db: Session = Depends(get_db),
     device: Device = Depends(get_scoped_device),
-    limit: int = Query(default=20, le=100),
+    # Up to a day of 5-minute heartbeats for the drawer's trend.
+    limit: int = Query(default=20, le=300),
 ):
     return DeviceTelemetryService(db).get_history(device.id, limit=limit)
 

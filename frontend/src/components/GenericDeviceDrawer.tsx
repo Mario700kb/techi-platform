@@ -26,10 +26,10 @@ import GroupPicker from "./GroupPicker";
 import HealthBadge from "./HealthBadge";
 import LocationPicker from "./LocationPicker";
 import PlatformIcon from "./PlatformIcon";
-import ResourceBar from "./ResourceBar";
 import VersionBadge from "./VersionBadge";
 import { Button, EmptyState, SelectField } from "./ui";
-import DeviceLivePanel from "./DeviceLivePanel";
+import DeviceLivePanel, { HeartbeatValues } from "./DeviceLivePanel";
+import DeviceTrendPanel from "./DeviceTrendPanel";
 import { useDeviceLive } from "../hooks/useDeviceLive";
 
 const DeviceTerminal = lazy(() => import("./DeviceTerminal"));
@@ -182,6 +182,17 @@ export default function GenericDeviceDrawer({
   // Live view while Overview is open (Linux and Windows agents from 2.1.27).
   const livePlatform = /^(windows|linux)/i.test(device.platform || "");
   const live = useDeviceLive(device.id, isOpen && tab === "overview" && livePlatform && !device.is_archived);
+  const streaming = live.state === "live" && live.snapshot !== null;
+  const heartbeatValues: HeartbeatValues | null = snapshot
+    ? {
+        cpu_percent: snapshot.cpu_percent,
+        ram_percent: snapshot.ram_percent,
+        disk_percent: snapshot.disk_percent,
+        uptime_seconds: snapshot.uptime_seconds ?? null,
+        current_user: device.current_user,
+        at: snapshot.created_at,
+      }
+    : null;
 
   const runAction = async (a: DrawerAction) => {
     setBusy(a.id);
@@ -351,11 +362,14 @@ export default function GenericDeviceDrawer({
             <>
               {tab === "overview" && (
                 <div className="th-tab-panel">
-                  {livePlatform && !device.is_archived && <DeviceLivePanel live={live} />}
+                  {!device.is_archived && (
+                    <DeviceLivePanel live={live} fallback={heartbeatValues} liveCapable={livePlatform} />
+                  )}
                   <Overview
                     device={device}
                     meta={meta}
-                    snapshot={snapshot}
+                    liveUser={streaming ? (live.snapshot?.current_user ?? null) : null}
+                    streaming={streaming}
                     healthState={healthState}
                     healthScore={healthScore}
                     clients={clients ?? []}
@@ -616,7 +630,8 @@ function AssignmentSourceBadge({ source }: { source?: string | null }) {
 function Overview({
   device,
   meta,
-  snapshot,
+  liveUser,
+  streaming,
   healthState,
   healthScore,
   clients,
@@ -629,7 +644,8 @@ function Overview({
 }: {
   device: Device;
   meta: DrawerMeta;
-  snapshot: { cpu_percent: number | null; ram_percent: number | null; disk_percent: number | null } | null;
+  liveUser: string | null;
+  streaming: boolean;
   healthState: React.ComponentProps<typeof HealthBadge>["state"];
   healthScore: number | null;
   clients: Client[];
@@ -677,7 +693,17 @@ function Overview({
         <dl className="th-dl">
           <dt>Last seen</dt>
           <dd>
-            {device.last_seen ? (
+            {streaming ? (
+              <>
+                <span style={{ color: "var(--th-status-online)" }}>Live now</span>
+                {device.last_seen && (
+                  <span style={{ color: "var(--th-text-muted)" }}>
+                    {" "}
+                    · last heartbeat {formatDateTime(device.last_seen)}
+                  </span>
+                )}
+              </>
+            ) : device.last_seen ? (
               <>
                 {formatDateTime(device.last_seen)}
                 <span style={{ color: "var(--th-text-muted)" }}> · {timeAgo(device.last_seen)}</span>
@@ -693,7 +719,7 @@ function Overview({
           <Row label="Local IP" value={device.local_ip} mono />
           <Row label="Public IP" value={device.public_ip} mono />
           <ConnectTargetRow device={device} canOperate={canOperate} onDeviceUpdated={onDeviceUpdated} />
-          <Row label="Current user" value={device.current_user ?? undefined} />
+          <Row label="Current user" value={liveUser ?? device.current_user ?? undefined} />
           <dt>Connector</dt>
           <dd>
             <VersionBadge version={meta.reported_version} status={versionStatus} title={versionTitle} />
@@ -713,19 +739,8 @@ function Overview({
         </dl>
       </Section>
 
-      <Section title="Resources">
-        {snapshot ? (
-          <div className="space-y-3">
-            <ResourceBar label="CPU" metric="cpu" percent={snapshot.cpu_percent} />
-            <ResourceBar label="Memory" metric="ram" percent={snapshot.ram_percent} />
-            <ResourceBar label="Disk" metric="disk" percent={snapshot.disk_percent} />
-          </div>
-        ) : (
-          <p className="py-2 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>
-            No telemetry yet
-          </p>
-        )}
-      </Section>
+      {/* History only: current values are in the panel at the top. */}
+      <DeviceTrendPanel deviceId={device.id} enabled />
 
       <Section title="Client assignment">
         <dl className="th-dl">

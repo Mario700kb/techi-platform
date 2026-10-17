@@ -56,6 +56,12 @@ for (const theme of ["dark", "light"] as const) {
     await expect(panel.getByText("31.6 GB free of 466 GB")).toBeVisible();
     await expect(panel.getByText("sqlservr.exe")).toBeVisible();
     expect(opened[0]).toMatch(/\/ws\/devices\/2\/live$/);
+    // One value, one place: the status says live, the user is the live one,
+    // and the old "now" telemetry block is gone (the trend is history).
+    await expect(page.getByText("Live now")).toBeVisible();
+    await expect(page.getByText("NORTHWIND\\dr.hoxha")).toBeVisible();
+    await expect(page.getByRole("region", { name: "Trend" })).toBeVisible();
+    await expect(page.locator(".premium-kicker", { hasText: /^Telemetry$/ })).toHaveCount(0);
     await panel.screenshot({ path: testInfo.outputPath(`device-live-${theme}.png`) });
   });
 }

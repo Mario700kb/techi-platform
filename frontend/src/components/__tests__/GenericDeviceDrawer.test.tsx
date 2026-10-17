@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import GenericDeviceDrawer from "../GenericDeviceDrawer";
@@ -23,11 +23,18 @@ vi.mock("../../hooks/useDeviceActivity", () => ({
 }));
 vi.mock("../../hooks/useDeviceTelemetry", () => ({
   useDeviceTelemetry: () => ({
-    snapshot: { cpu_percent: 12, ram_percent: 40, disk_percent: 88 },
+    snapshot: {
+      cpu_percent: 12,
+      ram_percent: 40,
+      disk_percent: 88,
+      uptime_seconds: 3600,
+      created_at: "2026-10-17T10:00:00Z",
+    },
     healthScore: 90,
     healthState: "healthy",
   }),
 }));
+vi.mock("../../api/telemetry", () => ({ getDeviceTelemetryHistory: vi.fn().mockResolvedValue([]) }));
 vi.mock("../../hooks/usePlatformFeatures", () => ({ usePlatformFeatures: () => ({ FEATURE_TERMINAL: false }) }));
 vi.mock("../ComponentStatesPanel", () => ({ default: () => null }));
 vi.mock("../ConnectMenu", () => ({ default: () => null }));
@@ -63,14 +70,20 @@ describe("GenericDeviceDrawer", () => {
     getInventory.mockReset();
   });
 
-  it("uses accessible tabs, the freshness chip and shared resource bars", async () => {
+  it("uses accessible tabs, the freshness chip and one place for current values", async () => {
     getInventory.mockResolvedValue({ services: [], processes: [], software: [] });
     renderDrawer();
     const overview = await screen.findByRole("tab", { name: "Overview" });
     expect(overview).toHaveAttribute("aria-selected", "true");
     expect(screen.getByText("Stale")).toBeInTheDocument();
-    expect(screen.getByText("Memory")).toBeInTheDocument();
-    expect(screen.getByText("Disk")).toBeInTheDocument();
+    // Current values come from the last heartbeat, labelled as such, once.
+    const now = screen.getByRole("region", { name: "Live" });
+    expect(within(now).getByText(/From the last heartbeat/)).toBeInTheDocument();
+    expect(within(now).getByText("40%")).toBeInTheDocument();
+    expect(within(now).getByText("88% used")).toBeInTheDocument();
+    // History has its own section and no duplicate current bars.
+    expect(screen.getByRole("region", { name: "Trend" })).toBeInTheDocument();
+    expect(screen.queryByText("Resources")).toBeNull();
     expect(document.querySelector(".th-drawer.th-drawer-panel")).not.toBeNull();
   });
 

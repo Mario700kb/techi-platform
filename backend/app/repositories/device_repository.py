@@ -7,7 +7,7 @@ from sqlalchemy import and_, case, false, func, not_, or_, select
 from app.db.sql import id_in
 from app.models.alert import DeviceAlert
 from app.models.client import Client
-from app.models.device import Device, DeviceFreshnessState, DeviceStatus, DeviceType, freshness_for
+from app.models.device import Device, DeviceFreshnessState, DeviceStatus, DeviceType, freshness_conditions, freshness_for
 from app.models.device_group import DeviceGroup
 from app.models.device_heartbeat import DeviceHeartbeat
 from app.models.device_inventory import DeviceInventory
@@ -19,8 +19,6 @@ from app.schemas.device import DeviceCreate, DeviceDirectoryEntry, DeviceTreeCou
 if TYPE_CHECKING:
     from app.core.scope import AllowedScope
 
-ONLINE_WINDOW = timedelta(minutes=6)
-STALE_WINDOW = timedelta(minutes=25)
 
 # Quick filters of the Devices page. Each one is a single SQL condition used
 # both to filter the list and to count it, so a chip's number always equals
@@ -276,10 +274,7 @@ class DeviceRepository:
         return self._apply_scope_filter(query, scope)
 
     def quick_filter_clause(self, key: str, health_index: Mapping):
-        now = utcnow()
-        online_cutoff = now - ONLINE_WINDOW
-        stale_cutoff = now - STALE_WINDOW
-        is_online = Device.last_seen >= online_cutoff
+        is_online, is_stale, is_offline = freshness_conditions(utcnow())
 
         dialect = self.db.get_bind().dialect.name
 
@@ -290,9 +285,9 @@ class DeviceRepository:
         if key == "online":
             return is_online
         if key == "stale":
-            return and_(Device.last_seen >= stale_cutoff, Device.last_seen < online_cutoff)
+            return is_stale
         if key == "offline":
-            return or_(Device.last_seen.is_(None), Device.last_seen < stale_cutoff)
+            return is_offline
         if key == "servers":
             return clf.category_case() == clf.CATEGORY_SERVERS
         if key == "workstations":
@@ -315,8 +310,8 @@ class DeviceRepository:
             return ids_where(lambda e: e.score < LOW_HEALTH_SCORE)
         if key == "needs_attention":
             return or_(
-                Device.last_seen.is_(None),
-                Device.last_seen < online_cutoff,
+                is_stale,
+                is_offline,
                 ids_where(lambda e: e.critical_alerts > 0 or e.score < LOW_HEALTH_SCORE),
             )
         if key == "rustdesk_issues":
@@ -462,15 +457,13 @@ class DeviceRepository:
     def _apply_freshness_filter(self, query, freshness_state: Optional[DeviceFreshnessState]):
         if not freshness_state:
             return query
-        now = utcnow()
-        online_cutoff = now - timedelta(minutes=6)
-        stale_cutoff = now - timedelta(minutes=25)
+        is_online, is_stale, is_offline = freshness_conditions(utcnow())
         if freshness_state == DeviceFreshnessState.ONLINE:
-            return query.filter(Device.last_seen >= online_cutoff)
+            return query.filter(is_online)
         if freshness_state == DeviceFreshnessState.STALE:
-            return query.filter(and_(Device.last_seen >= stale_cutoff, Device.last_seen < online_cutoff))
+            return query.filter(is_stale)
         if freshness_state == DeviceFreshnessState.OFFLINE:
-            return query.filter(or_(Device.last_seen.is_(None), Device.last_seen < stale_cutoff))
+            return query.filter(is_offline)
         return query
 
     def create(self, obj_in: DeviceCreate) -> Device:
@@ -611,18 +604,12 @@ class DeviceRepository:
 
     def count_stats(self, scope: Optional["AllowedScope"] = None) -> dict:
         """Return total/online/stale/offline in one query instead of four."""
-        now = utcnow()
-        online_cutoff = now - timedelta(minutes=6)
-        stale_cutoff = now - timedelta(minutes=25)
+        is_online, is_stale, is_offline = freshness_conditions(utcnow())
         q = self.db.query(
             func.count(Device.id).label("total"),
-            func.count(case((Device.last_seen >= online_cutoff, 1))).label("online"),
-            func.count(case((
-                and_(Device.last_seen >= stale_cutoff, Device.last_seen < online_cutoff), 1
-            ))).label("stale"),
-            func.count(case((
-                or_(Device.last_seen.is_(None), Device.last_seen < stale_cutoff), 1
-            ))).label("offline"),
+            func.count(case((is_online, 1))).label("online"),
+            func.count(case((is_stale, 1))).label("stale"),
+            func.count(case((is_offline, 1))).label("offline"),
         )
         q = self._apply_lifecycle_filter(q, "active")
         q = self._apply_scope_filter(q, scope)
@@ -655,11 +642,11 @@ class DeviceRepository:
         """Every active device with only what a picker needs: no telemetry,
         inventory or assignment resolution, so the fleet comes back in one
         small response instead of megabytes of full device rows."""
-        q = self.db.query(Device.id, Device.hostname, Device.rustdesk_id, Device.client_id, Device.group_id, Device.last_seen)
+        q = self.db.query(Device.id, Device.hostname, Device.rustdesk_id, Device.client_id, Device.group_id, Device.last_seen, Device.status, Device.offline_reason)
         q = self._apply_lifecycle_filter(q, "active")
         q = self._apply_scope_filter(q, scope)
         return [
-            DeviceDirectoryEntry(id=row.id, hostname=row.hostname, rustdesk_id=row.rustdesk_id, client_id=row.client_id, group_id=row.group_id, freshness_state=freshness_for(row.last_seen))
+            DeviceDirectoryEntry(id=row.id, hostname=row.hostname, rustdesk_id=row.rustdesk_id, client_id=row.client_id, group_id=row.group_id, freshness_state=freshness_for(row.last_seen, row.status, row.offline_reason))
             for row in q.order_by(Device.hostname, Device.id).all()
         ]
 
@@ -692,18 +679,16 @@ class DeviceRepository:
         """One client's devices per location (None: at no location of its own):
         rows of (location_id, total, online, stale, offline, servers, clientpc,
         placed by hand)."""
-        now = utcnow()
-        online_cutoff = now - ONLINE_WINDOW
-        stale_cutoff = now - STALE_WINDOW
+        is_online, is_stale, is_offline = freshness_conditions(utcnow())
         category = clf.category_case()
         location = case((Device.location_id.in_(list(known_location_ids)), Device.location_id), else_=None)
         q = (
             self.db.query(
                 location,
                 func.count(Device.id),
-                func.count(case((Device.last_seen >= online_cutoff, 1))),
-                func.count(case((and_(Device.last_seen >= stale_cutoff, Device.last_seen < online_cutoff), 1))),
-                func.count(case((or_(Device.last_seen.is_(None), Device.last_seen < stale_cutoff), 1))),
+                func.count(case((is_online, 1))),
+                func.count(case((is_stale, 1))),
+                func.count(case((is_offline, 1))),
                 func.count(case((category == clf.CATEGORY_SERVERS, 1))),
                 func.count(case((category == clf.CATEGORY_CLIENTPC, 1))),
                 func.count(case((Device.location_source == "manual", 1))),
@@ -720,9 +705,7 @@ class DeviceRepository:
         another client (the device moved) counts as no location."""
         from app.models.client_location import ClientLocation
 
-        now = utcnow()
-        online_cutoff = now - ONLINE_WINDOW
-        stale_cutoff = now - STALE_WINDOW
+        is_online, is_stale, is_offline = freshness_conditions(utcnow())
         category = clf.category_case()
         platform_class = clf.platform_case()
         location = case((ClientLocation.client_id == Device.client_id, Device.location_id), else_=None)
@@ -733,9 +716,9 @@ class DeviceRepository:
                 category,
                 platform_class,
                 func.count(Device.id),
-                func.count(case((Device.last_seen >= online_cutoff, 1))),
-                func.count(case((and_(Device.last_seen >= stale_cutoff, Device.last_seen < online_cutoff), 1))),
-                func.count(case((or_(Device.last_seen.is_(None), Device.last_seen < stale_cutoff), 1))),
+                func.count(case((is_online, 1))),
+                func.count(case((is_stale, 1))),
+                func.count(case((is_offline, 1))),
             )
             .outerjoin(DeviceGroup, Device.group_id == DeviceGroup.id)
             .outerjoin(ClientLocation, ClientLocation.id == Device.location_id)
@@ -747,22 +730,16 @@ class DeviceRepository:
 
     def get_fleet_counts(self, scope: Optional["AllowedScope"] = None):
         """Active-device totals per client and category, by freshness."""
-        now = utcnow()
-        online_cutoff = now - ONLINE_WINDOW
-        stale_cutoff = now - STALE_WINDOW
+        is_online, is_stale, is_offline = freshness_conditions(utcnow())
         category = clf.category_case()
 
         counts_query = self.db.query(
             Device.client_id,
             category,
             func.count(Device.id).label("total"),
-            func.count(case((Device.last_seen >= online_cutoff, 1))).label("online"),
-            func.count(case((
-                and_(Device.last_seen >= stale_cutoff, Device.last_seen < online_cutoff), 1
-            ))).label("stale"),
-            func.count(case((
-                or_(Device.last_seen.is_(None), Device.last_seen < stale_cutoff), 1
-            ))).label("offline"),
+            func.count(case((is_online, 1))).label("online"),
+            func.count(case((is_stale, 1))).label("stale"),
+            func.count(case((is_offline, 1))).label("offline"),
         ).outerjoin(DeviceGroup, Device.group_id == DeviceGroup.id)
         counts_query = self._apply_lifecycle_filter(counts_query, "active")
         counts_query = self._apply_scope_filter(counts_query, scope)

@@ -39,6 +39,9 @@ class AgentCommandChannel:
     def __init__(self) -> None:
         self._connections: Dict[int, WebSocket] = {}
         self._lock = asyncio.Lock()
+        # Set while the backend shuts down: every channel drops then, and none
+        # of those drops means a device went offline.
+        self.presence_paused = False
 
     async def register(self, device_id: int, websocket: WebSocket) -> None:
         async with self._lock:
@@ -55,13 +58,17 @@ class AgentCommandChannel:
         else:
             logger.info("[agent-channel] device #%d connected", device_id)
 
-    async def unregister(self, device_id: int, websocket: WebSocket) -> None:
+    async def unregister(self, device_id: int, websocket: WebSocket) -> bool:
+        """Returns True when this socket was the device's current channel
+        (and so the device has no channel now)."""
         async with self._lock:
             # Only clear if this is still the current socket: a slow disconnect
             # must not evict the connection that already replaced it.
             if self._connections.get(device_id) is websocket:
                 self._connections.pop(device_id, None)
                 logger.info("[agent-channel] device #%d disconnected", device_id)
+                return True
+        return False
 
     def is_connected(self, device_id: int) -> bool:
         return device_id in self._connections

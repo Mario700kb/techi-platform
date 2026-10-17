@@ -44,7 +44,6 @@ import { timeAgo } from "../utils/time";
 import { FreshnessState } from "../components/mobile/primitives";
 import { Button, EmptyState } from "../components/ui";
 import { isDeviceOffline, TERMS, TONE } from "../utils/deviceStatus";
-import { VitalsStrip } from "../components/mobile/VitalsStrip";
 import DeviceLivePanel from "../components/DeviceLivePanel";
 import { useDeviceLive } from "../hooks/useDeviceLive";
 import { AccordionSection } from "../components/mobile/AccordionSection";
@@ -96,20 +95,6 @@ function healthVariant(score: number | null): "online" | "warning" | "critical" 
   if (score < 60) return "critical";
   if (score < 80) return "warning";
   return "online";
-}
-
-// Mirrors DeviceDrawer.tsx's formatUptime exactly (same field, same
-// breakdown) — mobile previously divided uptime_seconds by 3600 only,
-// showing e.g. "123h" where desktop shows "5d 3h" for the identical
-// value. Same data, desktop's format is just readable at a glance.
-function formatUptime(seconds: number | null): string {
-  if (seconds === null) return "—";
-  const d = Math.floor(seconds / 86400);
-  const h = Math.floor((seconds % 86400) / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  if (d > 0) return `${d}d ${h}h`;
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
 }
 
 export default function DeviceDetailsMobile() {
@@ -423,15 +408,26 @@ export default function DeviceDetailsMobile() {
         </div>
       </div>
 
-      {live.state === "live" && live.snapshot ? null : (
-        <VitalsStrip
-          cpu={telemetry.snapshot?.cpu_percent ?? null}
-          ram={telemetry.snapshot?.ram_percent ?? null}
-          disk={telemetry.snapshot?.disk_percent ?? null}
+      {/* Current values in one place: the live stream, or the last heartbeat
+          labelled with its age. The Performance section below is the trend. */}
+      {!device.is_archived && (
+        <DeviceLivePanel
+          live={live}
+          liveCapable={livePlatform}
+          fallback={
+            telemetry.snapshot
+              ? {
+                  cpu_percent: telemetry.snapshot.cpu_percent,
+                  ram_percent: telemetry.snapshot.ram_percent,
+                  disk_percent: telemetry.snapshot.disk_percent,
+                  uptime_seconds: telemetry.snapshot.uptime_seconds,
+                  current_user: device.current_user,
+                  at: telemetry.snapshot.created_at,
+                }
+              : null
+          }
         />
       )}
-
-      {livePlatform && !device.is_archived && <DeviceLivePanel live={live} />}
 
       <AccordionSection
         icon={<AlertTriangle className="h-4 w-4" />}
@@ -533,10 +529,6 @@ export default function DeviceDetailsMobile() {
               </div>
             )}
             <dl className="th-mfacts">
-              <div>
-                <dt>Uptime</dt>
-                <dd className="tabular-nums">{formatUptime(telemetry.snapshot?.uptime_seconds ?? null)}</dd>
-              </div>
               <div>
                 <dt>Latency</dt>
                 <dd className="tabular-nums">

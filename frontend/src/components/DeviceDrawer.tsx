@@ -95,11 +95,11 @@ import ConfirmationModal from "./ConfirmationModal";
 import GroupPicker from "./GroupPicker";
 import HealthBadge from "./HealthBadge";
 import LocationPicker from "./LocationPicker";
-import ResourceBar from "./ResourceBar";
 import { deviceSite } from "../utils/location";
 import { cpuView, osView, storageView } from "../utils/system";
 import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
-import DeviceLivePanel from "./DeviceLivePanel";
+import DeviceLivePanel, { HeartbeatValues } from "./DeviceLivePanel";
+import DeviceTrendPanel from "./DeviceTrendPanel";
 import { addQueuedAction } from "../utils/remoteActions";
 import { useDeviceLive } from "../hooks/useDeviceLive";
 
@@ -245,16 +245,6 @@ function HeartbeatFreshness({ lastSeen }: { lastSeen?: string }) {
     cls = "text-red-400";
   }
   return <span className={`text-xs font-semibold ${cls}`}>{label}</span>;
-}
-
-function formatUptime(seconds: number | null): string {
-  if (seconds === null) return "—";
-  const d = Math.floor(seconds / 86400);
-  const h = Math.floor((seconds % 86400) / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  if (d > 0) return `${d}d ${h}h`;
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
 }
 
 function alertDuration(alert: Alert): string | null {
@@ -659,6 +649,19 @@ export default function DeviceDrawer({
   // only Windows and Linux agents have the channel it needs.
   const livePlatform = /^(windows|linux)/i.test(device.platform || "");
   const live = useDeviceLive(device.id, isOpen && activeTab === "overview" && livePlatform && !device.is_archived);
+  const streaming = live.state === "live" && live.snapshot !== null;
+  // One place for current values: the panel shows the stream, or else what
+  // the last heartbeat said, labelled with its age.
+  const heartbeatValues: HeartbeatValues | null = snapshot
+    ? {
+        cpu_percent: snapshot.cpu_percent,
+        ram_percent: snapshot.ram_percent,
+        disk_percent: snapshot.disk_percent,
+        uptime_seconds: snapshot.uptime_seconds,
+        current_user: device.current_user,
+        at: snapshot.created_at,
+      }
+    : null;
 
   // Capability-driven Terminal tab: only when FEATURE_TERMINAL is on AND the
   // device reports the terminal capability. Inserted after Remote Support so the
@@ -961,7 +964,9 @@ export default function DeviceDrawer({
               </div>
             )}
 
-            {livePlatform && !device.is_archived && <DeviceLivePanel live={live} />}
+            {!device.is_archived && (
+              <DeviceLivePanel live={live} fallback={heartbeatValues} liveCapable={livePlatform} />
+            )}
 
             {/* Status */}
             <section className="mb-5">
@@ -970,7 +975,17 @@ export default function DeviceDrawer({
                 <dl className="th-dl">
                   <dt>Last seen</dt>
                   <dd>
-                    {device.last_seen ? (
+                    {streaming ? (
+                      <>
+                        <span style={{ color: "var(--th-status-online)" }}>Live now</span>
+                        {device.last_seen && (
+                          <span style={{ color: "var(--th-text-muted)" }}>
+                            {" "}
+                            · last heartbeat {formatLocalDateTime(device.last_seen)}
+                          </span>
+                        )}
+                      </>
+                    ) : device.last_seen ? (
                       <>
                         {formatLocalDateTime(device.last_seen)}
                         <span style={{ color: "var(--th-text-muted)" }}>
@@ -1336,7 +1351,7 @@ export default function DeviceDrawer({
                     <p
                       className={`text-xs font-medium leading-5 ${device.current_user ? "text-slate-100" : "text-slate-500"}`}
                     >
-                      {device.current_user || "—"}
+                      {(streaming && live.snapshot?.current_user) || device.current_user || "—"}
                     </p>
                     {device.user_source &&
                       device.user_source !== "no_interactive_user" &&
@@ -1486,46 +1501,8 @@ export default function DeviceDrawer({
           </div>
 
           <div className={activeTab === "overview" ? "th-tab-panel" : "hidden"}>
-            {/* Telemetria */}
-            <section className="mb-4">
-              <div className="mb-2 flex items-center justify-between">
-                <p className="premium-kicker">Telemetry</p>
-              </div>
-              <div className="th-drawer-card">
-                <div className="space-y-3">
-                  {snapshot ? (
-                    <>
-                      <ResourceBar label="CPU" metric="cpu" percent={snapshot.cpu_percent} />
-                      <ResourceBar label="Memory" metric="ram" percent={snapshot.ram_percent} />
-                      <ResourceBar label="Disk" metric="disk" percent={snapshot.disk_percent} />
-                      <div
-                        className="mt-3 grid grid-cols-2 gap-x-5 gap-y-2 border-t pt-3"
-                        style={{ borderColor: "var(--th-border-drawer-section)" }}
-                      >
-                        <div>
-                          <p className="premium-kicker mb-1">Uptime</p>
-                          <p className="text-xs font-medium text-slate-100">{formatUptime(snapshot.uptime_seconds)}</p>
-                        </div>
-                        <div>
-                          <p className="premium-kicker mb-1">Latency</p>
-                          <p className="text-xs font-medium text-slate-100">
-                            {snapshot.heartbeat_latency_ms !== null ? `${snapshot.heartbeat_latency_ms}ms` : "—"}
-                          </p>
-                        </div>
-                        <div className="col-span-2">
-                          <p className="premium-kicker mb-1">Last telemetry</p>
-                          <p className="text-xs font-medium text-slate-300">{formatDateTime(snapshot.created_at)}</p>
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <p className="py-2 text-center text-xs font-medium text-slate-500">
-                      No telemetry yet. Metrics appear once the {TERMS.agent} reports in.
-                    </p>
-                  )}
-                </div>
-              </div>
-            </section>
+            {/* History only: current values are in the panel at the top. */}
+            <DeviceTrendPanel deviceId={device.id} enabled={isOpen && activeTab === "overview"} />
           </div>
 
           {archiveConfirmOpen && (

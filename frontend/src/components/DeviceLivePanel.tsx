@@ -2,6 +2,32 @@ import React from "react";
 import { Activity, Cpu, HardDrive, MemoryStick, Network, User } from "lucide-react";
 import { DeviceLive, LiveSnapshot } from "../hooks/useDeviceLive";
 import { TONE } from "../utils/deviceStatus";
+import { timeAgo } from "../utils/time";
+
+/** What the last heartbeat said: shown in the same panel when there is no
+ *  live stream, so the drawer has one place for current values. */
+export interface HeartbeatValues {
+  cpu_percent: number | null;
+  ram_percent: number | null;
+  disk_percent: number | null;
+  uptime_seconds: number | null;
+  current_user: string | null | undefined;
+  at: string;
+}
+
+function fromHeartbeat(values: HeartbeatValues): LiveSnapshot {
+  return {
+    cpu_percent: values.cpu_percent ?? undefined,
+    ram_percent: values.ram_percent ?? undefined,
+    disks:
+      values.disk_percent != null
+        ? [{ mount: "System disk", used_percent: values.disk_percent, free_gb: 0, total_gb: 0 }]
+        : [],
+    uptime_seconds: values.uptime_seconds ?? undefined,
+    current_user: values.current_user ?? undefined,
+    processes: [],
+  };
+}
 
 function usageTone(percent: number | undefined): string {
   if (percent == null) return TONE.neutral;
@@ -105,7 +131,15 @@ function StatusLine({ live }: { live: DeviceLive }) {
   );
 }
 
-function Body({ snap, paused }: { snap: LiveSnapshot; paused: boolean }) {
+function Body({
+  snap,
+  paused,
+  heartbeatOnly = false,
+}: {
+  snap: LiveSnapshot;
+  paused: boolean;
+  heartbeatOnly?: boolean;
+}) {
   const disks = snap.disks ?? [];
   const processes = (snap.processes ?? []).slice(0, 8);
   return (
@@ -125,12 +159,14 @@ function Body({ snap, paused }: { snap: LiveSnapshot; paused: boolean }) {
           percent={snap.ram_percent}
           detail={`${formatGB(snap.ram_used_mb)} of ${formatGB(snap.ram_total_mb)}`}
         />
-        <Tile
-          icon={Network}
-          label="Network"
-          value={`↓ ${formatRate(snap.net_rx_kbps)}`}
-          detail={`↑ ${formatRate(snap.net_tx_kbps)}`}
-        />
+        {(snap.net_rx_kbps != null || snap.net_tx_kbps != null || !heartbeatOnly) && (
+          <Tile
+            icon={Network}
+            label="Network"
+            value={`↓ ${formatRate(snap.net_rx_kbps)}`}
+            detail={`↑ ${formatRate(snap.net_tx_kbps)}`}
+          />
+        )}
         <Tile
           icon={User}
           label="Signed in"
@@ -151,7 +187,9 @@ function Body({ snap, paused }: { snap: LiveSnapshot; paused: boolean }) {
                 <div className="mb-1 flex items-baseline justify-between text-[12px] tabular-nums">
                   <span style={{ color: "var(--th-text-primary)" }}>{disk.mount}</span>
                   <span style={{ color: "var(--th-text-muted)" }}>
-                    {disk.free_gb.toFixed(1)} GB free of {disk.total_gb.toFixed(0)} GB
+                    {disk.total_gb > 0
+                      ? `${disk.free_gb.toFixed(1)} GB free of ${disk.total_gb.toFixed(0)} GB`
+                      : `${Math.round(disk.used_percent)}% used`}
                   </span>
                 </div>
                 <Meter percent={disk.used_percent} />
@@ -204,18 +242,45 @@ function Body({ snap, paused }: { snap: LiveSnapshot; paused: boolean }) {
   );
 }
 
-/** Live CPU, memory, disks, network, signed-in user and busiest processes,
- *  streamed by the agent only while this panel is on screen. */
-export default function DeviceLivePanel({ live }: { live: DeviceLive }) {
+/** The device's current state in one place: live CPU, memory, disks,
+ *  network, signed-in user and busiest processes while the agent streams;
+ *  otherwise what its last heartbeat said, labelled with its age. */
+export default function DeviceLivePanel({
+  live,
+  fallback = null,
+  liveCapable = true,
+}: {
+  live: DeviceLive;
+  fallback?: HeartbeatValues | null;
+  liveCapable?: boolean;
+}) {
+  const streaming = liveCapable && live.snapshot !== null;
   return (
     <section className="mb-5" aria-label="Live">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <p className="premium-kicker">Live</p>
-        <StatusLine live={live} />
+        <p className="premium-kicker">{streaming ? "Live" : "Latest"}</p>
+        {liveCapable ? (
+          <StatusLine live={live} />
+        ) : (
+          <span className="text-[11px]" style={{ color: "var(--th-text-muted)" }}>
+            Live view not available for this device
+          </span>
+        )}
       </div>
-      {live.snapshot ? (
-        <Body snap={live.snapshot} paused={live.state !== "live"} />
-      ) : live.state === "agent_offline" || live.state === "unavailable" ? null : (
+      {streaming ? (
+        <Body snap={live.snapshot as LiveSnapshot} paused={live.state !== "live"} />
+      ) : fallback ? (
+        <>
+          <p className="mb-2 text-[11px]" style={{ color: "var(--th-text-muted)" }}>
+            From the last heartbeat · {timeAgo(fallback.at)}
+          </p>
+          <Body snap={fromHeartbeat(fallback)} paused={false} heartbeatOnly />
+        </>
+      ) : live.state === "agent_offline" || live.state === "unavailable" || !liveCapable ? (
+        <p className="py-2 text-center text-xs" style={{ color: "var(--th-text-muted)" }}>
+          No data yet. Values appear once the agent reports in.
+        </p>
+      ) : (
         <div className="grid grid-cols-2 gap-2" aria-hidden="true">
           {[0, 1, 2, 3].map((i) => (
             <div key={i} className="th-drawer-card !p-3">

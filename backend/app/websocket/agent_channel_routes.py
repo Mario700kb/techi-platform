@@ -18,9 +18,11 @@ agent already receives in its heartbeat response.
 import asyncio
 import logging
 import secrets
+from typing import Set
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from app.core.time import utcnow
 from app.db.session import SessionLocal
 from app.repositories.device_repository import DeviceRepository
 from app.websocket.agent_channel import agent_command_channel
@@ -33,6 +35,58 @@ router = APIRouter()
 # The agent sends a ping on this cadence; anything longer than a comfortable
 # multiple of it means the socket is dead in a way TCP has not noticed yet.
 IDLE_TIMEOUT_SECONDS = 180
+
+# How long a dropped channel may stay down before the device counts as
+# offline. Agents from 2.1.27 return within 5-65 s after a backend restart or
+# their own service restart; the Linux 2.1.23 agent backs off up to ~144 s.
+PRESENCE_GRACE_SECONDS = 150
+
+# Pending offline checks, kept so they are not garbage-collected mid-sleep and
+# can be cancelled at shutdown.
+_offline_checks: Set[asyncio.Task] = set()
+
+
+def _mark_connected(device_id: int) -> None:
+    from app.services.device_status_service import DeviceStatusService
+
+    db = SessionLocal()
+    try:
+        device = DeviceRepository(db).get(device_id)
+        if device is not None and not device.is_archived:
+            DeviceStatusService(db).mark_online_from_channel(device)
+    except Exception:
+        logger.exception("[agent-channel] device #%d: could not record it online", device_id)
+    finally:
+        db.close()
+
+
+def _mark_lost(device_id: int, disconnected_at) -> None:
+    from app.services.device_status_service import DeviceStatusService
+
+    db = SessionLocal()
+    try:
+        device = DeviceRepository(db).get(device_id)
+        if device is not None and DeviceStatusService(db).mark_offline_connection_lost(device, disconnected_at):
+            logger.info("[agent-channel] device #%d offline: channel lost for %ds", device_id, PRESENCE_GRACE_SECONDS)
+    except Exception:
+        logger.exception("[agent-channel] device #%d: could not record it offline", device_id)
+    finally:
+        db.close()
+
+
+async def _offline_after_grace(device_id: int, disconnected_at) -> None:
+    await asyncio.sleep(PRESENCE_GRACE_SECONDS)
+    if agent_command_channel.presence_paused or agent_command_channel.is_connected(device_id):
+        return
+    await asyncio.to_thread(_mark_lost, device_id, disconnected_at)
+
+
+def cancel_presence_checks() -> None:
+    """Shutdown: every channel drops with the process, which says nothing
+    about the devices."""
+    agent_command_channel.presence_paused = True
+    for task in list(_offline_checks):
+        task.cancel()
 
 
 def _agent_id_matches(provided: str, stored: str) -> bool:
@@ -61,6 +115,9 @@ async def agent_command_ws(websocket: WebSocket, device_id: int = 0, agent_id: s
 
     await websocket.accept()
     await agent_command_channel.register(device_id, websocket)
+    # The open channel is the agent saying it is up: online now, not at its
+    # next heartbeat.
+    await asyncio.to_thread(_mark_connected, device_id)
     if device_live_hub.has_viewers(device_id):
         # Someone has the device open: an agent that just (re)connected picks
         # the live view up at once instead of at the page's next renewal.
@@ -82,7 +139,11 @@ async def agent_command_ws(websocket: WebSocket, device_id: int = 0, agent_id: s
     except Exception:
         logger.exception("[agent-channel] device #%d channel error", device_id)
     finally:
-        await agent_command_channel.unregister(device_id, websocket)
+        was_current = await agent_command_channel.unregister(device_id, websocket)
+        if was_current and not agent_command_channel.presence_paused:
+            task = asyncio.create_task(_offline_after_grace(device_id, utcnow()))
+            _offline_checks.add(task)
+            task.add_done_callback(_offline_checks.discard)
         try:
             await websocket.close()
         except Exception:

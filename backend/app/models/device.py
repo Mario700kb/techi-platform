@@ -1,6 +1,6 @@
 from datetime import timedelta
 from enum import Enum
-from sqlalchemy import JSON, Boolean, Column, DateTime, Enum as SQLEnum, Float, ForeignKey, Integer, String, Text, event, text
+from sqlalchemy import JSON, Boolean, Column, DateTime, Enum as SQLEnum, Float, ForeignKey, Integer, String, Text, and_, event, func, not_, or_, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm.base import NO_VALUE
 
@@ -181,7 +181,7 @@ class Device(Base):
 
     @property
     def freshness_state(self):
-        return freshness_for(self.last_seen)
+        return freshness_for(self.last_seen, self.status, self.offline_reason)
 
 
 @event.listens_for(Device.client_id, "set", active_history=True)
@@ -193,12 +193,46 @@ def _leave_location_with_the_client(target, value, oldvalue, _initiator):
         target.location_source = None
 
 
-def freshness_for(last_seen) -> str:
+ONLINE_WINDOW = timedelta(minutes=6)
+STALE_WINDOW = timedelta(minutes=25)
+
+# Offline the platform knows of rather than infers: the agent said it was
+# shutting down or going to sleep, or its live connection dropped and did not
+# come back. Shown as offline at once, everywhere, instead of the device
+# ageing through "online" and "stale" for up to 25 minutes. A heartbeat clears
+# it (mark_online_from_heartbeat resets offline_reason).
+EXPLICIT_OFFLINE_REASONS = ("shutdown", "sleep", "connection_lost")
+
+
+def _is_status(value, status) -> bool:
+    return getattr(value, "value", value) == status.value
+
+
+def freshness_for(last_seen, status=None, offline_reason=None) -> str:
+    if _is_status(status, DeviceStatus.OFFLINE) and offline_reason in EXPLICIT_OFFLINE_REASONS:
+        return DeviceFreshnessState.OFFLINE.value
     if not last_seen:
         return DeviceFreshnessState.OFFLINE.value
     age = ensure_utc(utcnow()) - ensure_utc(last_seen)
-    if age <= timedelta(minutes=6):
+    if age <= ONLINE_WINDOW:
         return DeviceFreshnessState.ONLINE.value
-    if age <= timedelta(minutes=25):
+    if age <= STALE_WINDOW:
         return DeviceFreshnessState.STALE.value
     return DeviceFreshnessState.OFFLINE.value
+
+
+def freshness_conditions(now):
+    """SQL conditions for online, stale and offline — the same rules as
+    freshness_for, so lists, filters and counts never disagree with a
+    device's own state. coalesce keeps a NULL offline_reason from turning
+    NOT(...) into NULL, which would drop the device from every bucket."""
+    explicit = and_(
+        Device.status == DeviceStatus.OFFLINE,
+        func.coalesce(Device.offline_reason, "").in_(EXPLICIT_OFFLINE_REASONS),
+    )
+    online_cutoff = now - ONLINE_WINDOW
+    stale_cutoff = now - STALE_WINDOW
+    online = and_(Device.last_seen >= online_cutoff, not_(explicit))
+    stale = and_(Device.last_seen >= stale_cutoff, Device.last_seen < online_cutoff, not_(explicit))
+    offline = or_(Device.last_seen.is_(None), Device.last_seen < stale_cutoff, explicit)
+    return online, stale, offline

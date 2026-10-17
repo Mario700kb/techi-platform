@@ -67,14 +67,42 @@ class DeviceStatusService:
             _get_alert_engine(self.db).resolve_device_offline(device)
         return device
 
+    def mark_online_from_channel(self, device: Device) -> Device:
+        """The agent opened its live command channel, so it is running now:
+        online at once, without waiting for its next heartbeat."""
+        device.last_seen = utcnow()
+        self.db.add(device)
+        self.db.commit()
+        self.db.refresh(device)
+        return self.mark_online_from_heartbeat(device, reason="agent_channel_connected")
+
+    def mark_offline_connection_lost(self, device: Device, disconnected_at: datetime) -> bool:
+        """The live channel dropped and did not come back within the grace
+        period. Offline unless a heartbeat arrived after the drop (the
+        channel can fail while plain HTTPS still works)."""
+        if device.status != DeviceStatus.ONLINE:
+            return False
+        if device.last_seen is not None and ensure_utc(device.last_seen) > ensure_utc(disconnected_at):
+            return False
+        device.offline_reason = "connection_lost"
+        device.offline_confidence = "medium"
+        self._transition_offline(device, "agent_channel_lost")
+        return True
+
     def reconcile_stale_devices(self, *, now: Optional[datetime] = None, batch_size: Optional[int] = None) -> int:
         now = ensure_utc(now or utcnow())
         timeout = settings.HEARTBEAT_TIMEOUT_SECONDS
         cutoff = now - timedelta(seconds=timeout)
         stale_devices = self.device_repo.get_online_stale(cutoff, limit=batch_size or settings.RECONCILIATION_BATCH_SIZE)
 
+        from app.websocket.agent_channel import agent_command_channel
+
         transitioned = 0
         for device in stale_devices:
+            # An open live channel means the agent is running even if a
+            # heartbeat is late; it goes offline when the channel drops.
+            if agent_command_channel.is_connected(device.id):
+                continue
             computed_status = self.calculate_status(last_seen=device.last_seen, now=now, timeout_seconds=timeout)
             if computed_status != DeviceStatus.OFFLINE or device.status == DeviceStatus.OFFLINE:
                 continue

@@ -131,3 +131,32 @@ describe("useDeviceLive", () => {
     expect(screen.getByText("38%")).toBeInTheDocument();
   });
 });
+
+describe("DeviceLivePanel without a stream", () => {
+  const idle = { state: "agent_offline" as const, snapshot: null, receivedAt: null, intervalSeconds: 3 };
+  const heartbeat = {
+    cpu_percent: 41,
+    ram_percent: 63,
+    disk_percent: 72,
+    uptime_seconds: 7200,
+    current_user: "TECHI\\laura",
+    at: new Date(Date.now() - 4 * 60_000).toISOString(),
+  };
+
+  it("shows the last heartbeat's values in the same place, labelled with their age", () => {
+    render(<DeviceLivePanel live={idle} fallback={heartbeat} />);
+    expect(screen.getByText("Latest")).toBeInTheDocument();
+    expect(screen.getByText(/From the last heartbeat · 4m ago/)).toBeInTheDocument();
+    expect(screen.getByText("41%")).toBeInTheDocument();
+    expect(screen.getByText("72% used")).toBeInTheDocument();
+    expect(screen.getByText("laura")).toBeInTheDocument();
+    // A heartbeat carries no network rate: no empty tile for it.
+    expect(screen.queryByText("Network")).toBeNull();
+  });
+
+  it("says when a device has no live view at all", () => {
+    render(<DeviceLivePanel live={idle} fallback={heartbeat} liveCapable={false} />);
+    expect(screen.getByText("Live view not available for this device")).toBeInTheDocument();
+    expect(screen.getByText("41%")).toBeInTheDocument();
+  });
+});

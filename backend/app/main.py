@@ -210,6 +210,10 @@ async def lifespan(app: FastAPI):
         warm_db.close()
 
     yield
+    # Channels close with the process; none of that means a device went offline.
+    from app.websocket.agent_channel_routes import cancel_presence_checks
+
+    cancel_presence_checks()
 
     for task in (cleanup_task, location_sweep_task):
         task.cancel()

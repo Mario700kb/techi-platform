@@ -21,7 +21,8 @@ from app.core.scope import AllowedScope
 from app.core.time import utcnow
 from app.models.client_location import ClientLocation
 from app.models.device import Device
-from app.repositories.device_repository import ONLINE_WINDOW, DeviceRepository
+from app.models.device import ONLINE_WINDOW
+from app.repositories.device_repository import DeviceRepository
 from app.schemas.client_location import (
     LocationApplyResult,
     LocationList,
