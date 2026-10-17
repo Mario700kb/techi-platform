@@ -62,12 +62,15 @@ export default function AppShell({ children }: AppShellProps) {
       style={{ background: "var(--th-bg-shell)", color: "var(--th-text-primary)" }}
     >
       <div className="h-full">
+        {/* One row exactly the screen's height. Without it the row grew to the
+            sidebar's natural height (~790px), so on a shorter laptop screen the
+            whole page ran past the bottom edge and its last ~25px were cut off. */}
         <div
-          className="grid h-full min-w-0 grid-cols-1 overflow-hidden md:grid-cols-[auto_minmax(0,1fr)]"
+          className="grid h-full min-w-0 grid-cols-1 grid-rows-[minmax(0,1fr)] overflow-hidden md:grid-cols-[auto_minmax(0,1fr)]"
           style={{ background: "var(--th-bg-surface)" }}
         >
           {/* Desktop sidebar — unchanged */}
-          <div className="hidden min-w-0 md:block">
+          <div className="hidden min-h-0 min-w-0 md:block">
             <Sidebar collapsed={sidebarCollapsed} onCollapsedChange={handleSidebarCollapsedChange} />
           </div>
           <div className="flex h-full min-w-0 flex-col overflow-hidden">

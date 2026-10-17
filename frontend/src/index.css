@@ -4056,6 +4056,24 @@ a.th-kpi:hover {
   max-height: min(640px, 70vh);
 }
 
+/* A list page that fits the screen on desktop: the page is exactly the
+   viewport and the table takes whatever the header and stats leave, its rows
+   scrolling under the sticky head — no fixed 640px box with empty screen
+   below it on a large monitor. Phones keep the normal page scroll. */
+@media (min-width: 768px) {
+  .th-page-fill {
+    height: 100%;
+    min-height: 0;
+  }
+  .th-page-fill > .th-alerts-card {
+    flex: 1 1 auto;
+    min-height: 320px;
+  }
+  .th-page-fill .th-onb-tokens .th-alerts-scroll {
+    max-height: none;
+  }
+}
+
 .th-status-chip {
   display: inline-flex;
   align-items: center;

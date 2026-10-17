@@ -426,7 +426,7 @@ export default function Clients() {
   ];
 
   return (
-    <section className="premium-page th-onb flex flex-col gap-4">
+    <section className="premium-page th-onb th-page-fill flex flex-col gap-4">
       <PageHeader
         title="Clients"
         description="Customer records and the groups that device assignment and enrollment tokens place devices into."
