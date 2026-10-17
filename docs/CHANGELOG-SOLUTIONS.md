@@ -5,6 +5,24 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-17] LOST-CLOSE-2026-10-17 — sessions end when the device says so (`1394670`)
+
+**Backend + frontend deployed 20:42 (Tirana), no migration.** The owner saw
+HV-PROD-01 "Live" after leaving Remote Support. RustDesk reported both his
+connections closed (20:27, 20:28), but a connection from 14:41 whose close
+report never arrived (sent during a platform restart) still counted as open,
+and a session ends only when its last connection closes (12 h limit). Now,
+when the verified agent's heartbeat says no Remote Support session runs,
+connections still open (older than 2 min) are closed as `lost` and the
+session ends at RustDesk's last report. Within 6 minutes of the deploy:
+HV-PROD-01's session ended (real length about 1 min), 5 lost connections on
+12, 781 and 924 closed; 2 left on 865 are older than 12 h and hold nothing.
+Activity: the live chip counts on screen, never wraps, matches the other
+chips; the page refreshes every 30 s while a session is open. Dump
+`/opt/backups/techi/pre-lost-close-20261017-204039.sql.gz`, rollback
+`techi-platform-{backend,frontend}:pre-lost-close-864156b`; guard, smoke
+passed, 0 errors. Follow-up `ended_at` fix committed, not deployed.
+
 ## [2026-10-17] MSI-2.1.30-2026-10-17 — Endpoint MSI and Update Bridge at 2.1.30
 
 On the owner's word: the Endpoint Deployment MSI (`887163de…`, package
