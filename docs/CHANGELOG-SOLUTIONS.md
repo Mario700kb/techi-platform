@@ -5,6 +5,15 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-17] DISK-CLEANUP-2026-10-17 — rollback tags before 18:00 removed
+
+On the owner's choice ("te paren"): the 7 rollback tags of the 17 Oct deploys
+before 18:00 (PRESENCE, TELEMETRY-PIPELINE, LIVE-DEDUPE, PAGE-FILL,
+PAGE-FILL-2, PROFILE-FILL) removed and the build cache pruned to 1 GB; the
+18 tags of the deploys since 18:25 kept; database dumps untouched. Disk
+1.6 → 2.3 GB free (91%) — less than estimated: the images share most layers.
+The lasting fix is a larger Linode disk.
+
 ## [2026-10-17] HEADER-SWITCH-2026-10-17 — device header by category; slim switches in tables (`ceb6d9e`, `622a6a4`)
 
 **Backend + frontend deployed 22:37 (Tirana), no migration.** The drawer
