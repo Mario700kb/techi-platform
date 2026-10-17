@@ -5,6 +5,18 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-17] PAGE-FILL-2-2026-10-17 — Audit, Operators, Teams and Credential Vault tables fill the screen (`04a1c62`, `12afe5b`)
+
+**Frontend deployed.** The same `.th-page-fill` layout as Clients: each table
+ends at the window bottom (measured 20px above it at 2560×1265 and 1366×768)
+with its pagination in view. Left capped at 640px on purpose: Agent Packages,
+Deployment and Enrollment (tabs inside Onboarding) and Reports, which carry
+400–950px of forms above the table, where filling would shrink the table.
+
+Rollback `techi-platform-frontend:pre-fill-pages-c7af232`; guard and smoke
+passed; the five page chunks served carry the class. Vitest 253,
+Playwright 161.
+
 ## [2026-10-17] PAGE-FILL-2026-10-17 — Clients table fills the screen; app shell fits short screens (`c7af232`)
 
 **Frontend deployed.** On a 2560×1265 monitor the Clients table stopped at a
