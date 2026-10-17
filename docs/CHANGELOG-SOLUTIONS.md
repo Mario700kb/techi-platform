@@ -5,6 +5,15 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-17] AGENT-2.1.30-PILOT-2026-10-17 — console command reporting on 781 and 924
+
+On the owner's word ("jam dakord per 2.1.30"): 2.1.30 (`fda15de7…`, package
+`94a80325…`, CI 39052485808) is the active Windows `agent_binary`;
+self_update sent to HV-PROD-01 (781) and Mario-Lenovo (924) only — both on
+2.1.30 within ~120 s. Their PowerShell console now lists every command with
+its result ("This session", failed count). The rest of the fleet stays where
+it is until the next step.
+
 ## [2026-10-17] PS-CONSOLE-2026-10-17 — enterprise PowerShell console, saved scripts (`28929be`, `e74ab15`, `818fa20`)
 
 **Backend + database deployed 19:16, frontend 19:41 (Tirana); migration
