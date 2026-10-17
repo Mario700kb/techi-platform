@@ -5,6 +5,17 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-17] ENDED-AT-2026-10-17 — a late-noticed end keeps the real length (`689bca0`)
+
+**Backend deployed 20:54 (Tirana), no migration.** A lost close is written at
+the heartbeat that notices it; the activity log measured to that moment
+(HV-PROD-01 would have read about 19 min). The remote session end now records
+`ended_at`; activity uses it, or the recorded minutes for an end written
+before this change. Checked live: HV-PROD-01's 20:27 Connect and session show
+1 min. Dump `/opt/backups/techi/pre-ended-at-20261017-205336.sql.gz`,
+rollback `techi-platform-backend:pre-ended-at-1394670`; guard, smoke passed,
+0 errors. Disk 1.5 GB free (94%).
+
 ## [2026-10-17] LOST-CLOSE-2026-10-17 — sessions end when the device says so (`1394670`)
 
 **Backend + frontend deployed 20:42 (Tirana), no migration.** The owner saw
