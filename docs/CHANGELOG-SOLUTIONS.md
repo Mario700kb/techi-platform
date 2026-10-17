@@ -5,6 +5,17 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-17] JOINED-2026-10-17 — a click into an open session joins it (`fa33489`)
+
+**Backend + frontend deployed 21:23 (Tirana), no migration.** A second
+Connect click while a Remote Support session runs opens another RustDesk
+connection, not a new session, and read "No session". It now carries that
+session's length, marked "Joined the open session". Checked live: HV-PROD-01
+20:27:34 shows joined, 1 min; 738 20:27:31 stays "No session". Dump
+`/opt/backups/techi/pre-joined-20261017-212130.sql.gz`, rollback
+`techi-platform-{backend,frontend}:pre-joined-35ab645`; guard, smoke passed,
+0 errors. Disk 2.1 GB free (91%).
+
 ## [2026-10-17] SESSION-ROWS-2026-10-17 — one activity row per session; disk cleanup (`35ab645`)
 
 **Cleanup 21:08, backend + frontend deployed 21:11 (Tirana), no migration.**
