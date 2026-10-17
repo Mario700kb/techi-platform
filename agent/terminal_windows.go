@@ -77,13 +77,17 @@ type pseudoConsole struct {
 //
 // The pseudo console forwards title changes as an OSC 0 sequence, which the
 // operator's terminal reads as the title and never draws. History id 0 means
-// no command yet. Commands are cut to 400 characters.
-const powershellInit = `$global:__techiLast = 0
+// no command yet; a new id is a finished command (ids need not start at 1).
+// Commands are cut to 400 characters.
+const powershellInit = `$global:__techiLast = -1
 function global:prompt {
   $ok = $?
   $id = 0; $fail = 0; $ms = 0; $b64 = ''
   $h = Get-History -Count 1
-  if ($h -and $h.Id -ne $global:__techiLast) {
+  if ($global:__techiLast -lt 0) {
+    # First prompt: what history holds now is this start-up script itself.
+    $global:__techiLast = if ($h) { $h.Id } else { 0 }
+  } elseif ($h -and $h.Id -ne $global:__techiLast) {
     $global:__techiLast = $h.Id
     $id = $h.Id
     if (-not $ok) { $fail = 1 }

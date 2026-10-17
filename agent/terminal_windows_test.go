@@ -59,9 +59,15 @@ func TestPowerShellRunsInAPseudoConsole(t *testing.T) {
 	// The TECHI prompt reports each command in the window title, which the
 	// pseudo console forwards as OSC 0/2: techi;<ps>;<id>;<failed>;<ms>;<b64>.
 	marker := regexp.MustCompile("\x1b\\](?:0|2);techi;([^;\x07\x1b]*);(\\d+);(\\d+);(\\d+);([A-Za-z0-9+/=]*)(?:\x07|\x1b\\\\)")
-	command := func(id string) (failed string, cmd string, found bool) {
+	// command(n) is the n-th command the console reported (1-based), in order.
+	command := func(n int) (failed string, cmd string, found bool) {
+		seenIDs := []string{}
 		for _, m := range marker.FindAllStringSubmatch(seen.String(), -1) {
-			if m[2] == id {
+			if m[2] == "0" || (len(seenIDs) > 0 && seenIDs[len(seenIDs)-1] == m[2]) {
+				continue
+			}
+			seenIDs = append(seenIDs, m[2])
+			if len(seenIDs) == n {
 				decoded, _ := base64.StdEncoding.DecodeString(m[5])
 				return m[3], string(decoded), true
 			}
@@ -75,16 +81,16 @@ func TestPowerShellRunsInAPseudoConsole(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor("the command output", func(s string) bool { return strings.Contains(s, "techi-console-ok") })
-	waitFor("the first command's marker", func(string) bool { _, _, f := command("1"); return f })
-	if failed, cmd, _ := command("1"); failed != "0" || cmd != ok {
+	waitFor("the first command's marker", func(string) bool { _, _, f := command(1); return f })
+	if failed, cmd, _ := command(1); failed != "0" || cmd != ok {
 		t.Fatalf("marker for command 1: failed=%s cmd=%q", failed, cmd)
 	}
 
 	if _, err := pc.input.Write([]byte("Get-Item C:\\techi-no-such-path\r")); err != nil {
 		t.Fatal(err)
 	}
-	waitFor("the failing command's marker", func(string) bool { _, _, f := command("2"); return f })
-	if failed, _, _ := command("2"); failed != "1" {
+	waitFor("the failing command's marker", func(string) bool { _, _, f := command(2); return f })
+	if failed, _, _ := command(2); failed != "1" {
 		t.Fatalf("a failing command must be reported as failed, got %s", failed)
 	}
 	// The prompt colour is drawn, not printed as text.
