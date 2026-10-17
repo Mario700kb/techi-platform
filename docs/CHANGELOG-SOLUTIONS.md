@@ -5,6 +5,29 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-17] AGENT-2.1.28-PILOT-2026-10-17 — pending updates count only real patches (`7e672e4`)
+
+The owner saw "1 patch pending" on Mario-Lenovo that Windows Update on the PC
+never listed. Its update history shows Microsoft Defender security-intelligence
+updates (KB2267602) 3-4 times a day, each installing itself within minutes;
+the agent's search (IsInstalled=0 and IsHidden=0) counted those, drivers and
+optional/preview updates, and refreshes hourly. 650 of 929 devices reported
+pending updates.
+
+Agent 2.1.28 counts software updates that are not BrowseOnly and not in
+Definition Updates (category ID e0789628-…; BrowseOnly cannot be a search
+criterion, 0x80240032). Read-only checks before release: HV-PROD-01 5 -> 3
+(Security Update KB5126646, .NET security update, MSRT kept), Klevi 4 -> 0
+(Defender and three drivers dropped). Also: the live view's first frame has a
+CPU value, rounded to one decimal.
+
+CI run 39030112494 (MSI lifecycle checks and Windows tests passed). Uploaded
+and made the active Windows `agent_binary` 14:14 (package `1ed8aef6…`, sha256
+`edfab813…`; 2.1.27 kept); Endpoint and bridge MSI stay at 2.1.26. Pilot:
+Techi-Server (12) and HV-PROD-01 (781) on 2.1.28 at 14:24, counts 0 and 3
+after a refresh. Mario-Lenovo (924) went offline at 14:05 (no reason
+recorded) before its update was delivered; to be re-sent when it is back.
+
 ## [2026-10-17] PROFILE-FILL-2026-10-17 — client profile devices and alerts lists fill the screen (`82e9105`)
 
 **Frontend deployed.** On screens at least 820px tall the profile's Devices
