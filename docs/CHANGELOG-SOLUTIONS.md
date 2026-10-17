@@ -5,6 +5,20 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-17] PROFILE-FILL-2026-10-17 — client profile devices and alerts lists fill the screen (`82e9105`)
+
+**Frontend deployed.** On screens at least 820px tall the profile's Devices
+and Alerts tabs fill the screen like the other list pages (list scrolls
+inside, header pinned at the table top, pagination in view). Shorter screens
+keep the list growing with the page: the profile's header is ~410px, which on
+a 1366×768 laptop would leave ~260px for the list. On every fill page only the
+list gives way now; the client card had shrunk to a sliver at 1440×900.
+
+Rollback `techi-platform-frontend:pre-profile-fill-12afe5b`; guard and smoke
+passed; the served profile chunk and CSS carry the change. Disk 89% (2.6 GB
+free); rollback tags from today's frontend deploys add up. Vitest 253,
+Playwright 164.
+
 ## [2026-10-17] PAGE-FILL-2-2026-10-17 — Audit, Operators, Teams and Credential Vault tables fill the screen (`04a1c62`, `12afe5b`)
 
 **Frontend deployed.** The same `.th-page-fill` layout as Clients: each table
