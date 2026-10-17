@@ -5,6 +5,20 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-17] LIVE-DEDUPE-2026-10-17 — one history entry per live action; live panel on the Linux drawer (`be44b79`)
+
+**Frontend deployed (no backend or database change).** The owner queued one
+restart and the history showed it twice (one Completed, one stuck on Sent);
+only one action existed (#2584). Over the live channel the realtime events
+reach the page before the POST returns, so the event merge and the POST answer
+each added it. `addQueuedAction` adds it once, keeping the furthest status; a
+Playwright spec reproduces the race and fails on the previous code. The
+generic drawer (devices with capabilities, e.g. Linux) gets the Live panel,
+and its action toast says "sent live" or "queued for the next heartbeat".
+
+Rollback `techi-platform-frontend:pre-live-dedupe-29f618c`; guard and smoke
+passed; the served bundle carries the new strings. Vitest 253, Playwright 155.
+
 ## [2026-10-16] LIVE-STATUS-2026-10-16 — instant actions show every status step (`29f618c`)
 
 **Backend + frontend deployed 23:53 (Tirana), no migration.** The owner
