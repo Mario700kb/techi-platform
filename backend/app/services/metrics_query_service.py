@@ -447,6 +447,8 @@ class MetricsQueryService:
             trends = disk_trends(self.db, device.id) if device.id in agent_ids else []
             worst_disk = max(trends, key=lambda d: d.used_pct, default=None)
             for disk in trends:
+                if disk.used_pct >= 90:
+                    continue  # full now: counted below, not as a forecast
                 if disk.days_to_90 is not None and disk.days_to_90 < 30:
                     disks_at_risk += 1 if disk.days_to_90 < 14 else 0
                     attention.append(AttentionItem(
@@ -480,6 +482,20 @@ class MetricsQueryService:
             cpu_peaks = [v["cpu_max"] for v in ordered if v["cpu_max"] is not None]
             mem_peaks = [v["mem_max"] for v in ordered if v["mem_max"] is not None]
             disk_peaks = [v["disk_max"] for v in ordered if v["disk_max"] is not None]
+            # A disk already at 90% or more is at risk now, whether or not it
+            # still grows; older agents report one figure, read at the last hour.
+            full_now = [(d.mount, d.used_pct) for d in trends if d.used_pct >= 90]
+            if not trends and ordered and ordered[-1]["disk_max"] is not None and ordered[-1]["disk_max"] >= 90:
+                full_now = [(None, ordered[-1]["disk_max"])]
+            for mount, pct in full_now:
+                disks_at_risk += 1
+                label = f"{mount} " if mount else "disk "
+                attention.append(AttentionItem(
+                    device_id=device.id, name=name, kind="disk_forecast",
+                    severity="critical" if pct >= 95 else "warning",
+                    title=f"{name} · {label}{pct:.0f}% full",
+                    detail=f"{100 - pct:.0f}% free now" + (" — the system disk." if not mount or mount.upper().startswith("C") else "."),
+                ))
             rows_out.append(ClientDeviceRow(
                 device_id=device.id, name=name, kind=classify_category(device),
                 agent_version=device.agent_version, spark=spark,

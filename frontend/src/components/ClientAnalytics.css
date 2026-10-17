@@ -220,7 +220,6 @@ html.light {
   text-align: left;
   border: 1px solid var(--th-border-subtle);
   background: var(--th-bg-card-soft);
-  box-shadow: inset 3px 0 0 var(--tone);
   transition:
     background-color 150ms var(--th-ease),
     border-color 150ms var(--th-ease);

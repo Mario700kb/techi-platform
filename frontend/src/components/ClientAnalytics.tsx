@@ -1116,7 +1116,7 @@ function Figures({
     {
       label: "Disks at risk",
       value: formatCount(data.disks_at_risk),
-      hint: data.disks_at_risk && firstDisk ? firstDisk.title : "None reaching 90% within 14 days",
+      hint: data.disks_at_risk && firstDisk ? firstDisk.title : "None at or reaching 90% within 14 days",
       icon: HardDrive,
       tone: data.disks_at_risk ? TONE.critical : TONE.online,
     },

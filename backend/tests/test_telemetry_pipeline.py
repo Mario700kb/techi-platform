@@ -363,3 +363,19 @@ def test_a_device_type_policy_takes_a_category_and_the_old_values():
 
     assert device_category_value("server") == "servers" and device_category_value("client") == "clientpc"
     assert device_category_value("hypervisors") == "hypervisors"
+
+
+def test_a_disk_already_full_is_at_risk_whether_or_not_it_grows(db):
+    """TECHI shpk: Techi-Server C: at 96% (steady) and Sabina-PC at 91%
+    (older agent) showed "Disks at risk 0"."""
+    start = utcnow_naive().replace(minute=0, second=0, microsecond=0) - timedelta(hours=2)
+    full = [{"mount": "C:", "used_pct": 96.0, "free_gb": 9.5, "total_gb": 238.0}]
+    _ingest(db, _minutes(start, 90, disks=full))
+    for i in range(6):
+        db.add(DeviceTelemetry(device_id=600, cpu_percent=20, ram_percent=50, disk_percent=91,
+                               created_at=utcnow_naive() - timedelta(minutes=10 * i)))
+    db.commit()
+    view = MetricsQueryService(db).client_monitoring(db.query(Device).all(), "7d")
+    assert view.disks_at_risk == 2
+    titles = {a.title: a.severity for a in view.attention if a.kind == "disk_forecast"}
+    assert titles == {"Mario-Lenovo · C: 96% full": "critical", "Rudi-PC · disk 91% full": "warning"}
