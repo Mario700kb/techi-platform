@@ -103,7 +103,7 @@ test("a client's device connects from its row and opens the drawer in place", as
   await expect(page.locator("tr.th-cp-row", { hasText: "BH-WH-SCANNER" })).toBeVisible();
 });
 
-test("a long device list keeps its header pinned under the top bar", async ({ page }) => {
+test("a long device list fits the screen and keeps its header pinned while it scrolls", async ({ page }) => {
   test.skip(test.info().project.name !== "desktop", "phones show cards without a header");
   await northwindProfile(page);
   const many = Array.from({ length: 40 }, (_, i) => ({
@@ -116,14 +116,20 @@ test("a long device list keeps its header pinned under the top bar", async ({ pa
   await page.getByRole("tab", { name: /Devices/ }).click();
   await expect(page.locator("tr.th-cp-row")).toHaveCount(40);
 
-  // One scroll: the list grows with the page, not inside its own box.
-  const wrapper = page.locator(".th-cp-scroll");
-  expect(await wrapper.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeLessThan(2);
-
+  // Like the other list pages: the page itself does not scroll, the list
+  // scrolls inside the space the screen leaves it, pagination in view.
   const main = page.locator(".th-main");
-  const top = (await main.boundingBox())!.y;
+  expect(await main.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeLessThan(2);
+  await expect(page.getByRole("tabpanel").locator("nav.th-pagination")).toBeInViewport();
+  // The client's header card keeps its full height (it once shrank to a sliver).
+  const hero = (await page.locator(".th-team-hero").boundingBox())!;
+  expect(hero.height).toBeGreaterThan(60);
+
+  const wrapper = page.locator(".th-cp-scroll");
+  expect(await wrapper.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeGreaterThan(100);
+  const top = (await wrapper.boundingBox())!.y;
   for (const fraction of [0.5, 1]) {
-    await main.evaluate((el, f) => el.scrollTo({ top: (el.scrollHeight - el.clientHeight) * f }), fraction);
+    await wrapper.evaluate((el, f) => el.scrollTo({ top: (el.scrollHeight - el.clientHeight) * f }), fraction);
     const head = (await wrapper.locator("thead th").first().boundingBox())!;
     expect(Math.abs(head.y - top)).toBeLessThan(2);
   }

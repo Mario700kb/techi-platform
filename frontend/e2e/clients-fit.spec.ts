@@ -1,3 +1,4 @@
+import { northwindProfile } from "./profileMocks";
 import { expect, test } from "./test";
 
 test.use({ reducedMotion: "reduce" });
@@ -82,6 +83,57 @@ test("on a laptop the audit page still reaches its pagination", async ({ page },
   await page.route("**/api/v1/audit?**", (route) => route.fulfill({ json: EVENTS }));
   await page.goto("/audit");
   const pagination = page.getByText(/Showing 1–\d+ of 8,729 events/);
+  await pagination.scrollIntoViewIfNeeded();
+  await expect(pagination).toBeInViewport();
+});
+
+// A client's profile: the devices and alerts tabs fill the screen the same
+// way; the overview keeps the normal page scroll.
+for (const screen of [
+  { name: "large monitor", width: 2560, height: 1265 },
+  { name: "full HD", width: 1920, height: 1080 },
+]) {
+  test(`the client profile lists fit a ${screen.name} (${screen.width}×${screen.height})`, async ({
+    page,
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== "desktop", "phones keep the page scroll");
+    await page.setViewportSize({ width: screen.width, height: screen.height });
+    await northwindProfile(page);
+    await page.goto("/clients/1");
+    for (const tab of [/Devices/, /Alerts/]) {
+      await page.getByRole("tab", { name: tab }).first().click();
+      const panel = page.getByRole("tabpanel");
+      await expect(panel.locator(".th-alerts-card")).toBeVisible();
+      // Devices pages its list; its pagination stays on screen.
+      if (tab.source === "Devices") await expect(panel.locator("nav.th-pagination")).toBeInViewport();
+      const box = await panel.boundingBox();
+      const gap = screen.height - (box!.y + box!.height);
+      expect(gap, "the list ends near the bottom of the window").toBeLessThan(40);
+      expect(gap).toBeGreaterThanOrEqual(0);
+    }
+    await page
+      .getByRole("tab", { name: /Overview/ })
+      .first()
+      .click();
+    await expect(page.locator("section.premium-page")).not.toHaveClass(/th-page-fill/);
+  });
+}
+
+// On a 768px-tall laptop the profile's header leaves too little for a list
+// box, so the list grows with the page as before: the header card keeps its
+// height and the pagination is reached by scrolling the page.
+test("on a laptop the client profile list grows with the page", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "phones keep the page scroll");
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await northwindProfile(page);
+  await page.goto("/clients/1");
+  await page
+    .getByRole("tab", { name: /Devices/ })
+    .first()
+    .click();
+  const hero = (await page.locator(".th-team-hero").boundingBox())!;
+  expect(hero.height).toBeGreaterThan(60);
+  const pagination = page.getByRole("tabpanel").locator("nav.th-pagination");
   await pagination.scrollIntoViewIfNeeded();
   await expect(pagination).toBeInViewport();
 });

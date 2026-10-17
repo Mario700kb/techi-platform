@@ -410,8 +410,15 @@ export default function ClientProfilePage() {
     },
   ];
 
+  // The device and alert lists fill the screen like the other list pages:
+  // the table takes what the header leaves and scrolls inside. The other tabs
+  // (overview, locations, charts, documents) keep the normal page scroll.
+  const fillsScreen = tab === "devices" || tab === "alerts";
+
   return (
-    <section className="premium-page th-onb space-y-4">
+    <section
+      className={fillsScreen ? "premium-page th-onb th-page-fill flex flex-col gap-4" : "premium-page th-onb space-y-4"}
+    >
       {/* ── identity ──────────────────────────────────────────────────── */}
       <div className="th-onb-card th-team-hero th-onb-enter" style={{ "--team": "var(--th-accent)" } as CSSProperties}>
         <div className="flex flex-wrap items-center gap-4 px-5 py-4">
@@ -551,7 +558,7 @@ export default function ClientProfilePage() {
         </div>
       </div>
 
-      <div role="tabpanel" key={tab} className="th-onb-panel">
+      <div role="tabpanel" key={tab} className={fillsScreen ? "th-onb-panel th-cp-fill" : "th-onb-panel"}>
         {tab === "overview" && (
           <OverviewTab
             profile={profile}

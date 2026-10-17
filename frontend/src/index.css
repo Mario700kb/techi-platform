@@ -4065,6 +4065,11 @@ a.th-kpi:hover {
     height: 100%;
     min-height: 0;
   }
+  /* Only the list gives way: headers, stats and filters keep their height
+     (a card that clips its content would otherwise shrink to a sliver). */
+  .th-page-fill > * {
+    flex-shrink: 0;
+  }
   .th-page-fill > .th-alerts-card {
     flex: 1 1 auto;
     min-height: 320px;
@@ -6809,6 +6814,29 @@ button.th-client-group:hover {
   }
   .th-alerts-table.th-cp-devices[data-mobile="cards"] tbody td:last-child {
     margin-left: auto;
+  }
+}
+/* Client profile, devices and alerts tabs, on screens tall enough for it: the
+   tab panel takes the rest of the page and its table scrolls inside, header
+   pinned at the top of the table. The profile's header (client card, stats,
+   tabs) is ~410px, so on shorter screens the list would get two rows: there
+   it keeps growing with the page, header pinned under the top bar. */
+@media (min-width: 768px) and (min-height: 820px) {
+  .th-page-fill > .th-onb-panel.th-cp-fill {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 320px;
+  }
+  .th-cp-fill > .th-alerts-card {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  .th-cp-fill .th-alerts-scroll.th-cp-scroll {
+    overflow: auto;
+  }
+  .th-cp-fill .th-cp-scroll thead th {
+    top: 0;
   }
 }
 /* Long lists on the profile (devices, alerts, activity) grow with the page and
