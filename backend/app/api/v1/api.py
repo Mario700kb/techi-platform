@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import actions, component_actions, connect, agent, agent_commands, agent_config, agent_packages, alerts, audit, auth, bootstrap, clients, deployments, devices, enrollment_bootstrap, enrollment_tokens, groups, health, notifications, reports, operator_scopes, system, install, operators, packages, platform, reenrollment, remote_support, terminal, teams, trusted_domains, vault, monitoring
+from app.api.v1.endpoints import actions, component_actions, connect, agent, agent_commands, agent_config, agent_packages, alerts, audit, auth, bootstrap, clients, deployments, devices, enrollment_bootstrap, enrollment_tokens, groups, health, notifications, reports, operator_scopes, system, install, operators, packages, platform, reenrollment, remote_support, terminal, teams, trusted_domains, vault, monitoring, console_scripts
 
 api_router = APIRouter()
 api_router.include_router(health.router, prefix="", tags=["health"])
@@ -36,3 +36,4 @@ api_router.include_router(notifications.router, prefix="/notifications", tags=["
 api_router.include_router(reports.router, prefix="/reports", tags=["reports"])
 api_router.include_router(system.router, prefix="/system", tags=["system"])
 api_router.include_router(monitoring.router, prefix="", tags=["monitoring"])
+api_router.include_router(console_scripts.router, prefix="", tags=["console"])

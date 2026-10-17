@@ -20,6 +20,8 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,6 +30,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf16"
 	"unsafe"
 
 	"github.com/gorilla/websocket"
@@ -64,6 +67,44 @@ type pseudoConsole struct {
 	thread  windows.Handle
 	job     windows.Handle
 	once    sync.Once
+}
+
+// powershellInit gives the console the TECHI prompt and reports every command
+// to the platform's console without printing anything: after each command
+// the prompt sets the window title to
+//
+//	techi;<PowerShell version>;<history id>;<failed 0|1>;<milliseconds>;<command, base64 UTF-8>
+//
+// The pseudo console forwards title changes as an OSC 0 sequence, which the
+// operator's terminal reads as the title and never draws. History id 0 means
+// no command yet. Commands are cut to 400 characters.
+const powershellInit = `$global:__techiLast = 0
+function global:prompt {
+  $ok = $?
+  $id = 0; $fail = 0; $ms = 0; $b64 = ''
+  $h = Get-History -Count 1
+  if ($h -and $h.Id -ne $global:__techiLast) {
+    $global:__techiLast = $h.Id
+    $id = $h.Id
+    if (-not $ok) { $fail = 1 }
+    $ms = [int]($h.EndExecutionTime - $h.StartExecutionTime).TotalMilliseconds
+    $cmd = $h.CommandLine
+    if ($cmd.Length -gt 400) { $cmd = $cmd.Substring(0, 400) }
+    $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($cmd))
+  }
+  $Host.UI.RawUI.WindowTitle = "techi;$($PSVersionTable.PSVersion);$id;$fail;$ms;$b64"
+  $e = [char]27
+  "$e[38;2;110;168;254mPS $($executionContext.SessionState.Path.CurrentLocation)>$e[0m "
+}`
+
+// powershellEncoded is the -EncodedCommand form: base64 of UTF-16LE.
+func powershellEncoded(script string) string {
+	units := utf16.Encode([]rune(script))
+	raw := make([]byte, len(units)*2)
+	for i, u := range units {
+		binary.LittleEndian.PutUint16(raw[i*2:], u)
+	}
+	return base64.StdEncoding.EncodeToString(raw)
 }
 
 func powershellPath() string {
@@ -117,7 +158,7 @@ func startPowerShell(cols, rows int16) (*pseudoConsole, error) {
 	// console's process in place of the pseudo console.
 	si.Flags = windows.STARTF_USESTDHANDLES
 
-	cmdline, _ := windows.UTF16PtrFromString(`"` + powershellPath() + `" -NoLogo -NoExit -ExecutionPolicy Bypass`)
+	cmdline, _ := windows.UTF16PtrFromString(`"` + powershellPath() + `" -NoLogo -NoExit -ExecutionPolicy Bypass -EncodedCommand ` + powershellEncoded(powershellInit))
 	cwd := os.Getenv("SystemDrive")
 	if cwd == "" {
 		cwd = "C:"

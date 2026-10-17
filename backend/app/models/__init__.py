@@ -31,6 +31,7 @@ from app.models.remote_support_connection import RemoteSupportConnection
 from app.models.team import Team, TeamClientAccess, TeamDeviceAccess, TeamGroupAccess, TeamMember
 from app.models.trusted_domain import TrustedDomain
 from app.models.terminal_session import TerminalSession
+from app.models.console_script import ConsoleScript
 from app.models.vault_credential import VaultCredential, VaultCredentialAssignment, VaultCredentialUsage
 
 __all__ = [
@@ -43,6 +44,7 @@ __all__ = [
     "AgentCommandBatch",
     "Client",
     "ClientDocument",
+    "ConsoleScript",
     "ClientLocation",
     "ClientLocationRule",
     "Device",

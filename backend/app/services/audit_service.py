@@ -83,6 +83,10 @@ class AuditAction:
     TERMINAL_SESSION_OPENED = "terminal_session_opened"
     TERMINAL_SESSION_DENIED = "terminal_session_denied"
     TERMINAL_RECORDING_VIEWED = "terminal_recording_viewed"
+    CONSOLE_SCRIPT_CREATED = "console_script_created"
+    CONSOLE_SCRIPT_UPDATED = "console_script_updated"
+    CONSOLE_SCRIPT_DELETED = "console_script_deleted"
+    CONSOLE_SCRIPT_RUN = "console_script_run"
     TERMINAL_SESSION_CLOSED = "terminal_session_closed"
     TERMINAL_SESSION_EXPIRED = "terminal_session_expired"
     # Embedded SSH Connect — same session/relay/watchdog stack as the Web
