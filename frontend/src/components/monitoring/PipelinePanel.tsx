@@ -28,24 +28,60 @@ export function pipelineStatus(health: PipelineHealth): { label: string; tone: s
   return { label: "Healthy", tone: "var(--th-status-online)" };
 }
 
-function Row({ label, value, hint }: { label: string; value: ReactNode; hint?: string }) {
+/** A tier's share of the stored total, "42%" ("<1%" for a sliver, "—" when unknown). */
+export function tierShare(bytes: number | null, total: number): string {
+  if (bytes == null || !total) return "—";
+  const pct = (bytes / total) * 100;
+  if (pct > 0 && pct < 1) return "<1%";
+  return `${Math.round(pct)}%`;
+}
+
+/** Storage tiers in one calm hue, finest data strongest: sequential, not an alarm. */
+const TIER_TONES = [
+  "var(--th-status-info)",
+  "color-mix(in srgb, var(--th-status-info) 66%, var(--th-bg-card))",
+  "color-mix(in srgb, var(--th-status-info) 40%, var(--th-bg-card))",
+];
+const tierTone = (index: number) => TIER_TONES[Math.min(index, TIER_TONES.length - 1)];
+
+/** One line of a panel; both panels share it so their rows line up side by side. */
+function Row({
+  label,
+  value,
+  hint,
+  lead,
+  sub,
+}: {
+  label: string;
+  value: ReactNode;
+  hint?: string;
+  lead?: ReactNode;
+  sub?: ReactNode;
+}) {
   return (
-    <li className="flex items-baseline justify-between gap-3">
-      <span className="min-w-0">
-        <span className="block text-[13px]" style={{ color: "var(--th-text-secondary)" }}>
-          {label}
+    <li className="th-mon-row">
+      <span className="flex min-w-0 items-center gap-2.5">
+        {lead}
+        <span className="min-w-0">
+          <span className="block truncate text-[13px]" style={{ color: "var(--th-text-secondary)" }}>
+            {label}
+          </span>
+          {hint && (
+            <span className="block truncate text-[11px]" style={{ color: "var(--th-text-faint)" }}>
+              {hint}
+            </span>
+          )}
         </span>
-        {hint && (
-          <span className="block text-[11px]" style={{ color: "var(--th-text-faint)" }}>
-            {hint}
+      </span>
+      <span className="flex-none text-right">
+        <span className="block text-[13px] font-semibold tabular-nums" style={{ color: "var(--th-text-primary)" }}>
+          {value}
+        </span>
+        {sub && (
+          <span className="block text-[11px] tabular-nums" style={{ color: "var(--th-text-faint)" }}>
+            {sub}
           </span>
         )}
-      </span>
-      <span
-        className="flex-none text-right text-[13px] font-semibold tabular-nums"
-        style={{ color: "var(--th-text-primary)" }}
-      >
-        {value}
       </span>
     </li>
   );
@@ -87,14 +123,14 @@ export default function PipelinePanel({
           subtitle="Refreshed every minute"
           aside={
             status && (
-              <span className="th-team-state" style={tone(status.tone)}>
+              <span className="th-mon-pill" style={tone(status.tone)}>
                 <i />
                 {status.label}
               </span>
             )
           }
         />
-        <div className="th-onb-body !gap-3">
+        <div className="th-onb-body !gap-3 flex-1">
           {error && !health && (
             <div className="th-onb-note" style={tone("var(--th-status-critical)")} role="alert">
               <Info className="h-4 w-4" />
@@ -103,7 +139,7 @@ export default function PipelinePanel({
           )}
           {!health && !error && <Skeleton rows={6} />}
           {health && (
-            <ul className="flex flex-col gap-3">
+            <ul className="th-mon-rows">
               <Row
                 label="Sending 1-minute data"
                 value={`${formatCount(health.devices_one_minute)} / ${formatCount(health.devices_online)}`}
@@ -133,42 +169,45 @@ export default function PipelinePanel({
       <section className="th-onb-card" aria-label="Storage">
         <CardHead
           icon={Database}
-          tone="var(--th-status-maint)"
+          tone="var(--th-status-info)"
           title="Storage"
           subtitle={health ? (anySize ? `${formatBytes(totalBytes)} in total` : "Size not reported") : "Loading…"}
         />
-        <div className="th-onb-body !gap-4">
-          {!health && <Skeleton rows={3} />}
+        <div className="th-onb-body !gap-3 flex-1">
+          {!health && <Skeleton rows={4} />}
           {health && (
-            <ul className="flex flex-col gap-4">
-              {health.storage.map((tier) => {
-                const share = totalBytes && tier.bytes ? (tier.bytes / totalBytes) * 100 : 0;
-                return (
-                  <li key={tier.name}>
-                    <div className="flex items-baseline justify-between gap-3 text-[13px]">
-                      <span className="font-medium" style={{ color: "var(--th-text-primary)" }}>
-                        {tier.name}
-                      </span>
-                      <span className="tabular-nums" style={{ color: "var(--th-text-muted)" }}>
-                        {tier.keep} · {formatBytes(tier.bytes)}
-                      </span>
-                    </div>
-                    <div
-                      className="mt-1.5 h-1.5 overflow-hidden rounded-full"
-                      style={{ background: "var(--th-ring-track)" }}
-                      role="presentation"
-                    >
-                      <div
-                        className="h-full rounded-full"
-                        style={{ width: `${Math.max(share, tier.bytes ? 2 : 0)}%`, background: "var(--th-accent)" }}
+            <>
+              <ul className="th-mon-rows">
+                {health.storage.map((tier, index) => (
+                  <Row
+                    key={tier.name}
+                    lead={<span className="th-mon-swatch" style={{ background: tierTone(index) }} aria-hidden />}
+                    label={tier.name}
+                    hint={`Kept ${tier.keep}`}
+                    value={formatBytes(tier.bytes)}
+                    sub={`${tierShare(tier.bytes, totalBytes)} of total`}
+                  />
+                ))}
+                <Row label="Total" value={anySize ? formatBytes(totalBytes) : "—"} hint="Across all tiers" />
+              </ul>
+              <div className="th-mon-stack" role="img" aria-label="Share of storage by tier">
+                {anySize ? (
+                  health.storage.map((tier, index) =>
+                    tier.bytes ? (
+                      <i
+                        key={tier.name}
+                        title={`${tier.name}: ${formatBytes(tier.bytes)} (${tierShare(tier.bytes, totalBytes)})`}
+                        style={{ flex: `${tier.bytes / totalBytes} 1 0`, background: tierTone(index) }}
                       />
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+                    ) : null,
+                  )
+                ) : (
+                  <i style={{ flex: "1 1 0", background: "var(--th-ring-track)" }} />
+                )}
+              </div>
+            </>
           )}
-          <p className="th-onb-hint">
+          <p className="th-onb-hint mt-auto">
             Raw samples, then 5-minute and hourly points with minimum, average and maximum. An expired day is dropped
             whole.
           </p>

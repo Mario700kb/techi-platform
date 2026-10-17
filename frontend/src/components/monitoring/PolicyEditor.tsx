@@ -1,16 +1,28 @@
-import type { CSSProperties, ReactNode } from "react";
-import { Activity, Gauge, Info, Plus, Trash2 } from "lucide-react";
+import { useState } from "react";
+import type { CSSProperties, KeyboardEvent, ReactNode } from "react";
+import {
+  Activity,
+  AlertTriangle,
+  Check,
+  CheckCircle2,
+  CornerDownRight,
+  Info,
+  Plus,
+  Trash2,
+  Upload,
+} from "lucide-react";
 
 import { formatDuration, METRIC_LABEL, METRIC_UNIT } from "../../api/monitoring";
 import type { MonitoringPolicy, MonitorMetric, MonitorSeverity } from "../../api/monitoring";
 import { Button, Select } from "../ui";
 import type { SelectOption } from "../ui";
 import { CardHead } from "../ui/PanelCard";
-import SaveFooter from "../ui/SaveFooter";
 import { formatLocalDateTime } from "../../utils/time";
 import ScopePicker from "./ScopePicker";
 import {
   changeMetric,
+  COVERAGE_TONE,
+  coverageWords,
   devicesWord,
   DraftProblems,
   LIMITS,
@@ -19,13 +31,13 @@ import {
   newMonitor,
   overriddenBy,
   PolicyDraft,
+  REPORTING_AGENT,
   ScopeNames,
   scopeWords,
   SERVER_METRICS,
   SEVERITIES,
   SEVERITY_LABEL,
   SEVERITY_TONE,
-  syncWords,
 } from "./policyForm";
 
 const tone = (value: string) => ({ "--onb-tone": value }) as CSSProperties;
@@ -42,11 +54,37 @@ const OP_OPTIONS: SelectOption<">" | "<">[] = [
 const SEVERITY_OPTIONS: SelectOption<MonitorSeverity>[] = SEVERITIES.map((s) => ({
   value: s,
   label: SEVERITY_LABEL[s],
+  icon: <span className="th-mon-dot" style={{ background: SEVERITY_TONE[s] }} aria-hidden />,
 }));
 
 const COMPACT = "!h-[34px] w-full";
-// Controls line up with the metric select when a row carries a second line.
-const TOP: CSSProperties = { verticalAlign: "top" };
+
+/**
+ * A policy's coverage in the same words everywhere: the claim about agents
+ * that report their version, then the older agents apart and muted.
+ */
+export function CoverageBadge({
+  policy,
+  variant = "inline",
+}: {
+  policy: MonitoringPolicy;
+  variant?: "inline" | "pill";
+}) {
+  const coverage = coverageWords(policy);
+  return (
+    <span className="th-mon-coverage" data-variant={variant}>
+      <span
+        className={variant === "pill" ? "th-mon-pill" : "th-team-state"}
+        style={tone(COVERAGE_TONE[coverage.tone])}
+        title={`Agents ${REPORTING_AGENT} and later report the policy version they run`}
+      >
+        <i />
+        <span className="truncate">{coverage.text}</span>
+      </span>
+      {coverage.older && <small>{coverage.older}</small>}
+    </span>
+  );
+}
 
 function Switch({
   checked,
@@ -84,7 +122,6 @@ function UnitInput({
   max,
   step,
   onChange,
-  wide = false,
 }: {
   value: string;
   unit: string;
@@ -95,10 +132,9 @@ function UnitInput({
   max?: number;
   step?: number;
   onChange: (value: string) => void;
-  wide?: boolean;
 }) {
   return (
-    <label className={`th-policy-input ${wide ? "!max-w-none" : ""}`} data-invalid={invalid || undefined}>
+    <label className="th-policy-input !max-w-none w-full" data-invalid={invalid || undefined}>
       <input
         type="number"
         inputMode="decimal"
@@ -121,19 +157,20 @@ function SeverityTag({ severity }: { severity: MonitorSeverity }) {
   return (
     <span className="th-team-state" style={tone(SEVERITY_TONE[severity])}>
       <i />
-      {SEVERITY_LABEL[severity]}
+      <span style={{ color: "var(--th-text-secondary)" }}>{SEVERITY_LABEL[severity]}</span>
     </span>
   );
 }
 
+/** Every section of the editor opens the same way: title and hint left, its one control right. */
 function SectionHead({ title, hint, aside }: { title: string; hint?: string; aside?: ReactNode }) {
   return (
-    <div className="flex items-end justify-between gap-3">
+    <div className="th-mon-section-head">
       <div className="min-w-0">
-        <h3 className="th-onb-label">{title}</h3>
-        {hint && <p className="th-onb-hint mt-1">{hint}</p>}
+        <h3>{title}</h3>
+        {hint && <p>{hint}</p>}
       </div>
-      {aside}
+      {aside && <div className="flex flex-none items-center gap-2">{aside}</div>}
     </div>
   );
 }
@@ -146,6 +183,81 @@ function conditionText(m: MonitorDraft): string {
 function durationText(m: MonitorDraft): string {
   if (m.metric === "disk_forecast_days") return "—";
   return formatDuration(Math.round(Number(m.durationMin) * 60));
+}
+
+/**
+ * The monitor's key as a small mono chip beside its metric. A click turns it
+ * into an input; an invalid key stays open until fixed. A key that replaces a
+ * broader policy's monitor carries a marker and says which.
+ */
+function KeyChip({
+  value,
+  n,
+  invalid,
+  overrides,
+  editable,
+  onChange,
+}: {
+  value: string;
+  n: number;
+  invalid: boolean;
+  overrides: string[];
+  editable: boolean;
+  onChange?: (value: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const replaces = overrides.length ? `Replaces ${overrides.join(", ")}` : undefined;
+  const title = replaces ? `Key ${value} · ${replaces}` : `Key ${value}`;
+
+  if (editable && (editing || invalid)) {
+    return (
+      <input
+        className="th-mon-key"
+        value={value}
+        maxLength={32}
+        autoFocus={editing}
+        spellCheck={false}
+        aria-label={`Monitor ${n} key`}
+        aria-invalid={invalid || undefined}
+        data-invalid={invalid || undefined}
+        onChange={(e) => onChange?.(e.target.value.toLowerCase())}
+        onBlur={() => setEditing(false)}
+        onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
+          if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
+        }}
+      />
+    );
+  }
+  const body = (
+    <>
+      {replaces && <CornerDownRight className="h-3 w-3 flex-none" aria-hidden />}
+      <span className="truncate">{value || "—"}</span>
+      {replaces && <span className="sr-only">{replaces}</span>}
+    </>
+  );
+  if (!editable)
+    return (
+      <span className="th-mon-key" data-fit="true" data-override={replaces ? true : undefined} title={title}>
+        {body}
+      </span>
+    );
+  return (
+    <button
+      type="button"
+      className="th-mon-key"
+      data-override={replaces ? true : undefined}
+      title={`${title} · click to edit`}
+      aria-label={`Edit monitor ${n} key ${value}${replaces ? ` (${replaces})` : ""}`}
+      onClick={() => setEditing(true)}
+    >
+      {body}
+    </button>
+  );
+}
+
+/** A cell's content, one control high, so every row is the same height. */
+function Cell({ children, end = false }: { children: ReactNode; end?: boolean }) {
+  return <div className={`flex h-[34px] min-w-0 items-center gap-2 ${end ? "justify-end" : ""}`}>{children}</div>;
 }
 
 function MonitorRow({
@@ -167,34 +279,42 @@ function MonitorRow({
 }) {
   const n = index + 1;
   const name = METRIC_LABEL[row.metric];
-  const keyLine = (
-    <span className="th-alerts-secondary font-mono text-[11px]">
-      {row.key || "—"}
-      {overrides.length > 0 && <span className="font-sans"> · replaces {overrides.join(", ")}</span>}
-    </span>
-  );
 
   if (!canManage) {
     return (
       <tr className="th-alerts-row" style={{ opacity: row.enabled ? 1 : 0.55 }}>
         <td>
-          <span className="th-alerts-primary">{name}</span>
-          {keyLine}
-        </td>
-        <td
-          className={`text-[13px] ${row.metric === "no_data" ? "" : "font-mono"}`}
-          style={{ color: "var(--th-text-secondary)" }}
-        >
-          {conditionText(row)}
-        </td>
-        <td className="text-[13px] tabular-nums" style={{ color: "var(--th-text-secondary)" }}>
-          {durationText(row)}
+          <Cell>
+            <span className="th-alerts-primary min-w-0 flex-1">{name}</span>
+            <KeyChip value={row.key} n={n} invalid={false} overrides={overrides} editable={false} />
+          </Cell>
         </td>
         <td>
-          <SeverityTag severity={row.severity} />
+          <Cell>
+            <span
+              className={`text-[13px] ${row.metric === "no_data" ? "" : "font-mono"}`}
+              style={{ color: "var(--th-text-secondary)" }}
+            >
+              {conditionText(row)}
+            </span>
+          </Cell>
         </td>
         <td>
-          <Switch checked={row.enabled} label={`${name} monitor on`} disabled onChange={() => undefined} />
+          <Cell>
+            <span className="text-[13px] tabular-nums" style={{ color: "var(--th-text-secondary)" }}>
+              {durationText(row)}
+            </span>
+          </Cell>
+        </td>
+        <td>
+          <Cell>
+            <SeverityTag severity={row.severity} />
+          </Cell>
+        </td>
+        <td>
+          <Cell>
+            <Switch checked={row.enabled} label={`${name} monitor on`} disabled onChange={() => undefined} />
+          </Cell>
         </td>
       </tr>
     );
@@ -202,114 +322,109 @@ function MonitorRow({
 
   return (
     <tr className="th-alerts-row">
-      <td style={TOP}>
-        <Select
-          value={row.metric}
-          options={METRIC_OPTIONS}
-          aria-label={`Monitor ${n} metric`}
-          className={COMPACT}
-          onChange={(metric) => onChange({ ...row, metric })}
-        />
-        <label className="mt-1.5 flex items-center gap-1.5 text-[11px]" style={{ color: "var(--th-text-faint)" }}>
-          Key
-          <input
-            value={row.key}
-            maxLength={32}
-            aria-label={`Monitor ${n} key`}
-            aria-invalid={problems?.key ? true : undefined}
-            onChange={(e) => onChange({ ...row, key: e.target.value.toLowerCase() })}
-            className="!h-6 !min-h-0 w-[130px] rounded-md border !px-1.5 font-mono !text-[11px]"
-            style={{
-              borderColor: problems?.key
-                ? "color-mix(in srgb, var(--th-status-critical) 60%, transparent)"
-                : "var(--th-border-subtle)",
-              background: "var(--th-bg-surface)",
-            }}
-          />
-        </label>
-        {overrides.length > 0 && (
-          <span className="mt-1 block truncate text-[11px]" style={{ color: "var(--th-text-faint)" }}>
-            Replaces {overrides.join(", ")}
-          </span>
-        )}
-      </td>
-      <td style={TOP}>
-        {row.metric === "no_data" ? (
-          <span className="flex h-[34px] items-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>
-            No uploads
-          </span>
-        ) : (
-          <div className="flex items-center gap-1.5">
-            {row.metric === "disk_forecast_days" ? (
-              <span
-                className="flex h-[34px] w-[64px] flex-none items-center justify-center font-mono text-[13px]"
-                style={{ color: "var(--th-text-muted)" }}
-                title="Full within"
-              >
-                &lt;
-              </span>
-            ) : (
-              <div className="w-[64px] flex-none">
-                <Select
-                  value={row.op}
-                  options={OP_OPTIONS}
-                  aria-label={`Monitor ${n} condition`}
-                  className={COMPACT}
-                  onChange={(op) => onChange({ ...row, op })}
-                />
-              </div>
-            )}
-            <UnitInput
-              value={row.threshold}
-              unit={METRIC_UNIT[row.metric]}
-              label={`Monitor ${n} threshold`}
-              invalid={!!problems?.threshold}
-              min={1}
-              onChange={(threshold) => onChange({ ...row, threshold })}
-              wide
+      <td>
+        <Cell>
+          <div className="min-w-0 flex-1">
+            <Select
+              value={row.metric}
+              options={METRIC_OPTIONS}
+              aria-label={`Monitor ${n} metric`}
+              className={COMPACT}
+              onChange={(metric) => onChange({ ...row, metric })}
             />
           </div>
-        )}
-      </td>
-      <td style={TOP}>
-        {row.metric === "disk_forecast_days" ? (
-          <span className="flex h-[34px] items-center text-[13px]" style={{ color: "var(--th-text-faint)" }}>
-            —
-          </span>
-        ) : (
-          <UnitInput
-            value={row.durationMin}
-            unit="min"
-            label={`Monitor ${n} duration`}
-            invalid={!!problems?.duration}
-            min={LIMITS.durationMin.min}
-            max={LIMITS.durationMin.max}
-            onChange={(durationMin) => onChange({ ...row, durationMin })}
-            wide
+          <KeyChip
+            value={row.key}
+            n={n}
+            invalid={!!problems?.key}
+            overrides={overrides}
+            editable
+            onChange={(key) => onChange({ ...row, key })}
           />
-        )}
+        </Cell>
       </td>
-      <td style={TOP}>
-        <Select
-          value={row.severity}
-          options={SEVERITY_OPTIONS}
-          aria-label={`Monitor ${n} severity`}
-          className={COMPACT}
-          style={{ color: SEVERITY_TONE[row.severity] }}
-          onChange={(severity) => onChange({ ...row, severity })}
-        />
+      <td>
+        <Cell>
+          {row.metric === "no_data" ? (
+            <span className="text-[13px]" style={{ color: "var(--th-text-muted)" }}>
+              No uploads
+            </span>
+          ) : (
+            <>
+              {row.metric === "disk_forecast_days" ? (
+                <span
+                  className="flex h-[34px] w-[58px] flex-none items-center justify-center rounded-lg border font-mono text-[13px]"
+                  style={{ color: "var(--th-text-muted)", borderColor: "var(--th-border-subtle)" }}
+                  title="Full within"
+                >
+                  &lt;
+                </span>
+              ) : (
+                <div className="w-[58px] flex-none">
+                  <Select
+                    value={row.op}
+                    options={OP_OPTIONS}
+                    aria-label={`Monitor ${n} condition`}
+                    className={COMPACT}
+                    onChange={(op) => onChange({ ...row, op })}
+                  />
+                </div>
+              )}
+              <UnitInput
+                value={row.threshold}
+                unit={METRIC_UNIT[row.metric]}
+                label={`Monitor ${n} threshold`}
+                invalid={!!problems?.threshold}
+                min={1}
+                onChange={(threshold) => onChange({ ...row, threshold })}
+              />
+            </>
+          )}
+        </Cell>
       </td>
-      <td style={TOP}>
-        <div className="flex h-[34px] items-center">
+      <td>
+        <Cell>
+          {row.metric === "disk_forecast_days" ? (
+            <span className="text-[13px]" style={{ color: "var(--th-text-faint)" }}>
+              —
+            </span>
+          ) : (
+            <UnitInput
+              value={row.durationMin}
+              unit="min"
+              label={`Monitor ${n} duration`}
+              invalid={!!problems?.duration}
+              min={LIMITS.durationMin.min}
+              max={LIMITS.durationMin.max}
+              onChange={(durationMin) => onChange({ ...row, durationMin })}
+            />
+          )}
+        </Cell>
+      </td>
+      <td>
+        <Cell>
+          <div className="min-w-0 flex-1">
+            <Select
+              value={row.severity}
+              options={SEVERITY_OPTIONS}
+              aria-label={`Monitor ${n} severity`}
+              className={COMPACT}
+              onChange={(severity) => onChange({ ...row, severity })}
+            />
+          </div>
+        </Cell>
+      </td>
+      <td>
+        <Cell>
           <Switch
             checked={row.enabled}
             label={`Monitor ${n} on`}
             onChange={(enabled) => onChange({ ...row, enabled })}
           />
-        </div>
+        </Cell>
       </td>
-      <td style={TOP}>
-        <div className="flex h-[34px] items-center justify-end">
+      <td>
+        <Cell end>
           <button
             type="button"
             className="th-onb-action"
@@ -320,11 +435,113 @@ function MonitorRow({
           >
             <Trash2 className="h-4 w-4" />
           </button>
-        </div>
+        </Cell>
       </td>
     </tr>
   );
 }
+
+/** The card's last line, pinned to the bottom of the screen while the card is in view. */
+function ActionBar({
+  policy,
+  canManage,
+  dirty,
+  changes,
+  problem,
+  saving,
+  saved,
+  error,
+  onSave,
+  onDiscard,
+}: {
+  policy: MonitoringPolicy;
+  canManage: boolean;
+  dirty: boolean;
+  changes: number;
+  problem: string | null;
+  saving: boolean;
+  saved: string | null;
+  error: string | null;
+  onSave: () => void;
+  onDiscard: () => void;
+}) {
+  const updated = policy.updated_at
+    ? `updated ${formatLocalDateTime(policy.updated_at)}${policy.updated_by ? ` by ${policy.updated_by}` : ""}`
+    : null;
+  const published = `v${policy.version}${updated ? ` · ${updated}` : ""}`;
+
+  let status: ReactNode;
+  if (!canManage) {
+    status = <span className="th-onb-hint">You can view this policy; changing it needs an admin.</span>;
+  } else if (error || (dirty && problem)) {
+    status = (
+      <span className="th-team-state" style={tone("var(--th-status-critical)")} role="alert">
+        <AlertTriangle className="h-3.5 w-3.5 flex-none" />
+        <span>{error ?? problem}</span>
+      </span>
+    );
+  } else if (saved) {
+    status = (
+      <span className="th-team-state th-fade-in" style={tone("var(--th-status-online)")} role="status">
+        <CheckCircle2 className="h-3.5 w-3.5 flex-none" />
+        {saved}
+      </span>
+    );
+  } else if (dirty) {
+    status = (
+      <span className="th-team-state" style={tone("var(--th-status-warning)")} data-testid="unpublished">
+        <i />
+        <span style={{ color: "var(--th-text-primary)" }}>
+          {changes} unpublished change{changes === 1 ? "" : "s"}
+        </span>
+      </span>
+    );
+  } else {
+    status = (
+      <span className="th-team-state" style={tone("var(--th-status-online)")}>
+        <Check className="h-3.5 w-3.5 flex-none" />
+        <span style={{ color: "var(--th-text-secondary)" }}>Up to date · {published}</span>
+      </span>
+    );
+  }
+
+  return (
+    <div className="th-mon-actionbar" data-dirty={dirty || undefined}>
+      <div className="min-w-0 flex-1 text-[12px]">{status}</div>
+      {canManage ? (
+        <div className="flex flex-none flex-wrap items-center justify-end gap-2">
+          {dirty && (
+            <Button variant="secondary" onClick={onDiscard} disabled={saving}>
+              Discard changes
+            </Button>
+          )}
+          {dirty ? (
+            <Button onClick={onSave} disabled={saving || !!problem}>
+              <Upload className="h-4 w-4" />
+              {saving ? "Publishing…" : `Publish v${policy.version + 1} to ${devicesWord(policy.devices)}`}
+            </Button>
+          ) : (
+            <Button variant="secondary" disabled>
+              <Check className="h-4 w-4" />
+              Published · v{policy.version}
+            </Button>
+          )}
+        </div>
+      ) : (
+        <span className="flex-none text-[12px] tabular-nums" style={{ color: "var(--th-text-faint)" }}>
+          {published}
+        </span>
+      )}
+    </div>
+  );
+}
+
+const COLLECTION = [
+  ["sample", "Sample every", "s", LIMITS.sample, `${LIMITS.sample.min}–${LIMITS.sample.max} s`],
+  ["uploadMin", "Upload every", "min", LIMITS.uploadMin, `${LIMITS.uploadMin.min}–${LIMITS.uploadMin.max} min`],
+  ["buffer", "Buffer on device", "MB", LIMITS.buffer, `${LIMITS.buffer.min}–${LIMITS.buffer.max} MB`],
+  ["keepDays", "Keep unsent for", "days", LIMITS.keepDays, `${LIMITS.keepDays.min}–${LIMITS.keepDays.max} days`],
+] as const;
 
 export default function PolicyEditor({
   policy,
@@ -335,10 +552,12 @@ export default function PolicyEditor({
   problems,
   canManage,
   dirty,
+  changes,
   saving,
   saved,
   error,
   onSave,
+  onDiscard,
   onDelete,
 }: {
   policy: MonitoringPolicy;
@@ -349,13 +568,14 @@ export default function PolicyEditor({
   problems: DraftProblems;
   canManage: boolean;
   dirty: boolean;
+  changes: number;
   saving: boolean;
   saved: string | null;
   error: string | null;
   onSave: () => void;
+  onDiscard: () => void;
   onDelete: () => void;
 }) {
-  const sync = syncWords(policy);
   const set = (patch: Partial<PolicyDraft>) => onDraft((d) => ({ ...d, ...patch }));
   const setRow = (rowId: number, next: MonitorDraft) =>
     onDraft((d) => {
@@ -374,36 +594,20 @@ export default function PolicyEditor({
   const removeRow = (rowId: number) =>
     onDraft((d) => ({ ...d, monitors: d.monitors.filter((m) => m.rowId !== rowId) }));
 
-  const nextVersion = policy.version + 1;
-  const firstProblem = problems.list[0] ?? null;
-  const updated = policy.updated_at
-    ? `Updated ${formatLocalDateTime(policy.updated_at)}${policy.updated_by ? ` by ${policy.updated_by}` : ""}`
-    : null;
-
   return (
-    <div className="th-onb-card" aria-label={`Policy ${policy.name}`} role="region">
+    <div className="th-onb-card th-mon-editor" aria-label={`Policy ${policy.name}`} role="region">
       <CardHead
         icon={Activity}
         tone="var(--th-accent)"
         title={policy.name}
         subtitle={`${scopeWords(policy, names)} · ${devicesWord(policy.devices)}`}
         aside={
-          <div className="flex flex-none items-center gap-2">
-            <span
-              className="th-team-state rounded-full border px-2 py-0.5 tabular-nums"
-              style={{
-                ...tone(sync.current ? "var(--th-status-online)" : "var(--th-status-warning)"),
-                borderColor: "color-mix(in srgb, var(--onb-tone) 30%, transparent)",
-              }}
-              title="Devices that report running this version (agent 2.1.29 or later)"
-            >
-              <i />
-              {sync.text}
-            </span>
+          <div className="flex min-w-0 items-center gap-3">
+            <CoverageBadge policy={policy} variant="pill" />
             {canManage && policy.scope !== "default" && (
               <button
                 type="button"
-                className="th-onb-action"
+                className="th-onb-action flex-none"
                 data-tone="danger"
                 aria-label={`Delete policy ${policy.name}`}
                 title="Delete policy"
@@ -416,11 +620,12 @@ export default function PolicyEditor({
         }
       />
 
-      <div className="th-onb-body">
+      <div className="th-onb-body th-mon-body">
         {/* ── details ─────────────────────────────────────────────────── */}
         <section className="th-onb-section" aria-label="Details">
           <SectionHead
             title="Details"
+            hint="What the policy is called and which devices follow it."
             aside={
               <div className="flex items-center gap-2 text-[12px]" style={{ color: "var(--th-text-secondary)" }}>
                 <span aria-hidden>Policy on</span>
@@ -433,7 +638,7 @@ export default function PolicyEditor({
               </div>
             }
           />
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2">
             <label className="th-onb-field">
               Name
               <input
@@ -484,19 +689,15 @@ export default function PolicyEditor({
               )
             }
           />
-          <div
-            className="-mx-5 overflow-x-auto border-t"
-            style={{ borderColor: "var(--th-border-subtle)" }}
-            data-testid="monitor-table"
-          >
-            <table className={`th-alerts-table ${canManage ? "min-w-[790px]" : "min-w-[560px]"}`}>
+          <div className="th-mon-table" data-testid="monitor-table">
+            <table className={`th-alerts-table ${canManage ? "min-w-[700px]" : "min-w-[640px]"}`}>
               <colgroup>
                 <col />
-                <col className={canManage ? "w-[200px]" : "w-[130px]"} />
-                <col className={canManage ? "w-[136px]" : "w-[90px]"} />
-                <col className={canManage ? "w-[130px]" : "w-[110px]"} />
-                <col className="w-[76px]" />
-                {canManage && <col className="w-[52px]" />}
+                <col className={canManage ? "w-[176px]" : "w-[130px]"} />
+                <col className={canManage ? "w-[112px]" : "w-[96px]"} />
+                <col className={canManage ? "w-[132px]" : "w-[112px]"} />
+                <col className="w-[64px]" />
+                {canManage && <col className="w-[56px]" />}
               </colgroup>
               <thead>
                 <tr>
@@ -551,27 +752,8 @@ export default function PolicyEditor({
                 : "These settings replace the broader policies' for the devices this policy covers."
             }
           />
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {(
-              [
-                ["sample", "Sample every", "s", LIMITS.sample, `${LIMITS.sample.min}–${LIMITS.sample.max} s`],
-                [
-                  "uploadMin",
-                  "Upload every",
-                  "min",
-                  LIMITS.uploadMin,
-                  `${LIMITS.uploadMin.min}–${LIMITS.uploadMin.max} min`,
-                ],
-                ["buffer", "Buffer on device", "MB", LIMITS.buffer, `${LIMITS.buffer.min}–${LIMITS.buffer.max} MB`],
-                [
-                  "keepDays",
-                  "Keep unsent for",
-                  "days",
-                  LIMITS.keepDays,
-                  `${LIMITS.keepDays.min}–${LIMITS.keepDays.max} days`,
-                ],
-              ] as const
-            ).map(([field, label, unit, range, hint]) => (
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            {COLLECTION.map(([field, label, unit, range, hint]) => (
               <div key={field} className="th-onb-field">
                 <span>{label}</span>
                 <UnitInput
@@ -583,38 +765,34 @@ export default function PolicyEditor({
                   disabled={!canManage}
                   invalid={!!problems[field]}
                   onChange={(value) => set({ [field]: value } as Partial<PolicyDraft>)}
-                  wide
                 />
-                <small className="text-[11px] font-normal" style={{ color: "var(--th-text-faint)" }}>
+                <small className="text-[11px] font-normal tabular-nums" style={{ color: "var(--th-text-faint)" }}>
                   {hint}
                 </small>
               </div>
             ))}
           </div>
-          <div className="th-onb-note" style={tone("var(--th-status-info)")}>
-            <Info className="h-4 w-4" />
+          <p className="flex items-start gap-2 text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+            <Info className="mt-0.5 h-3.5 w-3.5 flex-none" style={{ color: "var(--th-status-info)" }} />
             <span>
-              Agents with a live channel get a new version at once; the rest with their next heartbeat. Agents 2.1.29
-              and later report the version they run.
+              Agents with a live channel get a new version at once; the rest with their next heartbeat. Agents{" "}
+              {REPORTING_AGENT} and later report the version they run.
             </span>
-          </div>
+          </p>
         </section>
       </div>
 
-      {updated && (
-        <div className="flex items-center gap-2 px-5 pb-3 text-[11px]" style={{ color: "var(--th-text-faint)" }}>
-          <Gauge className="h-3.5 w-3.5" />v{policy.version} · {updated}
-        </div>
-      )}
-      <SaveFooter
-        dirty={dirty && problems.list.length === 0}
+      <ActionBar
+        policy={policy}
+        canManage={canManage}
+        dirty={dirty}
+        changes={changes}
+        problem={problems.list[0] ?? null}
         saving={saving}
         saved={saved}
-        error={error ?? (dirty ? firstProblem : null)}
-        label={`Publish v${nextVersion} to ${devicesWord(policy.devices)}`}
+        error={error}
         onSave={onSave}
-        canManage={canManage}
-        readOnlyNote="You can view this policy; changing it needs an admin."
+        onDiscard={onDiscard}
       />
     </div>
   );

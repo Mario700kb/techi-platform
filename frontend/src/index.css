@@ -3901,6 +3901,360 @@ a.th-kpi:hover {
   line-height: 34px;
   background: var(--th-bg-surface);
 }
+/* ── Monitoring policies ── a strip of equal KPI tiles; the policy list and
+   the editor as two columns of one height; pipeline and storage as an equal
+   pair whose rows line up. One 16px gutter, one 24px editor inset. */
+.th-mon-kpis {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.th-mon-kpis[data-count="3"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+.th-mon-kpis > .th-kpi {
+  gap: 4px;
+  padding: 14px 16px;
+}
+@media (min-width: 640px) {
+  .th-mon-kpis[data-count="3"] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1024px) {
+  .th-mon-kpis[data-count="4"] {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+.th-mon-main,
+.th-mon-bottom {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+}
+@media (min-width: 1024px) {
+  .th-mon-bottom {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1280px) {
+  .th-mon-main {
+    grid-template-columns: 320px minmax(0, 1fr);
+  }
+}
+
+/* The list card fills its column; the precedence help folds into its foot. */
+.th-mon-list-body {
+  flex: 1;
+  padding: 16px;
+}
+.th-mon-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  padding: 12px 14px;
+}
+.th-mon-version {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--th-border-subtle);
+  background: var(--th-chip-bg);
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--th-text-muted);
+}
+.th-mon-help {
+  border-top: 1px solid var(--th-border-subtle);
+  padding: 0 16px;
+}
+.th-mon-help > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  list-style: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--th-text-secondary);
+}
+.th-mon-help > summary::-webkit-details-marker {
+  display: none;
+}
+.th-mon-help > summary:hover {
+  color: var(--th-text-primary);
+}
+.th-mon-help-chevron {
+  color: var(--th-text-faint);
+  transition: transform 200ms var(--th-ease);
+}
+.th-mon-help[open] .th-mon-help-chevron {
+  transform: rotate(180deg);
+}
+.th-mon-help > p {
+  padding: 0 0 14px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--th-text-muted);
+}
+.th-mon-help strong {
+  font-weight: 600;
+  color: var(--th-text-secondary);
+}
+
+/* Coverage: one claim about the agents that report, the older ones apart. */
+.th-mon-coverage {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  max-width: 100%;
+}
+.th-mon-coverage > span {
+  min-width: 0;
+  max-width: 100%;
+}
+.th-mon-coverage > small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--th-text-faint);
+}
+.th-mon-coverage[data-variant="pill"] {
+  align-items: flex-end;
+  text-align: right;
+}
+.th-mon-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--onb-tone) 32%, transparent);
+  background: color-mix(in srgb, var(--onb-tone) 9%, transparent);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--onb-tone) 72%, var(--th-text-primary));
+}
+.th-mon-pill > i {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--onb-tone);
+}
+.th-mon-dot {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+/* Editor: sections open with one header style and sit 24px apart. */
+.th-mon-editor {
+  min-width: 0;
+}
+.th-onb-body.th-mon-body {
+  flex: 1;
+  gap: 24px;
+  padding: 24px;
+}
+.th-mon-body > .th-onb-section {
+  gap: 16px;
+}
+.th-mon-body > .th-onb-section + .th-onb-section {
+  padding-top: 24px;
+}
+.th-mon-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 36px;
+}
+.th-mon-section-head h3 {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--th-text-primary);
+}
+.th-mon-section-head p {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--th-text-muted);
+}
+.th-mon-table {
+  /* Positioned, so screen-reader-only text in the cells scrolls with them
+     instead of widening the page. */
+  position: relative;
+  margin: 0 -24px;
+  overflow-x: auto;
+  border-top: 1px solid var(--th-border-subtle);
+  border-bottom: 1px solid var(--th-border-subtle);
+}
+.premium-page .th-mon-table .th-alerts-table th {
+  padding-top: 10px;
+  padding-bottom: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--th-text-muted);
+  background: var(--th-bg-surface);
+}
+.premium-page .th-mon-table .th-alerts-table th,
+.premium-page .th-mon-table .th-alerts-table td {
+  padding-left: 6px !important;
+  padding-right: 6px !important;
+}
+.premium-page .th-mon-table .th-alerts-table th:first-child,
+.premium-page .th-mon-table .th-alerts-table td:first-child {
+  padding-left: 24px !important;
+  padding-right: 10px !important;
+}
+.premium-page .th-mon-table .th-alerts-table th:last-child,
+.premium-page .th-mon-table .th-alerts-table td:last-child {
+  padding-right: 24px !important;
+}
+.th-mon-key {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  /* One width, so the metric selects beside the chips line up. */
+  width: 112px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid var(--th-border-subtle);
+  background: var(--th-chip-bg);
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  font-size: 11px;
+  color: var(--th-text-muted);
+}
+/* Read-only rows: the chip hugs its key and sits at the cell's right edge. */
+.th-mon-key[data-fit="true"] {
+  width: auto;
+  max-width: 112px;
+}
+button.th-mon-key {
+  cursor: text;
+  transition:
+    border-color 150ms ease,
+    color 150ms ease;
+}
+button.th-mon-key:hover {
+  border-color: var(--th-border-strong);
+  color: var(--th-text-primary);
+}
+.th-mon-key[data-override="true"] {
+  border-color: color-mix(in srgb, var(--th-status-info) 38%, transparent);
+  color: color-mix(in srgb, var(--th-status-info) 70%, var(--th-text-primary));
+}
+.premium-page .th-mon-table input.th-mon-key {
+  width: 112px;
+  height: 26px;
+  min-height: 0;
+  padding: 0 8px !important;
+  border-color: var(--th-accent-border);
+  background: var(--th-bg-input);
+  font-size: 11px;
+  color: var(--th-text-primary);
+}
+.premium-page .th-mon-table input.th-mon-key[data-invalid="true"] {
+  border-color: color-mix(in srgb, var(--th-status-critical) 60%, transparent);
+}
+
+/* The editor's action bar stays in reach while the card is on screen. */
+.th-mon-actionbar {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  min-height: 68px;
+  padding: 14px 24px;
+  border-top: 1px solid var(--th-border-subtle);
+  border-radius: 0 0 12px 12px;
+  background: color-mix(in srgb, var(--th-bg-card) 94%, transparent);
+  backdrop-filter: blur(8px);
+}
+@media (min-width: 768px) {
+  /* Flush with the bottom of the scroll area, past the page's 20px padding. */
+  .th-mon-actionbar {
+    bottom: -20px;
+  }
+}
+.th-mon-actionbar[data-dirty="true"] {
+  box-shadow: 0 -10px 24px -20px var(--th-scrim);
+}
+
+/* Pipeline and storage share one row height, so their lines match across. */
+.th-mon-rows {
+  display: flex;
+  flex-direction: column;
+}
+.th-mon-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 50px;
+  border-bottom: 1px solid var(--th-border-subtle);
+}
+.th-mon-row:last-child {
+  border-bottom: 0;
+}
+.th-mon-stack {
+  display: flex;
+  gap: 2px;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 4px;
+}
+.th-mon-stack > i {
+  min-width: 4px;
+  height: 100%;
+}
+.th-mon-swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+@media (max-width: 639px) {
+  .th-onb-body.th-mon-body {
+    padding: 16px;
+  }
+  .th-mon-table {
+    margin: 0 -16px;
+  }
+  .premium-page .th-mon-table .th-alerts-table th:first-child,
+  .premium-page .th-mon-table .th-alerts-table td:first-child {
+    padding-left: 16px !important;
+  }
+  .premium-page .th-mon-table .th-alerts-table th:last-child,
+  .premium-page .th-mon-table .th-alerts-table td:last-child {
+    padding-right: 16px !important;
+  }
+  .th-mon-actionbar {
+    padding: 12px 16px;
+  }
+  /* The list above already shows coverage; the narrow header keeps the name. */
+  .th-mon-coverage[data-variant="pill"] {
+    display: none;
+  }
+}
 .th-batch-list {
   display: flex;
   flex-direction: column;

@@ -1,29 +1,31 @@
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
-import { Info, Layers, Plus } from "lucide-react";
+import { ChevronDown, Info, Layers, Plus } from "lucide-react";
 
 import { getClients, getGroups } from "../api/clients";
 import {
   deleteMonitoringPolicy,
+  formatDuration,
   getPipelineHealth,
   listMonitoringPolicies,
   updateMonitoringPolicy,
 } from "../api/monitoring";
-import type { MonitoringPolicy } from "../api/monitoring";
+import type { MonitoringPolicy, PipelineHealth } from "../api/monitoring";
 import { useAuth } from "../auth/AuthContext";
 import ConfirmationModal from "../components/ConfirmationModal";
 import NewPolicyModal from "../components/monitoring/NewPolicyModal";
-import PipelinePanel from "../components/monitoring/PipelinePanel";
-import PolicyEditor from "../components/monitoring/PolicyEditor";
+import PipelinePanel, { pipelineStatus } from "../components/monitoring/PipelinePanel";
+import PolicyEditor, { CoverageBadge } from "../components/monitoring/PolicyEditor";
 import {
+  countChanges,
   devicesWord,
   fingerprint,
   monitorCount,
   PolicyDraft,
+  REPORTING_AGENT,
   ScopeNames,
   scopeWords,
   SPECIFICITY,
-  syncWords,
   toBody,
   toDraft,
   validate,
@@ -32,8 +34,8 @@ import { Button, EmptyState, PageHeader } from "../components/ui";
 import { CardHead } from "../components/ui/PanelCard";
 import { useCachedQuery } from "../hooks/useCachedQuery";
 import { usePollingRefresh } from "../hooks/usePollingRefresh";
+import { formatCount } from "../utils/number";
 
-const tone = (value: string) => ({ "--onb-tone": value }) as CSSProperties;
 const PIPELINE_REFRESH_MS = 60_000;
 
 type Pending = { kind: "select"; id: number } | { kind: "new" } | null;
@@ -49,42 +51,97 @@ function PolicyListItem({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const sync = syncWords(policy);
   return (
     <li>
       <button
         type="button"
         aria-pressed={selected}
         onClick={onSelect}
-        className="th-onb-option flex w-full flex-col gap-1"
+        className="th-onb-option th-mon-item"
         data-testid={`policy-${policy.id}`}
       >
-        <span className="flex w-full items-baseline justify-between gap-2">
+        <span className="flex w-full items-center justify-between gap-2">
           <span className="min-w-0 truncate text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
             {policy.name}
           </span>
-          <span className="flex-none font-mono text-[11px]" style={{ color: "var(--th-text-faint)" }}>
-            v{policy.version}
+          <span className="th-mon-version">v{policy.version}</span>
+        </span>
+        <span className="flex w-full items-center justify-between gap-2 text-[12px]">
+          <span className="min-w-0 truncate" style={{ color: "var(--th-text-muted)" }}>
+            {scopeWords(policy, names)}
+          </span>
+          <span className="flex-none tabular-nums" style={{ color: "var(--th-text-faint)" }}>
+            {monitorCount(policy)}
           </span>
         </span>
-        <span className="block w-full truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-          {scopeWords(policy, names)}
-        </span>
-        <span className="flex w-full items-center justify-between gap-2 text-[11px]">
-          <span style={{ color: "var(--th-text-faint)" }}>{policy.enabled ? monitorCount(policy) : "Off"}</span>
-          {policy.enabled && (
-            <span
-              className="th-team-state !text-[11px] tabular-nums"
-              style={tone(sync.current ? "var(--th-status-online)" : "var(--th-status-warning)")}
-            >
-              <i />
-              {sync.text}
-            </span>
-          )}
-        </span>
+        <CoverageBadge policy={policy} />
       </button>
     </li>
   );
+}
+
+interface Kpi {
+  label: string;
+  value: string;
+  hint: string;
+  tone: string;
+}
+
+/** The strip over the page: the same four facts, each as label, value and hint. */
+function kpis(
+  policies: MonitoringPolicy[],
+  loading: boolean,
+  pipeline: { show: boolean; health: PipelineHealth | undefined },
+): Kpi[] {
+  const ready = !loading;
+  const byScope = policies.filter((p) => p.scope !== "default").length;
+  const defaults = policies.length - byScope;
+  const covered = policies.reduce((max, p) => Math.max(max, p.devices), 0);
+  const defaultOn = policies.some((p) => p.scope === "default" && p.enabled);
+  const reportingPolicies = policies.reduce((max, p) => Math.max(max, p.devices_reporting ?? 0), 0);
+  const health = pipeline.health;
+  const list: Kpi[] = [
+    {
+      label: "Policies",
+      value: ready ? formatCount(policies.length) : "—",
+      hint: `${defaults} default · ${byScope} by scope`,
+      tone: "var(--th-accent)",
+    },
+    {
+      label: "Devices covered",
+      value: ready ? formatCount(covered) : "—",
+      hint: defaultOn ? "All active devices, via the default" : "The default policy is off",
+      tone: "var(--th-status-info)",
+    },
+    pipeline.show
+      ? {
+          label: "Reporting agents",
+          value: health ? formatCount(health.devices_one_minute) : "—",
+          hint: health
+            ? `of ${formatCount(health.devices_online)} online · agent ${REPORTING_AGENT}+`
+            : `Agent ${REPORTING_AGENT}+`,
+          tone: "var(--th-status-online)",
+        }
+      : {
+          label: "Reporting agents",
+          value: ready ? formatCount(reportingPolicies) : "—",
+          hint: `of ${formatCount(covered)} devices · agent ${REPORTING_AGENT}+`,
+          tone: "var(--th-status-online)",
+        },
+  ];
+  if (pipeline.show) {
+    const status = health ? pipelineStatus(health) : null;
+    list.push({
+      label: "Pipeline",
+      value: status?.label ?? "—",
+      hint:
+        health?.median_delay_seconds != null
+          ? `Median delay ${formatDuration(health.median_delay_seconds)}`
+          : "Median delay —",
+      tone: status?.tone ?? "var(--th-text-faint)",
+    });
+  }
+  return list;
 }
 
 export default function MonitoringPolicies() {
@@ -114,13 +171,14 @@ export default function MonitoringPolicies() {
 
   // The form for the selected policy, and what it was seeded from.
   const [draft, setDraft] = useState<PolicyDraft | null>(null);
-  const [seed, setSeed] = useState<{ id: number; version: number; print: string } | null>(null);
+  const [seed, setSeed] = useState<{ id: number; version: number; print: string; draft: PolicyDraft } | null>(null);
   const dirty = draft !== null && seed !== null && fingerprint(draft) !== seed.print;
+  const changes = dirty && draft && seed ? countChanges(seed.draft, draft) : 0;
 
   const reseed = (policy: MonitoringPolicy) => {
     const next = toDraft(policy);
     setDraft(next);
-    setSeed({ id: policy.id, version: policy.version, print: fingerprint(next) });
+    setSeed({ id: policy.id, version: policy.version, print: fingerprint(next), draft: next });
   };
   // Seed on a new selection, and take a newer version from the server unless
   // the operator is editing.
@@ -204,11 +262,19 @@ export default function MonitoringPolicies() {
     }
   };
 
+  const discard = () => {
+    if (!selected) return;
+    setSaveError(null);
+    setSaved(null);
+    reseed(selected);
+  };
+
   const loading = policiesQuery.loading;
   const loadError = policiesQuery.error && !policiesQuery.data ? policiesQuery.error : null;
+  const tiles = kpis(policies, loading && !policiesQuery.data, { show: isAdmin, health: pipelineQuery.data });
 
   return (
-    <section className="premium-page th-onb space-y-4">
+    <section className="premium-page th-onb th-mon space-y-4">
       <PageHeader
         title="Monitoring"
         description="What every agent measures, how often, and when it raises an alert."
@@ -222,6 +288,19 @@ export default function MonitoringPolicies() {
         }
       />
 
+      <div className="th-mon-kpis" data-count={tiles.length} data-testid="monitoring-kpis">
+        {tiles.map((kpi) => (
+          <div key={kpi.label} className="th-kpi" style={{ "--kpi-tone": kpi.tone } as CSSProperties}>
+            <span className="th-kpi-label">
+              <span className="th-kpi-dot" />
+              {kpi.label}
+            </span>
+            <span className="th-kpi-value truncate">{kpi.value}</span>
+            <span className="th-kpi-hint">{kpi.hint}</span>
+          </div>
+        ))}
+      </div>
+
       {loadError ? (
         <div className="th-onb-card">
           <EmptyState
@@ -231,21 +310,21 @@ export default function MonitoringPolicies() {
           />
         </div>
       ) : (
-        <div
-          className={`grid items-start gap-4 lg:grid-cols-[300px_minmax(0,1fr)] ${
-            isAdmin ? "min-[1760px]:grid-cols-[300px_minmax(0,1fr)_300px]" : ""
-          }`}
-        >
+        <div className="th-mon-main">
           {/* ── policy list ─────────────────────────────────────────────── */}
-          <section className="th-onb-card" aria-label="Policies">
+          <section className="th-onb-card th-mon-list" aria-label="Policies">
             <CardHead
               icon={Layers}
               tone="var(--th-accent)"
               title="Policies"
-              subtitle={loading ? "Loading…" : `${policies.length} ${policies.length === 1 ? "policy" : "policies"}`}
+              subtitle={
+                loading && !policiesQuery.data
+                  ? "Loading…"
+                  : `${policies.length} ${policies.length === 1 ? "policy" : "policies"} · broad to specific`
+              }
             />
-            <div className="th-onb-body !gap-4">
-              {loading ? (
+            <div className="th-mon-list-body">
+              {loading && !policiesQuery.data ? (
                 <div aria-hidden>
                   {Array.from({ length: 3 }).map((_, i) => (
                     <div key={i} className="th-alerts-skeleton" style={{ opacity: 1 - i * 0.2 }} />
@@ -264,15 +343,19 @@ export default function MonitoringPolicies() {
                   ))}
                 </ul>
               )}
-              <div className="th-onb-note" style={tone("var(--th-status-info)")}>
-                <Info className="h-4 w-4" />
-                <span>
-                  A device follows its most specific policy: <strong>group</strong>, then <strong>client</strong>, then{" "}
-                  <strong>device type</strong>, then the <strong>default</strong>. Monitors merge by key: a more
-                  specific policy replaces a monitor with the same key and keeps the rest.
-                </span>
-              </div>
             </div>
+            <details className="th-mon-help">
+              <summary>
+                <Info className="h-3.5 w-3.5 flex-none" style={{ color: "var(--th-status-info)" }} />
+                <span className="flex-1">How policies combine</span>
+                <ChevronDown className="th-mon-help-chevron h-3.5 w-3.5 flex-none" />
+              </summary>
+              <p>
+                A device follows its most specific policy: <strong>group</strong>, then <strong>client</strong>, then{" "}
+                <strong>category</strong>, then the <strong>default</strong>. Monitors merge by key: a more specific
+                policy replaces a monitor with the same key and keeps the rest.
+              </p>
+            </details>
           </section>
 
           {/* ── editor ──────────────────────────────────────────────────── */}
@@ -291,10 +374,12 @@ export default function MonitoringPolicies() {
               problems={problems}
               canManage={isAdmin}
               dirty={dirty}
+              changes={changes}
               saving={saving}
               saved={saved}
               error={saveError}
               onSave={() => void save()}
+              onDiscard={discard}
               onDelete={() => setDeleting({ busy: false, error: null })}
             />
           ) : (
@@ -314,13 +399,13 @@ export default function MonitoringPolicies() {
               )}
             </div>
           )}
+        </div>
+      )}
 
-          {/* ── pipeline (admins) ───────────────────────────────────────── */}
-          {isAdmin && (
-            <div className="grid content-start gap-4 lg:col-span-2 lg:grid-cols-2 min-[1760px]:col-span-1 min-[1760px]:grid-cols-1">
-              <PipelinePanel health={pipelineQuery.data} error={pipelineQuery.error} />
-            </div>
-          )}
+      {/* ── pipeline (admins) ─────────────────────────────────────────── */}
+      {isAdmin && !loadError && (
+        <div className="th-mon-bottom">
+          <PipelinePanel health={pipelineQuery.data} error={pipelineQuery.error} />
         </div>
       )}
 

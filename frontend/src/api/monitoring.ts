@@ -38,6 +38,8 @@ export interface MonitoringPolicy extends PolicyBody {
   updated_by?: string | null;
   devices: number;
   devices_current: number;
+  /** Of `devices`, those whose agent reports the policy it runs (2.1.29+). */
+  devices_reporting: number;
 }
 
 export interface EffectivePolicy {

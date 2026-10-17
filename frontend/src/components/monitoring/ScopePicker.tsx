@@ -1,16 +1,20 @@
 import { Select } from "../ui";
 import type { SelectOption } from "../ui";
 import type { PolicyScope } from "../../api/monitoring";
-import { DEVICE_TYPES, SCOPE_LABEL, ScopeNames } from "./policyForm";
+import { categoryValue, DEVICE_CATEGORIES, SCOPE_LABEL, ScopeNames } from "./policyForm";
 
 const SCOPE_HINT: Record<PolicyScope, string> = {
   default: "The base for every device",
-  device_type: "Servers or client PCs",
+  device_type: "A console category: servers, client PCs, network…",
   client: "Every device of one client",
   group: "One group of devices",
 };
 
-/** What a policy applies to: the scope, then which device type, client or group. */
+/**
+ * What a policy applies to: the scope, then which category, client or group.
+ * A policy saved with a legacy device type ("server", "client") shows as its
+ * category and keeps the stored value until the operator picks another.
+ */
 export default function ScopePicker({
   scope,
   value,
@@ -53,7 +57,7 @@ export default function ScopePicker({
 
   const clientName = (id: number) => names.clients.find((c) => c.id === id)?.name ?? `Client #${id}`;
   let values: SelectOption[] = [];
-  if (scope === "device_type") values = DEVICE_TYPES.map((t) => ({ value: t.value, label: t.label }));
+  if (scope === "device_type") values = DEVICE_CATEGORIES.map((c) => ({ value: c.value, label: c.label }));
   if (scope === "client")
     values = [...names.clients]
       .sort((a, b) => a.name.localeCompare(b.name))
@@ -62,10 +66,11 @@ export default function ScopePicker({
     values = [...names.groups]
       .map((g) => ({ value: String(g.id), label: `${clientName(g.client_id)} › ${g.name}` }))
       .sort((a, b) => a.label.localeCompare(b.label));
+  const shown = scope === "device_type" ? categoryValue(value) : value;
   // Keep a value the lists do not know (a client the operator cannot see) visible.
-  if (value && !values.some((v) => v.value === value)) values = [{ value, label: `#${value}` }, ...values];
+  if (shown && !values.some((v) => v.value === shown)) values = [{ value: shown, label: `#${shown}` }, ...values];
 
-  const valueLabel = scope === "device_type" ? "Device type" : scope === "client" ? "Client" : "Group";
+  const valueLabel = scope === "device_type" ? "Category" : scope === "client" ? "Client" : "Group";
 
   return (
     <div className="grid gap-3 sm:grid-cols-2">
@@ -83,7 +88,7 @@ export default function ScopePicker({
       <div className="th-onb-field">
         <span>{valueLabel}</span>
         <Select
-          value={value}
+          value={shown}
           options={values}
           disabled={disabled}
           placeholder={values.length ? `Choose a ${valueLabel.toLowerCase()}` : `No ${valueLabel.toLowerCase()}s`}
@@ -92,7 +97,9 @@ export default function ScopePicker({
           style={
             invalid ? { borderColor: "color-mix(in srgb, var(--th-status-critical) 60%, transparent)" } : undefined
           }
-          onChange={(next) => onChange(scope, next)}
+          onChange={(next) => {
+            if (next !== shown) onChange(scope, next);
+          }}
         />
       </div>
     </div>

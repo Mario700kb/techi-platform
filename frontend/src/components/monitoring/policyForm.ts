@@ -46,14 +46,35 @@ export const SEVERITY_TONE: Record<MonitorSeverity, string> = {
   critical: "var(--th-status-critical)",
 };
 
-export const DEVICE_TYPES = [
-  { value: "server", label: "Server", every: "Every server" },
-  { value: "client", label: "Client PC", every: "Every client PC" },
+/** The console's device categories (backend DEVICE_CATEGORIES): a "device type" policy follows these. */
+export const DEVICE_CATEGORIES = [
+  { value: "servers", label: "Servers" },
+  { value: "clientpc", label: "Client PC" },
+  { value: "network", label: "Network" },
+  { value: "storage", label: "Storage" },
+  { value: "hypervisors", label: "Hypervisors" },
+  { value: "printers", label: "Printers" },
+  { value: "iot", label: "IoT" },
+  { value: "other", label: "Other" },
 ] as const;
+
+/** Values older policies were saved with; the backend still maps them to a category. */
+const LEGACY_CATEGORY: Record<string, string> = { server: "servers", client: "clientpc" };
+
+/** The category a stored device-type value means ("server" → "servers"). */
+export function categoryValue(value: string | null | undefined): string {
+  if (!value) return "";
+  return LEGACY_CATEGORY[value] ?? value;
+}
+
+export function categoryLabel(value: string | null | undefined): string | null {
+  const category = categoryValue(value);
+  return DEVICE_CATEGORIES.find((c) => c.value === category)?.label ?? null;
+}
 
 export const SCOPE_LABEL: Record<PolicyScope, string> = {
   default: "Every device",
-  device_type: "Device type",
+  device_type: "Device category",
   client: "Client",
   group: "Group",
 };
@@ -246,7 +267,7 @@ export function validate(draft: PolicyDraft): DraftProblems {
   if (!draft.name.trim()) add("name", "Give the policy a name.");
   else if (draft.name.trim().length > 120) add("name", "Keep the name under 120 characters.");
   if (draft.scope !== "default" && !draft.scopeValue) {
-    const what = draft.scope === "device_type" ? "device type" : draft.scope;
+    const what = draft.scope === "device_type" ? "category" : draft.scope;
     add("scopeValue", `Choose the ${what} this policy applies to.`);
   }
   if (!whole(toNumber(draft.sample), LIMITS.sample.min, LIMITS.sample.max))
@@ -286,6 +307,31 @@ export function fingerprint(draft: PolicyDraft): string {
   return JSON.stringify({ ...draft, monitors: draft.monitors.map(({ rowId: _rowId, ...rest }) => rest) });
 }
 
+const monitorPrint = ({ rowId: _rowId, ...rest }: MonitorDraft) => JSON.stringify(rest);
+
+/**
+ * How many things differ from what was published: each changed field counts
+ * once (the scope and its value together), and each added, removed or edited
+ * monitor once.
+ */
+export function countChanges(base: PolicyDraft, draft: PolicyDraft): number {
+  let n = 0;
+  const fields = ["name", "description", "enabled", "sample", "uploadMin", "buffer", "keepDays"] as const;
+  for (const field of fields) if (base[field] !== draft[field]) n += 1;
+  if (base.scope !== draft.scope || base.scopeValue !== draft.scopeValue) n += 1;
+  const before = new Map(base.monitors.map((m) => [m.rowId, monitorPrint(m)]));
+  const after = new Set<number>();
+  for (const m of draft.monitors) {
+    after.add(m.rowId);
+    const was = before.get(m.rowId);
+    if (was === undefined || was !== monitorPrint(m)) n += 1;
+  }
+  for (const rowId of before.keys()) if (!after.has(rowId)) n += 1;
+  // Moving a monitor without changing it still changes what is published.
+  if (n === 0 && fingerprint(base) !== fingerprint(draft)) n = 1;
+  return n;
+}
+
 // ── plain words ──────────────────────────────────────────────────────────────
 
 export interface ScopeNames {
@@ -295,7 +341,10 @@ export interface ScopeNames {
 
 export function scopeTarget(scope: PolicyScope, value: string | null | undefined, names: ScopeNames): string {
   if (scope === "default") return "Every device";
-  if (scope === "device_type") return DEVICE_TYPES.find((t) => t.value === value)?.every ?? `Device type ${value}`;
+  if (scope === "device_type") {
+    const label = categoryLabel(value);
+    return label ? `${label} category` : `Category ${value ?? "not set"}`;
+  }
   if (scope === "client") {
     const client = names.clients.find((c) => String(c.id) === value);
     return `Client: ${client?.name ?? `#${value}`}`;
@@ -306,7 +355,7 @@ export function scopeTarget(scope: PolicyScope, value: string | null | undefined
   return `Group: ${client ? `${client.name} › ` : ""}${group.name}`;
 }
 
-/** "Default · every device", "Every server", "Client: Northwind". */
+/** "Default · every device", "Servers category", "Client: Northwind". */
 export function scopeWords(policy: Pick<PolicyBody, "scope" | "scope_value">, names: ScopeNames): string {
   if (policy.scope === "default") return "Default · every device";
   return scopeTarget(policy.scope, policy.scope_value, names);
@@ -317,11 +366,45 @@ export function monitorCount(policy: Pick<PolicyBody, "monitors">): string {
   return `${n} monitor${n === 1 ? "" : "s"}`;
 }
 
-/** "36 / 38 on v5", and whether every device runs it. */
-export function syncWords(policy: MonitoringPolicy): { text: string; current: boolean } {
+/** The agent release that first reports which policy version it runs. */
+export const REPORTING_AGENT = "2.1.29";
+
+export type CoverageTone = "online" | "warning" | "muted";
+
+export const COVERAGE_TONE: Record<CoverageTone, string> = {
+  online: "var(--th-status-online)",
+  warning: "var(--th-status-warning)",
+  muted: "var(--th-text-faint)",
+};
+
+/**
+ * A policy's coverage, honestly: only agents 2.1.29+ report the version they
+ * run, so the claim is made about those, and the rest are named apart.
+ * "4 of 4 reporting agents on v1" · "3 of 4 on v1 · 1 behind" ·
+ * "925 on older agents (update to 2.1.29 to report)".
+ */
+export function coverageWords(
+  policy: Pick<MonitoringPolicy, "enabled" | "version" | "devices" | "devices_current" | "devices_reporting">,
+): { text: string; tone: CoverageTone; older: string | null } {
+  if (!policy.enabled) return { text: "Off · not sent to devices", tone: "muted", older: null };
+  if (!policy.devices) return { text: "No devices in scope", tone: "muted", older: null };
+  const reporting = Math.min(policy.devices_reporting ?? 0, policy.devices);
+  const current = Math.min(policy.devices_current, reporting);
+  const olderCount = policy.devices - reporting;
+  const older =
+    olderCount > 0 ? `${formatCount(olderCount)} on older agents (update to ${REPORTING_AGENT} to report)` : null;
+  const v = `v${policy.version}`;
+  if (!reporting) return { text: "No agent reports its version yet", tone: "muted", older };
+  if (current >= reporting)
+    return {
+      text: `${formatCount(current)} of ${formatCount(reporting)} reporting agent${reporting === 1 ? "" : "s"} on ${v}`,
+      tone: "online",
+      older,
+    };
   return {
-    text: `${policy.devices_current} / ${policy.devices} on v${policy.version}`,
-    current: policy.devices_current >= policy.devices,
+    text: `${formatCount(current)} of ${formatCount(reporting)} on ${v} · ${formatCount(reporting - current)} behind`,
+    tone: "warning",
+    older,
   };
 }
 
