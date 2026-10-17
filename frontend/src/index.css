@@ -7382,6 +7382,31 @@ button.th-client-group:hover {
   border: 1px solid var(--th-border-default);
   animation: th-count-in 260ms var(--th-ease) both;
 }
+/* A session that is still open: green, with a dot that breathes. */
+.th-cp-duration[data-live] {
+  gap: 6px;
+  color: var(--th-status-online);
+  border-color: color-mix(in srgb, var(--th-status-online) 40%, transparent);
+  background: color-mix(in srgb, var(--th-status-online) 10%, transparent);
+}
+.th-cp-duration[data-live]::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: th-live-dot 1.6s ease-in-out infinite;
+}
+@keyframes th-live-dot {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .th-cp-duration[data-live]::before {
+    animation: none;
+  }
+}
 .th-cp-recent {
   display: flex;
   align-items: center;

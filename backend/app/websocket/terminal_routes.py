@@ -124,10 +124,11 @@ async def operator_terminal_ws(websocket: WebSocket, session_id: str, ticket: st
             pass
         finally:
             session = svc.get(session_id) or session
-            svc.close(session, "operator_closed")
+            ended_here = svc.close(session, "operator_closed")
             await terminal_relay.close(session_id)
             logger.info("terminal operator WS closed: session_id=%s reason=operator_closed", session_id)
-            _audit_session_end(db, session, "operator_closed")
+            if ended_here:
+                _audit_session_end(db, session, "operator_closed")
     except Exception:
         logger.exception("terminal operator WS error: session_id=%s", session_id)
     finally:
@@ -174,10 +175,11 @@ async def agent_terminal_ws(websocket: WebSocket, session_id: str, ticket: str =
             pass
         finally:
             session = svc.get(session_id) or session
-            svc.close(session, "agent_gone")
+            ended_here = svc.close(session, "agent_gone")
             await terminal_relay.close(session_id)
             logger.info("terminal agent WS closed: session_id=%s reason=agent_gone", session_id)
-            _audit_session_end(db, session, "agent_gone")
+            if ended_here:
+                _audit_session_end(db, session, "agent_gone")
     except Exception:
         logger.exception("terminal agent WS error: session_id=%s", session_id)
     finally:

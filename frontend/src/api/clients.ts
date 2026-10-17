@@ -167,9 +167,18 @@ export async function getClientProfile(clientId: number): Promise<ClientProfile>
   return fetchJson<ClientProfile>(`/api/v1/clients/${clientId}/profile`);
 }
 
+/** How long a session started by an activity entry lasted, or since when it is open. */
+export interface ActivitySessionSpan {
+  duration_seconds: number | null;
+  live_since: string | null;
+  end_reason: string | null;
+}
+
 export interface ClientActivityPage extends AuditLogPage {
   /** Current name of every device the page's entries mention. */
   device_names: Record<number, string>;
+  /** Entries that start a session (Connect, Remote Support started, terminal/PowerShell/SSH opened), by entry id. */
+  sessions?: Record<number, ActivitySessionSpan>;
 }
 
 export type ClientActivityKind = "all" | "remote" | "terminal" | "actions" | "credentials";

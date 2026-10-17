@@ -155,6 +155,11 @@ test("activity shows who connected where, for how long, and filters by type and 
   await expect(connect).toContainText("Remote Support online");
   await expect(connect).toContainText("185.66.128.121");
   await expect(log.locator("tr.th-alerts-row", { hasText: "Terminal closed" })).toContainText("25 min");
+  // A session's start shows how long it lasted, or that it is still open.
+  await expect(connect.locator(".th-cp-duration")).toHaveText("18 min");
+  const live = log.locator("tr.th-alerts-row", { hasText: "powershell" }).locator(".th-cp-duration");
+  await expect(live).toHaveText(/^Live · (1|2|3) min$/);
+  await expect(live).toHaveAttribute("data-live", "true");
   await page.screenshot({ path: test.info().outputPath("profile-activity.png"), fullPage: true });
 
   const requests: string[] = [];

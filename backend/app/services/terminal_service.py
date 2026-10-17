@@ -185,23 +185,31 @@ class TerminalService:
             session.started_at = utcnow()
             self.db.commit()
 
-    def close(self, session: TerminalSession, reason: str) -> None:
-        # FAILED is also terminal (Embedded SSH Connect: a dial error already
-        # recorded a specific reason — credential_missing/host_unreachable/
-        # authentication_failed/etc. — a later generic "operator_closed" from
-        # the WS route's own cleanup must not clobber that diagnosis).
-        if session.status in (
-            TerminalSessionStatus.CLOSED.value,
-            TerminalSessionStatus.EXPIRED.value,
-            TerminalSessionStatus.FAILED.value,
-        ):
-            return
-        session.status = (
-            TerminalSessionStatus.EXPIRED.value if reason == "expired" else TerminalSessionStatus.CLOSED.value
+    def close(self, session: TerminalSession, reason: str) -> bool:
+        """End the session; True only for the caller that actually ended it.
+
+        Both websocket sides and the watchdog close a session at nearly the
+        same moment, each with its own database session; a conditional UPDATE
+        lets exactly one of them win, so the end is audited once (it was
+        audited twice, 15 ms apart, operator_closed and agent_gone).
+        FAILED is also terminal (Embedded SSH Connect: a dial error already
+        recorded a specific reason — credential_missing/host_unreachable/
+        authentication_failed/etc. — a later generic "operator_closed" from
+        the WS route's own cleanup must not clobber that diagnosis)."""
+        status = TerminalSessionStatus.EXPIRED.value if reason == "expired" else TerminalSessionStatus.CLOSED.value
+        updated = (
+            self.db.query(TerminalSession)
+            .filter(
+                TerminalSession.id == session.id,
+                TerminalSession.status.in_(
+                    [TerminalSessionStatus.PENDING.value, TerminalSessionStatus.ACTIVE.value]
+                ),
+            )
+            .update({"status": status, "ended_at": utcnow(), "disconnect_reason": reason}, synchronize_session=False)
         )
-        session.ended_at = utcnow()
-        session.disconnect_reason = reason
         self.db.commit()
+        self.db.refresh(session)
+        return updated == 1
 
     def expire_stale(self) -> int:
         """Mark PENDING sessions whose ticket TTL passed as expired. Returns count."""

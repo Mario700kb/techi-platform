@@ -35,11 +35,21 @@ class ClientProfileGroup(BaseModel):
     devices: int
 
 
+class SessionSpan(BaseModel):
+    duration_seconds: Optional[int] = None
+    live_since: Optional[datetime] = None  # still open: started then
+    end_reason: Optional[str] = None
+
+
 class ClientActivityPage(BaseModel):
     total: int
     items: List["AuditLogOut"]
     # Current name of every device the page's entries mention.
     device_names: Dict[int, str] = {}
+    # For entries that start a session (Connect, Remote Support session
+    # started, terminal/PowerShell/SSH opened), keyed by entry id: how long it
+    # lasted, or since when it is still open.
+    sessions: Dict[int, SessionSpan] = {}
 
 
 class ClientProfile(BaseModel):

@@ -256,7 +256,9 @@ def get_client_activity(
         operator_username=operator or None,
     )
     names = _device_names(db, (item.device_id for item in items))
-    return ClientActivityPage(total=total, items=items, device_names=names)
+    from app.services.activity_sessions import session_spans
+
+    return ClientActivityPage(total=total, items=items, device_names=names, sessions=session_spans(db, items))
 
 
 def _excerpt(body: str) -> str:

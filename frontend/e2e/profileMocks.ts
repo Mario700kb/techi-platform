@@ -186,9 +186,27 @@ export async function northwindProfile(page: Page) {
   await page.route("**/api/v1/clients/1/activity?*", (route) =>
     route.fulfill({
       json: {
-        total: 3,
+        total: 4,
         device_names: { "1": "NW-RECEPTION-01", "3": "NW-SRV-01" },
+        // The Connect click (9) led to an 18-minute session; the PowerShell
+        // console opened 2 minutes ago (10) is still open.
+        sessions: {
+          "9": { duration_seconds: 18 * 60, live_since: null, end_reason: "session_closed" },
+          "10": { duration_seconds: null, live_since: iso(2), end_reason: null },
+        },
         items: [
+          {
+            id: 10,
+            operator_id: 1,
+            operator_username: "denis",
+            action: "terminal_session_opened",
+            entity_type: "terminal_session",
+            entity_id: null,
+            device_id: 3,
+            client_id: 1,
+            details_json: '{"session_id": "abc", "engine": "powershell", "ip": "79.98.115.19"}',
+            created_at: iso(2),
+          },
           {
             id: 9,
             operator_id: 1,

@@ -44,6 +44,7 @@ import {
   getClientProfile,
   getClients,
   getGroups,
+  type ActivitySessionSpan,
 } from "../api/clients";
 import { CONNECT_REFRESH_EVENT, ConnectRowStatus, getConnectStatuses } from "../api/connect";
 import { Device, DeviceStats, getDevice, getDevices, getDeviceTableDetails } from "../api/devices";
@@ -1459,11 +1460,13 @@ interface ActivityView {
   ip: string | null;
   status: { label: string; tone: string } | null;
   duration: string | null;
+  /** The session this entry started is still open. */
+  live: boolean;
   failed: boolean;
 }
 
 /** What one audit entry says, in the words and parts the activity log shows. */
-function describeActivity(entry: AuditLogEntry): ActivityView {
+function describeActivity(entry: AuditLogEntry, span?: ActivitySessionSpan): ActivityView {
   const d = parseDetails(entry.details_json);
   const text = (key: string) => (typeof d[key] === "string" && d[key] ? (d[key] as string) : null);
   const num = (key: string) => (typeof d[key] === "number" ? (d[key] as number) : null);
@@ -1496,7 +1499,18 @@ function describeActivity(entry: AuditLogEntry): ActivityView {
 
   const seconds = num("duration_seconds");
   const minutes = num("duration_minutes");
-  const duration = seconds != null ? formatDuration(seconds) : minutes != null ? formatDuration(minutes * 60) : null;
+  // A session's start shows how long it lasted (or that it is still open),
+  // from the session itself; its end entry carries the same figure.
+  const live = Boolean(span?.live_since);
+  const duration = span?.live_since
+    ? `Live · ${formatDuration((Date.now() - new Date(span.live_since).getTime()) / 1000)}`
+    : span?.duration_seconds != null
+      ? formatDuration(span.duration_seconds)
+      : seconds != null
+        ? formatDuration(seconds)
+        : minutes != null
+          ? formatDuration(minutes * 60)
+          : null;
 
   return {
     kind,
@@ -1506,6 +1520,7 @@ function describeActivity(entry: AuditLogEntry): ActivityView {
     ip: text("ip"),
     status,
     duration,
+    live,
     failed: FAILED_ACTIONS.has(entry.action),
   };
 }
@@ -1534,7 +1549,7 @@ function ActivityList({
   return (
     <ul className="flex flex-col px-5 pb-2">
       {page.items.map((entry, index) => {
-        const view = describeActivity(entry);
+        const view = describeActivity(entry, page.sessions?.[entry.id]);
         const deviceName = entry.device_id != null ? page.device_names[entry.device_id] : undefined;
         return (
           <li
@@ -1570,7 +1585,11 @@ function ActivityList({
               <span style={{ color: "var(--th-text-muted)" }} title={formatDateTime(entry.created_at)}>
                 {timeAgo(entry.created_at)}
               </span>
-              {view.duration && <span className="th-cp-duration">{view.duration}</span>}
+              {view.duration && (
+                <span className="th-cp-duration" data-live={view.live || undefined}>
+                  {view.duration}
+                </span>
+              )}
             </span>
           </li>
         );
@@ -1848,7 +1867,7 @@ function ActivityTab({ clientId, onOpenDevice }: { clientId: number; onOpenDevic
               </thead>
               <tbody>
                 {data.items.flatMap((entry, index) => {
-                  const view = describeActivity(entry);
+                  const view = describeActivity(entry, data.sessions?.[entry.id]);
                   const deviceName = entry.device_id != null ? data.device_names[entry.device_id] : undefined;
                   const day = days[index];
                   const rows = [];
@@ -1926,7 +1945,9 @@ function ActivityTab({ clientId, onOpenDevice }: { clientId: number; onOpenDevic
                       </td>
                       <td className="text-right">
                         {view.duration ? (
-                          <span className="th-cp-duration">{view.duration}</span>
+                          <span className="th-cp-duration" data-live={view.live || undefined}>
+                            {view.duration}
+                          </span>
                         ) : (
                           <span
                             className="th-alerts-secondary !mt-0"

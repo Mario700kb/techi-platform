@@ -74,11 +74,14 @@ class TerminalWatchdog:
 
             violations = terminal_relay.idle_and_expired_sessions(IDLE_TIMEOUT_SECONDS, SESSION_MAX_SECONDS)
             for session_id, reason in violations.items():
-                await terminal_relay.close(session_id)
                 session = svc.get(session_id)
-                if session is None:
+                # End it in the database before closing the sockets, so the
+                # sockets' own cleanup finds it ended and the reason stays
+                # idle_timeout / max_duration.
+                ended_here = session is not None and svc.close(session, reason)
+                await terminal_relay.close(session_id)
+                if not ended_here:
                     continue
-                svc.close(session, reason)
                 system_audit_log(
                     db,
                     action=AuditAction.TERMINAL_SESSION_CLOSED,
