@@ -100,6 +100,7 @@ import { deviceSite } from "../utils/location";
 import { cpuView, osView, storageView } from "../utils/system";
 import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
 import DeviceLivePanel from "./DeviceLivePanel";
+import { addQueuedAction } from "../utils/remoteActions";
 import { useDeviceLive } from "../hooks/useDeviceLive";
 
 interface DeviceDrawerProps {
@@ -1600,7 +1601,7 @@ export default function DeviceDrawer({
                     action_type: selectedActionType,
                     created_by: user?.username ?? "operator",
                   });
-                  setActions((prev) => [created, ...prev]);
+                  setActions((prev) => addQueuedAction(prev, created));
                 } finally {
                   setActionBusy(false);
                 }
@@ -1722,7 +1723,7 @@ export default function DeviceDrawer({
                           action_type: type,
                           created_by: user?.username ?? "operator",
                         });
-                        setActions((prev) => [created, ...prev]);
+                        setActions((prev) => addQueuedAction(prev, created));
                       } catch {
                         /* surfaced via WS */
                       } finally {
@@ -1853,7 +1854,7 @@ export default function DeviceDrawer({
                               ? async (id) => {
                                   try {
                                     const created = await retryAction(id);
-                                    setActions((prev) => [created, ...prev]);
+                                    setActions((prev) => addQueuedAction(prev, created));
                                   } catch {
                                     // ignore
                                   }
@@ -2306,7 +2307,7 @@ export default function DeviceDrawer({
                                   action_type: "sync_rustdesk",
                                   created_by: user?.username ?? "operator",
                                 });
-                                setActions((prev) => [created, ...prev]);
+                                setActions((prev) => addQueuedAction(prev, created));
                                 setRsToast({ message: "Sync queued", ok: true });
                                 setTimeout(() => setRsToast(null), 3000);
                               } catch (e: unknown) {
@@ -2337,7 +2338,7 @@ export default function DeviceDrawer({
                                 action_type: "sync_rustdesk",
                                 created_by: user?.username ?? "operator",
                               });
-                              setActions((prev) => [created, ...prev]);
+                              setActions((prev) => addQueuedAction(prev, created));
                               setRsToast({ message: "Sync queued", ok: true });
                               setTimeout(() => setRsToast(null), 3000);
                             } catch (e: unknown) {
@@ -2362,7 +2363,7 @@ export default function DeviceDrawer({
                                 action_type: "restart_rustdesk",
                                 created_by: user?.username ?? "operator",
                               });
-                              setActions((prev) => [created, ...prev]);
+                              setActions((prev) => addQueuedAction(prev, created));
                               setRsToast({ message: "Restart queued", ok: true });
                               setTimeout(() => setRsToast(null), 3000);
                             } catch (e: unknown) {
@@ -2387,7 +2388,7 @@ export default function DeviceDrawer({
                                 action_type: "reopen_rustdesk",
                                 created_by: user?.username ?? "operator",
                               });
-                              setActions((prev) => [created, ...prev]);
+                              setActions((prev) => addQueuedAction(prev, created));
                               setRsToast({ message: "Reopen queued", ok: true });
                               setTimeout(() => setRsToast(null), 3000);
                             } catch (e: unknown) {

@@ -29,6 +29,8 @@ import PlatformIcon from "./PlatformIcon";
 import ResourceBar from "./ResourceBar";
 import VersionBadge from "./VersionBadge";
 import { Button, EmptyState, SelectField } from "./ui";
+import DeviceLivePanel from "./DeviceLivePanel";
+import { useDeviceLive } from "../hooks/useDeviceLive";
 
 const DeviceTerminal = lazy(() => import("./DeviceTerminal"));
 
@@ -177,11 +179,16 @@ export default function GenericDeviceDrawer({
     toastTimer.current = window.setTimeout(() => setToast(null), 3000);
   };
 
+  // Live view while Overview is open (Linux and Windows agents from 2.1.27).
+  const livePlatform = /^(windows|linux)/i.test(device.platform || "");
+  const live = useDeviceLive(device.id, isOpen && tab === "overview" && livePlatform && !device.is_archived);
+
   const runAction = async (a: DrawerAction) => {
     setBusy(a.id);
     try {
-      await queueDeviceAction(device.id, { action_type: a.id as ActionType });
-      flash(`${a.label} queued`, true);
+      const created = await queueDeviceAction(device.id, { action_type: a.id as ActionType });
+      // "sent" straight away means it went over the live channel.
+      flash(created.status === "queued" ? `${a.label} queued for the next heartbeat` : `${a.label} sent live`, true);
     } catch (e) {
       flash(e instanceof Error ? e.message : "Action failed", false);
     } finally {
@@ -344,6 +351,7 @@ export default function GenericDeviceDrawer({
             <>
               {tab === "overview" && (
                 <div className="th-tab-panel">
+                  {livePlatform && !device.is_archived && <DeviceLivePanel live={live} />}
                   <Overview
                     device={device}
                     meta={meta}
