@@ -30,6 +30,8 @@ func TestBufferKeepsSamplesAcrossARestartUntilAcknowledged(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Windows cannot remove the test directory while a file in it is open.
+	t.Cleanup(func() { b.close() })
 	start := time.Now().Add(-time.Hour).Truncate(time.Minute)
 	for i := 0; i < 5; i++ {
 		if err := b.append(testSample(start.Add(time.Duration(i)*time.Minute), 10)); err != nil {
@@ -71,6 +73,7 @@ func TestBufferKeepsSamplesAcrossARestartUntilAcknowledged(t *testing.T) {
 func TestBufferSkipsALineTornByAPowerCut(t *testing.T) {
 	dir := t.TempDir()
 	b, _ := openTelemetryBuffer(dir, 50<<20, 7*24*time.Hour)
+	t.Cleanup(func() { b.close() })
 	now := time.Now().Truncate(time.Minute)
 	_ = b.append(testSample(now.Add(-2*time.Minute), 10))
 	_ = b.append(testSample(now.Add(-time.Minute), 20))
@@ -90,6 +93,7 @@ func TestBufferSkipsALineTornByAPowerCut(t *testing.T) {
 func TestBufferOverItsCapDropsTheOldestAndCountsThem(t *testing.T) {
 	dir := t.TempDir()
 	b, _ := openTelemetryBuffer(dir, 1, 7*24*time.Hour) // one byte: only the newest file stays
+	t.Cleanup(b.close)
 	start := time.Now().Add(-48 * time.Hour).Truncate(time.Minute)
 	for i := 0; i < telemetrySegmentSamples+3; i++ {
 		_ = b.append(testSample(start.Add(time.Duration(i)*time.Minute), 10))
