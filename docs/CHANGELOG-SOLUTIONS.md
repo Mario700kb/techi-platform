@@ -5,6 +5,15 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-18] PACKAGES-2.1.31-2026-10-18 — agent, Endpoint MSI and Update Bridge at 2.1.31
+
+On the owner's word: the three Windows packages from CI run 39070429774 are
+active — agent binary `5de115cc…` (package `08b50ee8…`), Endpoint Deployment
+MSI `6feeed41…` (`db57148e…`), Agent Update Bridge MSI `61b2d207…`
+(`49e98f72…`); the 2.1.30 packages are kept inactive for rollback. The public
+downloads serve 2.1.31 and active-version reports 2.1.31. No device was sent
+a self_update: devices move only when an update is sent to them.
+
 ## [2026-10-18] REPORTS-2026-10-18 — alert noise, seven client reports, security posture (`0a0920a`, `a6ee924`, `9bedff9`, `389007b`)
 
 **Backend + frontend deployed 15:31 (Tirana), migrations `q5r6s7t8u9v0`,
