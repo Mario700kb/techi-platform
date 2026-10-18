@@ -5,6 +5,27 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-18] STATUS-REALTIME-2026-10-18 — real-time status, live update progress, refused actions explained (`215d32b`, `723f3c8`, `f751281`)
+
+**Backend + frontend deployed 21:17 (Tirana), migration `s7t8u9v0w1x2`.**
+- Status: live-channel devices show "Online · live"; a dead socket is noticed
+  within 40 s (uvicorn ws ping 20/20, now explicit in the Dockerfile CMD),
+  grace 90 s for agents ≥ 2.1.27 (power cut → offline in ~130 s, was ~190 s);
+  heartbeat devices age to stale/offline on screen without refetch; one status
+  chip everywhere; heartbeat deltas now reach operators limited to clients.
+- Agent update followed live: progress/stage on remote actions, agent
+  callback POST /actions/{id}/progress (agent 2.1.32), server-side
+  restarting/confirming for older agents; the TECHI Agent card shows a live
+  bar and Installed changes without reload.
+- Actions: component actions are pushed over the live channel at once; a
+  queue conflict is a 409 with the blocking action, shown in Maintenance with
+  "Cancel #id" (the refusal used to reach only the browser console).
+Checked live: 5 channels back within 100 s, 0 connection_lost, 781/924/12
+report live=true on 2.1.31; backend 159 MB. Dump
+`/opt/backups/techi/pre-status-realtime-20261018-211543.sql.gz`, rollback
+`techi-platform-{backend,frontend}:pre-status-realtime-389007b`; guard, smoke
+passed, 0 errors. Pytest 1631, Vitest 382, Playwright 217. Disk 1.8 GB free.
+
 ## [2026-10-18] PACKAGES-2.1.31-2026-10-18 — agent, Endpoint MSI and Update Bridge at 2.1.31
 
 On the owner's word: the three Windows packages from CI run 39070429774 are
