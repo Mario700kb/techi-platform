@@ -5,6 +5,19 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-18] LIVE-OVERVIEW-2026-10-18 — Live cards never blank; an organised Overview; status column fits (`b7fe7dc`, `ec50a4f`)
+
+**Frontend deployed (Tirana, evening).** The drawer's Live cards open at once
+from the device's last values (session cache, 20 devices, 15 min) or its
+heartbeat, whichever is newer, until the live stream connects; a paused or
+reconnecting stream keeps the cards. Overview order: Status → Live → Last 24
+hours → Alerts → Services → Security → Identity → Client assignment → Network
+→ Components → Maintenance, one section header style, top 5 processes, long
+alert lists collapse. Devices table: the status chip is 136 px with the time
+before the reason, so the table no longer scrolls sideways at 1280 px.
+Rollback `techi-platform-frontend:pre-live-overview-1070bc7`; guard and smoke
+passed. Vitest 408, Playwright 236. Disk 1.5 GB free (94%).
+
 ## [2026-10-18] COMPACT-OVERVIEW-2026-10-18 — a compact device Overview (`9dcab7f`)
 
 **Frontend deployed 22:10 (Tirana).** The owner found the drawer's Overview
