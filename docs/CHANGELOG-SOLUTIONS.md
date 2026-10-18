@@ -5,6 +5,15 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-19] BULK-UPDATE-FIX-2026-10-19 — bulk "Update agent" no longer refused with 422 (`c28b337`)
+
+**Frontend deployed (Tirana, night of 19 Oct).** The bulk bar sent
+timeout_seconds 900; the API takes 10–600 and raises a self_update to 900 s
+itself, so the first real use was refused (422, nothing queued). It now sends
+600; a backend test posts the page's exact body. Rollback
+`techi-platform-frontend:pre-bulk-fix-8275aea`; guard and smoke passed.
+Disk 961 MB free (96%) — resize or cleanup before the next build.
+
 ## [2026-10-19] BULK-AGENT-UPDATE-2026-10-19 — "Update agent" for the selected devices (`353bba3`)
 
 **Backend + frontend deployed 00:10 (Tirana), no migration.** Admins and
