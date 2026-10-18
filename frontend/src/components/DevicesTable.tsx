@@ -1364,13 +1364,10 @@ const DevicesTable = memo(function DevicesTable({
 
                         {/* ── Status ── */}
                         <td className="whitespace-nowrap px-2.5 py-1.5 align-middle">
-                          {/* A steady width: the column does not jump as a row's words change. */}
-                          <DeviceStatusChip
-                            device={device}
-                            layout="stacked"
-                            hint={offlineBadge}
-                            className="min-w-[188px]"
-                          >
+                          {/* A fixed width: the column neither jumps as a row's words
+                              change nor grows the table; a long reason ends in "…"
+                              and reads in full on hover. */}
+                          <DeviceStatusChip device={device} layout="stacked" hint={offlineBadge} className="w-[136px]">
                             {activeActionMap[device.id] && <ActionIndicator entry={activeActionMap[device.id]} />}
                           </DeviceStatusChip>
                         </td>

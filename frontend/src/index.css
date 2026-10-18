@@ -5406,6 +5406,8 @@ a.th-list-row:hover {
 .th-devstatus-stacked {
   display: inline-flex;
   flex-direction: column;
+  max-width: 100%;
+  min-width: 0;
   vertical-align: middle;
 }
 .th-devstatus-stacked .th-devstatus-main {
@@ -5427,6 +5429,8 @@ a.th-list-row:hover {
   font-size: 12px;
   line-height: 16px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .th-score {

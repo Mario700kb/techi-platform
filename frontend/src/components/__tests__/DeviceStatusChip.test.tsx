@@ -57,7 +57,7 @@ describe("DeviceStatusChip", () => {
     expect(chip()).toHaveAttribute("title", expect.stringMatching(/waiting for it to return/));
   });
 
-  it("stacks the same words for table rows, with an inferred hint", () => {
+  it("stacks the words for table rows, time before reason, with an inferred hint", () => {
     render(
       <DeviceStatusChip
         layout="stacked"
@@ -65,6 +65,8 @@ describe("DeviceStatusChip", () => {
         hint={{ label: "Site?" }}
       />,
     );
-    expect(chip()).toHaveTextContent("OfflineShut down · since 14:05 · Site?");
+    // The time leads: a narrow column cuts the reason (still in the tooltip), not the time.
+    expect(chip()).toHaveTextContent("Offlinesince 14:05 · Shut down · Site?");
+    expect(chip()).toHaveAttribute("title", expect.stringContaining("Likely cause: Site?"));
   });
 });

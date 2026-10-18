@@ -36,11 +36,15 @@ export function DeviceStatusChip({ device, layout = "chip", hint, className, sty
   );
 
   if (layout === "stacked") {
+    // In a table row the time comes first ("2d ago · No heartbeat"): when the
+    // column is narrow it is the reason, still in the tooltip, that gets "…".
+    const detail =
+      view.state === "offline" && view.since ? [view.since, view.reason].filter(Boolean).join(" · ") : view.detail;
     return (
       <span
         className={`th-devstatus th-devstatus-stacked ${className ?? ""}`}
         style={{ "--chip-tone": view.tone, ...style } as CSSProperties}
-        title={view.title}
+        title={hint ? `${view.title} · Likely cause: ${hint.label}` : view.title}
         data-state={view.state}
         data-presence-live={view.live || undefined}
         data-testid="device-status"
@@ -51,10 +55,10 @@ export function DeviceStatusChip({ device, layout = "chip", hint, className, sty
           {children}
         </span>
         <span className="th-devstatus-detail">
-          {view.detail}
+          {detail}
           {hint && (
             <span title={hint.title ?? "Likely cause (inferred)"}>
-              {view.detail ? " · " : ""}
+              {detail ? " · " : ""}
               {hint.label}
             </span>
           )}

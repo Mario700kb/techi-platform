@@ -160,6 +160,8 @@ export interface PresenceView {
   detail: string;
   /** Why it is offline: "Shut down", "Asleep", "Connection lost", "No heartbeat", "Never seen". */
   reason: string | null;
+  /** Offline only: "since 14:05" or "2d ago". */
+  since?: string | null;
   tone: string;
   live: boolean;
   reconnecting: boolean;
@@ -188,7 +190,7 @@ export function presenceView(device: PresenceFields, now: number = serverNow()):
       reason === "Never seen"
         ? "Offline — the agent has never reported"
         : `Offline${reason ? ` — ${reason.toLowerCase()}` : ""}${seen ? `; last contact ${clockTime(seenMs)} (${shortAge(seenMs, now)})` : ""}`;
-    return { ...base, reason, detail, title };
+    return { ...base, reason, detail, title, since: reason === "Never seen" ? null : since };
   }
 
   if (device.live) {
