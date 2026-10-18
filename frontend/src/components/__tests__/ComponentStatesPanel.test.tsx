@@ -107,7 +107,10 @@ describe("ComponentStatesPanel", () => {
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Update" }));
 
     await waitFor(() => expect(queueAction).toHaveBeenCalledWith(7, "agent", "update"));
-    await waitFor(() => expect(screen.getByText("Update queued")).toBeInTheDocument());
+    // The agent update is followed live in place of the card's buttons.
+    await waitFor(() =>
+      expect(screen.getByText("Queued — goes out at once over the live channel")).toBeInTheDocument(),
+    );
   });
 
   it("surfaces a structured error when the action is rejected", async () => {

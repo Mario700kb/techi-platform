@@ -4,6 +4,9 @@ import { TERMS } from "../utils/deviceStatus";
 export type ActionStatus =
   "queued" | "sent" | "acknowledged" | "running" | "completed" | "failed" | "expired" | "cancelled";
 
+/** Step of an action that reports progress (today: the agent's self-update). */
+export type ActionStage = "downloading" | "verifying" | "installing" | "restarting" | "confirming";
+
 export type ActionType =
   | "ping"
   | "restart_device"
@@ -97,6 +100,10 @@ export interface RemoteAction {
   stderr_output?: string | null;
   execution_timeout_seconds: number;
   duration_seconds?: number | null;
+  /** Overall 0–100 while it runs; null when only queued/sent and after it ends. */
+  progress?: number | null;
+  /** The step under way while it runs; null otherwise. */
+  stage?: ActionStage | null;
 }
 
 export interface RemoteActionWithDevice extends RemoteAction {

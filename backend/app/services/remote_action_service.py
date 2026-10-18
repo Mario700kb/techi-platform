@@ -6,7 +6,13 @@ from sqlalchemy.orm import Session
 from app.core.agent_auth import compute_callback_token
 from app.core.time import utcnow
 from app.models.device import Device
-from app.models.remote_action import ActionStatus, RemoteAction, TERMINAL_STATUSES
+from app.models.remote_action import (
+    ACTION_STAGE_ORDER,
+    ACTION_STAGE_PERCENT,
+    ActionStatus,
+    RemoteAction,
+    TERMINAL_STATUSES,
+)
 from app.repositories.remote_action_repository import RemoteActionRepository
 from app.schemas.remote_action import (
     ACTION_CONFLICT_GROUPS,
@@ -69,6 +75,8 @@ def _action_event_payload(action: RemoteAction) -> dict:
         "output": action.output,
         "stderr_output": action.stderr_output,
         "execution_timeout_seconds": action.execution_timeout_seconds,
+        "progress": action.progress,
+        "stage": action.stage,
     }
 
 
@@ -78,8 +86,37 @@ def _publish_action_status(action: RemoteAction, event_type: RealtimeEventType) 
         # Keyed on the status too: over the command channel an action goes
         # sent → acknowledged → completed within a second, and a key per
         # action dropped every step after the first, leaving pages on "Sent".
-        dedupe_key=f"action_status:{action.id}:{getattr(action.status, 'value', action.status)}",
+        # And on stage + progress: progress reports keep the status "running"
+        # and would otherwise all be dropped after the first.
+        dedupe_key=(
+            f"action_status:{action.id}:{getattr(action.status, 'value', action.status)}"
+            f":{getattr(action, 'stage', None)}:{getattr(action, 'progress', None)}"
+        ),
     )
+
+
+# What result_message says when a stage starts without a message of its own.
+_STAGE_MESSAGES = {
+    "downloading": "Downloading the update",
+    "verifying": "Verifying the download",
+    "installing": "Installing the update",
+    "restarting": "Restarting the agent service",
+    "confirming": "Agent back; confirming the new version",
+}
+
+# Progress is accepted while the agent works on the action.
+_PROGRESS_STATUSES = {ActionStatus.SENT, ActionStatus.ACKNOWLEDGED, ActionStatus.RUNNING}
+
+# A self_update the agent is working on: the command channel dropping (the
+# service restarting) and returning say how far it got, for any agent version.
+_CHANNEL_STAGE_STATUSES = (ActionStatus.ACKNOWLEDGED, ActionStatus.RUNNING)
+
+
+def _mark_progress_complete(action: RemoteAction) -> None:
+    """A completed action with progress shows 100 and no stage."""
+    if action.progress is not None or action.action_type == ActionType.SELF_UPDATE.value:
+        action.progress = 100
+        action.stage = None
 
 
 def _record_audit(db: Session, action: RemoteAction, summary: str, actor: Optional[str] = None) -> None:
@@ -282,7 +319,10 @@ class RemoteActionService:
             action.status = ActionStatus.RUNNING
             if action.started_at is None:
                 action.started_at = utcnow()
-            action.result_message = "Self-update initiated; awaiting heartbeat verification"
+            if action.stage is None:
+                # An agent reporting progress (2.1.32+) has already said more
+                # than this; keep its latest message.
+                action.result_message = "Self-update initiated; awaiting heartbeat verification"
             action.output = output
             self.repo.db.add(action)
             self.repo.db.commit()
@@ -290,6 +330,7 @@ class RemoteActionService:
             logger.info("[action] self_update #%d awaiting heartbeat verification", action_id)
             _publish_action_status(action, RealtimeEventType.ACTION_STATUS_CHANGED)
             return action
+        _mark_progress_complete(action)
         action = self.repo.mark_completed(action, result_message=result_message, output=output)
         logger.info("[action] completed #%d result=%r", action_id, result_message)
         _publish_action_status(action, RealtimeEventType.ACTION_STATUS_CHANGED)
@@ -297,22 +338,117 @@ class RemoteActionService:
         _notify_action_result(self.repo.db, action, failed=False, message=result_message or f"Action completed: {action.action_type}")
         return action
 
-    def verify_self_update_for_device(self, device_id: int) -> None:
-        actions = (
+    def report_progress(
+        self,
+        action_id: int,
+        stage: str,
+        percent: Optional[int] = None,
+        message: Optional[str] = None,
+    ) -> Optional[RemoteAction]:
+        """Agent progress for an action it is working on.
+
+        Moves a sent/acknowledged action to running. Never moves back: a
+        report for an earlier stage, or a lower percent within the same stage
+        (a download retry), changes nothing. percent is the overall percent;
+        without one the stage's starting percent is used (or the current
+        one, if higher).
+        """
+        action = self.repo.get(action_id)
+        if not action:
+            return None
+        if action.status not in _PROGRESS_STATUSES:
+            raise ValueError(f"Cannot report progress in status: {action.status.value}")
+        if stage not in ACTION_STAGE_ORDER:
+            raise ValueError(f"Unknown progress stage: {stage}")
+
+        changed = False
+        if action.status != ActionStatus.RUNNING:
+            now = utcnow()
+            if action.acknowledged_at is None:
+                action.acknowledged_at = now
+            if action.started_at is None:
+                action.started_at = now
+            action.status = ActionStatus.RUNNING
+            changed = True
+
+        current_order = ACTION_STAGE_ORDER.get(action.stage or "", -1)
+        new_order = ACTION_STAGE_ORDER[stage]
+        current = action.progress or 0
+        backwards = new_order < current_order or (
+            new_order == current_order and percent is not None and percent < current
+        )
+        if not backwards:
+            target = percent if percent is not None else ACTION_STAGE_PERCENT[stage]
+            # 100 means completed, which only the server decides.
+            target = min(max(target, current), 99)
+            text = (message or "").strip()[:200] or (
+                _STAGE_MESSAGES[stage] if stage != action.stage else action.result_message
+            )
+            if (action.progress, action.stage, action.result_message) != (target, stage, text):
+                action.progress, action.stage, action.result_message = target, stage, text
+                changed = True
+
+        if not changed:
+            return action
+        self.repo.db.add(action)
+        self.repo.db.commit()
+        self.repo.db.refresh(action)
+        logger.debug("[action] progress #%d %s %s%%", action.id, action.stage, action.progress)
+        _publish_action_status(action, RealtimeEventType.ACTION_STATUS_CHANGED)
+        return action
+
+    def note_command_channel(self, device_id: int, connected: bool) -> None:
+        """The device's command channel closed or opened.
+
+        A self_update the agent is working on restarts the agent service, which
+        drops the channel: that is the "restarting" stage. The channel (or a
+        heartbeat, see verify_self_update_for_device) coming back while the
+        update is not yet verified is "confirming". Works for agents that do
+        not report progress. A drop while a progress-reporting agent is still
+        downloading or verifying is a network blip, not the restart.
+        """
+        actions = self._open_self_updates(device_id)
+        for action in actions:
+            if connected:
+                if action.stage == "restarting":
+                    self._set_server_stage(action, "confirming")
+            elif action.stage in (None, "installing"):
+                self._set_server_stage(action, "restarting")
+
+    def _open_self_updates(self, device_id: int) -> List[RemoteAction]:
+        return (
             self.repo.db.query(RemoteAction)
             .filter(
                 RemoteAction.device_id == device_id,
                 RemoteAction.action_type == ActionType.SELF_UPDATE.value,
-                RemoteAction.status == ActionStatus.RUNNING,
+                RemoteAction.status.in_(_CHANNEL_STAGE_STATUSES),
             )
             .order_by(RemoteAction.created_at.desc())
             .limit(10)
             .all()
         )
+
+    def _set_server_stage(self, action: RemoteAction, stage: str) -> None:
+        action.stage = stage
+        action.progress = max(action.progress or 0, ACTION_STAGE_PERCENT[stage])
+        action.result_message = _STAGE_MESSAGES[stage]
+        self.repo.db.add(action)
+        self.repo.db.commit()
+        self.repo.db.refresh(action)
+        logger.info("[action] self_update #%d on device #%d: %s", action.id, action.device_id, stage)
+        _publish_action_status(action, RealtimeEventType.ACTION_STATUS_CHANGED)
+
+    def verify_self_update_for_device(self, device_id: int) -> None:
+        actions = self._open_self_updates(device_id)
         for action in actions:
-            if not self._self_update_verified(action):
+            if action.status != ActionStatus.RUNNING or not self._self_update_verified(action):
+                # A heartbeat after the restart: the agent is back, the new
+                # version not (yet) confirmed.
+                if action.stage == "restarting":
+                    self._set_server_stage(action, "confirming")
                 continue
             target_sha = _self_update_target_sha(action.payload_dict)
+            _mark_progress_complete(action)
             action = self.repo.mark_completed(
                 action,
                 result_message=f"Self-update verified by heartbeat sha256={target_sha[:12]}",

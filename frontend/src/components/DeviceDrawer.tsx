@@ -106,6 +106,8 @@ import DeviceLast24hCard from "./DeviceLast24hCard";
 import DeviceMonitoringPanel from "./DeviceMonitoringPanel";
 import DevicePowerShellPanel from "./DevicePowerShellPanel";
 import { addQueuedAction } from "../utils/remoteActions";
+import { isActiveUpdate, upsertAction, updateTargetVersion } from "../utils/agentUpdate";
+import { AgentUpdateCompact } from "./AgentUpdateProgress";
 import { useDeviceLive } from "../hooks/useDeviceLive";
 
 interface DeviceDrawerProps {
@@ -570,17 +572,19 @@ export default function DeviceDrawer({
     const patch = ev as unknown as RemoteAction;
     if (!patch?.id) return;
 
-    setActions((prev) => {
-      const idx = prev.findIndex((a) => a.id === patch.id);
-      if (idx === -1) {
-        // New action queued from another session — prepend it.
-        return [patch, ...prev];
-      }
-      const updated = [...prev];
-      updated[idx] = { ...updated[idx], ...patch };
-      return updated;
-    });
+    // A new one (queued from another session) is prepended; a known one only
+    // moves forward — the same event also reaches the Components panel's
+    // socket, which reports it here too, and a late copy must not undo a newer
+    // one (an update at 60% dropping back to 20%).
+    setActions((prev) => upsertAction(prev, patch));
   }, [latestEvent, device.id, setActions]);
+  const noteActionChange = useCallback(
+    (action: RemoteAction) => {
+      if (action.device_id !== device.id) return;
+      setActions((prev) => upsertAction(prev, action));
+    },
+    [device.id, setActions],
+  );
 
   const addNote = useCallback(async () => {
     const note = noteText.trim();
@@ -1548,7 +1552,13 @@ export default function DeviceDrawer({
 
             {/* Platform Components — Installed/Desired/Health + lifecycle metadata (read-only) */}
             <div className="mb-4">
-              <ComponentStatesPanel deviceId={device.id} />
+              <ComponentStatesPanel
+                key={device.id}
+                deviceId={device.id}
+                actions={actionsData ?? undefined}
+                onActionChange={noteActionChange}
+                liveChannel={channelConnected}
+              />
             </div>
           </div>
 
@@ -2602,6 +2612,9 @@ function ActionRow({
   const canCancel = Boolean(onCancel) && isActiveStatus(action.status);
   const canRetry = Boolean(onRetry) && isTerminalStatus(action.status);
   const isRunning = action.status === "running";
+  // An agent update under way shows its stage and progress; its
+  // result_message is that progress detail until it ends.
+  const liveUpdate = isActiveUpdate(action);
   const relevantTime =
     action.completed_at ??
     action.failed_at ??
@@ -2645,7 +2658,10 @@ function ActionRow({
             by {action.created_by}
           </p>
         )}
-        {action.result_message && <p className="mt-0.5 text-[11px] text-emerald-400">{action.result_message}</p>}
+        {liveUpdate && <AgentUpdateCompact action={action} toVersion={updateTargetVersion(action)} />}
+        {action.result_message && !liveUpdate && (
+          <p className="mt-0.5 text-[11px] text-emerald-400">{action.result_message}</p>
+        )}
         {action.error_message && <p className="mt-0.5 text-[11px] text-red-400">{action.error_message}</p>}
         {action.output && action.output !== action.result_message && (
           <pre

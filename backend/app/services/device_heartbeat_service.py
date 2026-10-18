@@ -877,5 +877,8 @@ class DeviceHeartbeatService:
 
     @staticmethod
     def _has_inventory_change(previous_payload: dict, current_payload: dict) -> bool:
-        fields = ("hostname", "device_type", "status", "client_id", "group_id", "current_user")
+        # agent_version/agent_sha256: a self-update landing must refresh the
+        # device's "Installed" version on open pages.
+        fields = ("hostname", "device_type", "status", "client_id", "group_id", "current_user",
+                  "agent_version", "agent_sha256")
         return any(previous_payload.get(field) != current_payload.get(field) for field in fields)

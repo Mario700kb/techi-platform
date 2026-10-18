@@ -75,6 +75,20 @@ def _mark_lost(device_id: int, disconnected_at) -> None:
         db.close()
 
 
+def _note_self_update_channel(device_id: int, connected: bool) -> None:
+    """A self_update in progress: the channel dropping is the agent service
+    restarting, its return is the new agent starting up."""
+    from app.services.remote_action_service import RemoteActionService
+
+    db = SessionLocal()
+    try:
+        RemoteActionService(db).note_command_channel(device_id, connected)
+    except Exception:
+        logger.exception("[agent-channel] device #%d: self-update stage not recorded", device_id)
+    finally:
+        db.close()
+
+
 async def _offline_after_grace(device_id: int, disconnected_at) -> None:
     await asyncio.sleep(PRESENCE_GRACE_SECONDS)
     if agent_command_channel.presence_paused or agent_command_channel.is_connected(device_id):
@@ -147,6 +161,7 @@ async def agent_command_ws(websocket: WebSocket, device_id: int = 0, agent_id: s
     # The open channel is the agent saying it is up: online now, not at its
     # next heartbeat.
     await asyncio.to_thread(_mark_connected, device_id)
+    await asyncio.to_thread(_note_self_update_channel, device_id, True)
     if device_live_hub.has_viewers(device_id):
         # Someone has the device open: an agent that just (re)connected picks
         # the live view up at once instead of at the page's next renewal.
@@ -176,6 +191,7 @@ async def agent_command_ws(websocket: WebSocket, device_id: int = 0, agent_id: s
             task = asyncio.create_task(_offline_after_grace(device_id, utcnow()))
             _offline_checks.add(task)
             task.add_done_callback(_offline_checks.discard)
+            await asyncio.to_thread(_note_self_update_channel, device_id, False)
         try:
             await websocket.close()
         except Exception:

@@ -15,6 +15,7 @@ from app.schemas.remote_action import (
     RemoteActionComplete,
     RemoteActionCreate,
     RemoteActionFail,
+    RemoteActionProgress,
     RemoteActionResponse,
     RemoteActionRunning,
     RemoteActionWithDevice,
@@ -194,6 +195,31 @@ def running_action(
         raise HTTPException(status_code=401, detail="Invalid or missing callback secret")
     try:
         action = RemoteActionService(db).mark_running(action_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    if not action:
+        raise HTTPException(status_code=404, detail="Action not found")
+    return RemoteActionResponse.model_validate(action)
+
+
+@router.post("/actions/{action_id}/progress", response_model=RemoteActionResponse)
+def progress_action(
+    *,
+    db: Session = Depends(get_db),
+    action_id: int,
+    payload: RemoteActionProgress,
+    x_callback_secret: Optional[str] = Header(default=None),
+):
+    """Agent progress (stage + overall percent) for an action it is running.
+
+    An earlier stage or a lower percent is accepted and ignored, so a late or
+    reordered report never moves the bar back."""
+    if not verify_callback_token(action_id, x_callback_secret or ""):
+        raise HTTPException(status_code=401, detail="Invalid or missing callback secret")
+    try:
+        action = RemoteActionService(db).report_progress(
+            action_id, payload.stage, percent=payload.percent, message=payload.message
+        )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     if not action:

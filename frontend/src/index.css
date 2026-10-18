@@ -7868,3 +7868,191 @@ button.th-client-group:hover {
   width: 24px;
   height: 24px;
 }
+
+/* ── TECHI Agent update, live (Components card + action history) ──
+   One block in place of the card's buttons while the update runs: stage on
+   the left, version on the right, a slim bar, elapsed and step underneath.
+   Tone from --upd-tone: info while running (the accent is too close to the
+   critical red to tell "running" from "failed"), online when done, critical
+   on failure. Theme-neutral (tokens only). */
+.th-upd {
+  --upd-tone: var(--th-status-info);
+  margin-top: 8px;
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--upd-tone) 24%, var(--th-border-subtle));
+  background: color-mix(in srgb, var(--upd-tone) 5%, var(--th-bg-drawer-section));
+  animation: th-fade var(--th-dur) var(--th-ease-out) both;
+}
+.th-upd[data-tone="success"] {
+  --upd-tone: var(--th-status-online);
+}
+.th-upd[data-tone="failed"] {
+  --upd-tone: var(--th-status-critical);
+}
+.th-upd-head,
+.th-upd-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+.th-upd-stage {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 18px;
+  color: var(--th-text-primary);
+}
+.th-upd-stage > svg {
+  color: var(--upd-tone);
+}
+.th-upd[data-tone="success"] .th-upd-stage,
+.th-upd[data-tone="failed"] .th-upd-stage {
+  color: var(--upd-tone);
+}
+.th-upd-detail {
+  font-weight: 500;
+  color: var(--th-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.th-upd-version {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--th-text-muted);
+}
+.th-upd-version-from {
+  color: var(--th-text-faint);
+}
+.th-upd-version-to {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 600;
+  color: var(--th-text-primary);
+}
+.th-upd-meta {
+  font-size: 11.5px;
+  line-height: 16px;
+  color: var(--th-text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.th-upd-reason {
+  margin: 0;
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--th-text-secondary);
+  overflow-wrap: anywhere;
+}
+.th-upd-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.th-upd-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--th-border-input);
+  background: var(--th-btn-secondary-bg);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--th-text-primary);
+}
+.th-upd-btn:hover:not(:disabled) {
+  border-color: var(--th-border-strong);
+  background: var(--th-btn-secondary-hover);
+}
+.th-upd-btn[data-tone="failed"] {
+  border-color: color-mix(in srgb, var(--th-status-critical) 45%, transparent);
+  color: var(--th-status-critical);
+}
+.th-upd-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* The bar: a hairline track, the fill grows with the percentage; with no
+   percentage yet a short segment sweeps across (static under reduced motion). */
+.th-upd-bar {
+  --upd-tone: var(--th-status-info);
+  position: relative;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--th-text-primary) 9%, transparent);
+}
+.th-upd-bar[data-size="sm"] {
+  height: 3px;
+}
+.th-upd-bar[data-tone="success"] {
+  --upd-tone: var(--th-status-online);
+}
+.th-upd-bar[data-tone="failed"] {
+  --upd-tone: var(--th-status-critical);
+}
+.th-upd-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: inherit;
+  background: var(--upd-tone);
+  transition: width var(--th-dur-slow) var(--th-ease-out);
+}
+.th-upd-bar[data-indeterminate] .th-upd-fill {
+  width: 35%;
+  background: linear-gradient(90deg, transparent, var(--upd-tone) 30%, var(--upd-tone) 70%, transparent);
+  animation: th-upd-sweep 1.4s var(--th-ease) infinite;
+}
+@keyframes th-upd-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(290%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .th-upd {
+    animation: none;
+  }
+  .th-upd-bar[data-indeterminate] .th-upd-fill {
+    width: 100%;
+    animation: none !important;
+    background: color-mix(in srgb, var(--upd-tone) 35%, transparent);
+  }
+}
+
+/* Compact: one line + hairline bar under an action history row's title. */
+.th-upd-compact {
+  display: grid;
+  gap: 5px;
+  margin-top: 6px;
+}
+.th-upd-compact-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  font-size: 11.5px;
+  line-height: 16px;
+  color: var(--th-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.th-upd-compact-line .th-upd-version-to {
+  flex: none;
+  font-size: 11px;
+}

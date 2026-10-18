@@ -1,9 +1,9 @@
 import json
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.time import utcnow
 
@@ -97,6 +97,19 @@ class RemoteActionFail(BaseModel):
     stderr_output: Optional[str] = None
 
 
+ProgressStage = Literal["downloading", "verifying", "installing", "restarting", "confirming"]
+
+
+class RemoteActionProgress(BaseModel):
+    """Agent → POST /actions/{id}/progress. percent is the OVERALL percent
+    (downloading 5→80, verifying 85, installing 90, restarting 95,
+    confirming 97); omitted when unknown, e.g. a download of unknown size."""
+
+    stage: ProgressStage
+    percent: Optional[int] = Field(default=None, ge=0, le=100)
+    message: Optional[str] = Field(default=None, max_length=200)
+
+
 class RemoteActionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -120,6 +133,9 @@ class RemoteActionResponse(BaseModel):
     output: Optional[str] = None
     stderr_output: Optional[str] = None
     execution_timeout_seconds: int
+    # Live progress: overall percent 0–100 and stage; null until reported.
+    progress: Optional[int] = None
+    stage: Optional[str] = None
     duration_seconds: Optional[float] = None
 
     @model_validator(mode="before")

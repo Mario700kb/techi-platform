@@ -111,6 +111,10 @@ export interface DeviceRealtimeEvent {
     result_message?: string | null;
     error_message?: string | null;
     execution_timeout_seconds?: number;
+    parameters?: Record<string, unknown> | null;
+    progress?: number | null;
+    stage?: string | null;
+    agent_version?: string | null;
   };
 }
 

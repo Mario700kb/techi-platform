@@ -1,7 +1,7 @@
 import json
 from enum import Enum
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, SmallInteger, String, Text
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import relationship
 
@@ -53,6 +53,23 @@ EXPIRABLE_STATUSES = {
 }
 
 
+# Live progress of a long-running action (today: self_update). Stages in the
+# order they happen; progress never moves back to an earlier one. The overall
+# percentage each stage starts at: downloading runs 5→80 by bytes (reported by
+# the agent), completion is 100. restarting/confirming are also set by the
+# server from the command channel, so agents that do not report progress
+# (≤ 2.1.31) still show them.
+ACTION_PROGRESS_STAGES = ("downloading", "verifying", "installing", "restarting", "confirming")
+ACTION_STAGE_ORDER = {stage: i for i, stage in enumerate(ACTION_PROGRESS_STAGES)}
+ACTION_STAGE_PERCENT = {
+    "downloading": 5,
+    "verifying": 85,
+    "installing": 90,
+    "restarting": 95,
+    "confirming": 97,
+}
+
+
 class RemoteAction(Base):
     __tablename__ = "remote_actions"
 
@@ -76,6 +93,10 @@ class RemoteAction(Base):
     output = Column(Text, nullable=True)
     stderr_output = Column(Text, nullable=True)
     execution_timeout_seconds = Column(Integer, default=300, nullable=False)
+    # Overall percent 0–100 and stage (ACTION_PROGRESS_STAGES); both null
+    # until the agent or the server reports progress.
+    progress = Column(SmallInteger, nullable=True)
+    stage = Column(String(24), nullable=True)
     batch_id = Column(String(36), ForeignKey("agent_command_batches.id", ondelete="SET NULL"), nullable=True, index=True)
 
     device = relationship("Device", back_populates="remote_actions")
