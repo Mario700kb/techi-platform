@@ -11,6 +11,8 @@ interface ConfirmationModalProps {
   cancelLabel?: string;
   destructive?: boolean;
   loading?: boolean;
+  /** The answer cannot be yes yet (e.g. nothing to do). */
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   onClose: () => void;
 }
@@ -23,6 +25,7 @@ export default function ConfirmationModal({
   cancelLabel = "Cancel",
   destructive = true,
   loading = false,
+  confirmDisabled = false,
   onConfirm,
   onClose,
 }: ConfirmationModalProps) {
@@ -50,7 +53,7 @@ export default function ConfirmationModal({
             variant={destructive ? "danger" : "primary"}
             type="button"
             onClick={onConfirm}
-            disabled={loading}
+            disabled={loading || confirmDisabled}
             data-autofocus={!destructive || undefined}
           >
             {loading ? `${confirmLabel}…` : confirmLabel}

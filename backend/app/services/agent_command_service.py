@@ -11,7 +11,7 @@ from app.core.time import utcnow
 from app.models.agent_command_batch import AgentCommandBatch
 from app.models.device import Device, DeviceStatus
 from app.models.operator import Operator
-from app.models.remote_action import ActionStatus, RemoteAction
+from app.models.remote_action import TERMINAL_STATUSES, ActionStatus, RemoteAction
 from app.repositories.agent_command_repository import AgentCommandRepository
 from app.repositories.device_repository import DeviceRepository
 from app.repositories.remote_action_repository import RemoteActionRepository
@@ -22,6 +22,9 @@ from app.schemas.agent_command import (
     BulkCommandCreate,
     BulkCommandTarget,
     DeviceCommandStatus,
+    SelfUpdatePlanItem,
+    SelfUpdatePreview,
+    SkippedDevice,
 )
 from app.services import version_service
 from app.services.agent_package_service import AgentPackageService
@@ -57,6 +60,7 @@ class AgentCommandService:
         self.batch_repo = AgentCommandRepository(db)
         self.action_repo = RemoteActionRepository(db)
         self.device_repo = DeviceRepository(db)
+        self._targets: dict = {}
 
     def create_bulk(
         self,
@@ -65,6 +69,17 @@ class AgentCommandService:
         operator_username: Optional[str] = None,
     ) -> BatchCreateResponse:
         devices = self._resolve_devices(create_in)
+        skipped: List[SkippedDevice] = []
+        if create_in.command_type == "self_update" and create_in.target == BulkCommandTarget.DEVICES:
+            # A selection is a request, not an order: devices already on the
+            # active version, busy with another update or without an agent to
+            # update are left out, each with its reason.
+            skipped = self._missing(create_in.device_ids or [], devices)
+            devices, left_out = self.plan_self_update(devices)
+            skipped += left_out
+            if not devices:
+                reasons = sorted({s.reason for s in skipped})
+                raise ValueError("Nothing to update: " + "; ".join(reasons[:3]))
         if not devices:
             raise ValueError("No active devices found for the specified target")
 
@@ -90,6 +105,7 @@ class AgentCommandService:
         self.db.flush()
 
         now = utcnow()
+        created: List[RemoteAction] = []
         for device in devices:
             action_payload_json = payload_json
             if create_in.command_type == "self_update":
@@ -106,6 +122,7 @@ class AgentCommandService:
                 batch_id=batch_id,
             )
             self.db.add(action)
+            created.append(action)
             # PostgreSQL stores status as an enum. SQLAlchemy's multi-row
             # insert path can bind that enum as VARCHAR for large batches,
             # which Postgres rejects. Flushing each action keeps the whole
@@ -115,11 +132,14 @@ class AgentCommandService:
 
         self.db.commit()
         self.db.refresh(batch)
+        pushed = self._announce_self_updates(created, operator_username) if create_in.command_type == "self_update" else 0
         logger.info(
-            "[command_batch] created %s batch=%s devices=%d by=%s",
+            "[command_batch] created %s batch=%s devices=%d skipped=%d pushed=%d by=%s",
             create_in.command_type,
             batch_id,
             len(devices),
+            len(skipped),
+            pushed,
             operator_username,
         )
 
@@ -127,7 +147,120 @@ class AgentCommandService:
             batch_id=batch_id,
             device_count=len(devices),
             created_at=batch.created_at,
+            skipped=skipped,
+            pushed=pushed,
         )
+
+    # ── agent updates for a selection ───────────────────────────────────────
+
+    def _missing(self, device_ids: List[int], found: List[Device]) -> List[SkippedDevice]:
+        have = {d.id for d in found}
+        return [SkippedDevice(device_id=i, name=f"#{i}", reason="Archived or not found")
+                for i in dict.fromkeys(device_ids) if i not in have]
+
+    def _open_actions(self, device_ids: List[int]) -> dict:
+        """The actions still queued or running on these devices, by device."""
+        if not device_ids:
+            return {}
+        rows = (
+            self.db.query(RemoteAction)
+            .filter(RemoteAction.device_id.in_(device_ids), RemoteAction.status.notin_(list(TERMINAL_STATUSES)))
+            .all()
+        )
+        by_device: dict = {}
+        for action in rows:
+            self.action_repo._expire_if_needed(action)
+            if action.status not in TERMINAL_STATUSES:
+                by_device.setdefault(action.device_id, []).append(action)
+        return by_device
+
+    def plan_self_update(self, devices: List[Device]) -> tuple[List[Device], List[SkippedDevice]]:
+        """Split a selection into the devices to update and those left out."""
+        from app.services.remote_action_service import _check_conflicts
+
+        service = AgentPackageService()
+        windows = service.latest_active(SELF_UPDATE_PLATFORM, file_type="agent_binary")
+        packages: dict = {}
+        open_actions = self._open_actions([d.id for d in devices])
+        keep: List[Device] = []
+        skipped: List[SkippedDevice] = []
+        self._targets = {}
+        for device in devices:
+            name = device.display_name or device.hostname or f"#{device.id}"
+
+            def skip(reason: str, device=device, name=name) -> None:
+                skipped.append(SkippedDevice(device_id=device.id, name=name, reason=reason))
+
+            platform = (device.platform or "windows").strip().lower()
+            if platform == "windows":
+                package = windows
+            elif platform == "linux":
+                key = version_service.package_platform("linux", device.architecture)
+                if key not in packages:
+                    packages[key] = service.latest_active(key, file_type="agent_binary") if key else None
+                package = packages[key]
+            else:
+                skip("No TECHI agent to update on this platform")
+                continue
+            if package is None:
+                skip("No active agent package for its platform")
+                continue
+            # The same build only when the agent's own binary hash says so: a
+            # build that reports no hash (2.1.1 before SHA reporting) is
+            # outdated, as for target=outdated_agents.
+            current_sha = (device.agent_sha256 or "").lower()
+            same_build = not package.sha256 or current_sha == package.sha256.lower()
+            if _same_version(device.agent_version, package.version) and same_build:
+                skip(f"Already on {package.version}")
+                continue
+            conflict = _check_conflicts(open_actions.get(device.id, []), "self_update")
+            if conflict:
+                _, blocker = conflict
+                status = getattr(blocker.status, "value", blocker.status)
+                what = "Update" if blocker.action_type == "self_update" else blocker.action_type.replace("_", " ").capitalize()
+                skip(f"{what} already {status} (#{blocker.id})")
+                continue
+            keep.append(device)
+            self._targets[device.id] = package.version
+        return keep, skipped
+
+    def preview_self_update(self, device_ids: List[int]) -> SelfUpdatePreview:
+        from app.websocket.agent_channel import agent_command_channel
+
+        devices = (
+            self.db.query(Device)
+            .filter(Device.id.in_(device_ids), (Device.is_archived.is_(False)) | (Device.is_archived.is_(None)))
+            .all()
+        )
+        keep, skipped = self.plan_self_update(devices)
+        windows = AgentPackageService().latest_active(SELF_UPDATE_PLATFORM, file_type="agent_binary")
+        return SelfUpdatePreview(
+            version=windows.version if windows else None,
+            update=[SelfUpdatePlanItem(
+                device_id=d.id, name=d.display_name or d.hostname or f"#{d.id}", from_version=d.agent_version,
+                to_version=self._targets[d.id], live=agent_command_channel.is_connected(d.id),
+            ) for d in keep],
+            skipped=self._missing(device_ids, devices) + skipped,
+        )
+
+    def _announce_self_updates(self, actions: List[RemoteAction], operator_username: Optional[str]) -> int:
+        """Each queued update shows on its device at once, is audited, and goes
+        out over the live channel where the agent holds one."""
+        from app.websocket.events import RealtimeEventType
+        from app.services.action_push import push_action_if_connected
+        from app.services.remote_action_service import RemoteActionService, _publish_action_status, _record_audit
+
+        action_service = RemoteActionService(self.db)
+        pushed = 0
+        for action in actions:
+            try:
+                _publish_action_status(action, RealtimeEventType.ACTION_QUEUED)
+                _record_audit(self.db, action, "Action queued: self_update (bulk)", actor=operator_username)
+                if push_action_if_connected(action.device_id, action, action_service):
+                    pushed += 1
+            except Exception:
+                logger.exception("[command_batch] self_update #%s: announce failed; the heartbeat delivers it", action.id)
+        return pushed
 
     def get_batch_progress(self, batch_id: str) -> Optional[BatchProgressResponse]:
         batch = self.batch_repo.get_batch(batch_id)

@@ -43,6 +43,8 @@ import { isValidRustDeskId, buildRustDeskFallbackUrlFromTechiUrl, launchConnect 
 import { DeviceHealthSummary } from "../types/telemetry";
 import { Button, ConnectButton, EmptyState, Select, TablePagination } from "./ui";
 import ConfirmationModal from "./ConfirmationModal";
+import BulkAgentUpdatePlan, { useSelfUpdatePreview } from "./BulkAgentUpdatePlan";
+import { sendBulkCommand } from "../api/agentCommands";
 import { parseUTC, tiranaInputToUtcIso, utcToTiranaInput } from "../utils/time";
 import { formatCount } from "../utils/number";
 import {
@@ -99,6 +101,8 @@ interface DevicesTableProps {
   activeActionMap?: Record<number, ActiveActionEntry>;
   alertsMap?: Record<number, { critical: number; warning: number }>;
   canOperate?: boolean;
+  /** Admin and owner: "Update agent" in the bulk bar. */
+  canUpdateAgents?: boolean;
   canDelete?: boolean;
   currentUser?: string;
   onBulkComplete?: () => void;
@@ -261,6 +265,7 @@ function minutesUntilTiranaMidnight(): number {
 type BulkActionType =
   | "restart_device"
   | "restart_agent"
+  | "update_agent"
   | "sync_rustdesk"
   | "reinstall_rustdesk"
   | "maintenance_enter"
@@ -295,6 +300,14 @@ const BULK_ACTIONS: Record<
     title: (n) => `Restart the agent on ${n}?`,
     description: "The devices drop out of monitoring for a few seconds while the agent restarts.",
     done: (n) => `Agent restart requested for ${n}`,
+  },
+  update_agent: {
+    button: "Update agent",
+    confirm: "Update",
+    destructive: false,
+    title: (n) => `Update the agent on ${n}?`,
+    description: "",
+    done: (n) => `Agent update started on ${n}`,
   },
   sync_rustdesk: {
     button: `Sync ${TERMS.remoteSupport}`,
@@ -343,6 +356,7 @@ const MAINTENANCE_DURATIONS: { id: MaintenanceDuration; label: string; minutes: 
 const BULK_BAR_ACTIONS: BulkActionType[] = [
   "restart_device",
   "restart_agent",
+  "update_agent",
   "sync_rustdesk",
   "reinstall_rustdesk",
   "maintenance_enter",
@@ -369,6 +383,7 @@ const DevicesTable = memo(function DevicesTable({
   activeActionMap = {},
   alertsMap = {},
   canOperate = false,
+  canUpdateAgents = false,
   canDelete = false,
   currentUser,
   onBulkComplete,
@@ -701,7 +716,41 @@ const DevicesTable = memo(function DevicesTable({
     setPendingAction(null);
   };
 
+  const updateIds = useMemo(
+    () => (pendingBulkAction === "update_agent" ? [...selectedIds].sort((a, b) => a - b) : null),
+    [pendingBulkAction, selectedIds],
+  );
+  const updatePlan = useSelfUpdatePreview(updateIds);
+
+  const runAgentUpdate = async () => {
+    const ids = updatePlan.data?.update.map((u) => u.device_id) ?? [];
+    if (!ids.length) return;
+    setBulkBusy(true);
+    try {
+      const result = await sendBulkCommand({
+        command_type: "self_update",
+        target: "devices",
+        device_ids: ids,
+        payload: {},
+        timeout_seconds: 900,
+      });
+      const skipped = (result.skipped?.length ?? 0) + (updatePlan.data?.skipped.length ?? 0);
+      const parts = [BULK_ACTIONS.update_agent.done(devicesPhrase(result.device_count))];
+      if (result.pushed) parts.push(`${formatCount(result.pushed)} at once`);
+      if (skipped) parts.push(`${formatCount(skipped)} left out`);
+      showBulkToast(parts.join(" · "), true);
+      setSelectedIds(new Set());
+      onBulkComplete?.();
+    } catch (err) {
+      showBulkToast(err instanceof Error ? err.message : "Agent update failed", false);
+    } finally {
+      setBulkBusy(false);
+      setPendingBulkAction(null);
+    }
+  };
+
   const runBulkAction = async (action: BulkActionType) => {
+    if (action === "update_agent") return runAgentUpdate();
     const selectedDevices = devices.filter((d) => selectedIds.has(d.id));
     const durationMinutes = MAINTENANCE_DURATIONS.find((opt) => opt.id === bulkMaintDuration)?.minutes() ?? null;
     setBulkBusy(true);
@@ -757,7 +806,7 @@ const DevicesTable = memo(function DevicesTable({
             {devicesPhrase(selectedIds.size)} selected
           </span>
           <div className="ml-2 flex flex-wrap gap-1.5">
-            {BULK_BAR_ACTIONS.map((action) => (
+            {BULK_BAR_ACTIONS.filter((action) => action !== "update_agent" || canUpdateAgents).map((action) => (
               <Button
                 key={action}
                 size="sm"
@@ -1765,13 +1814,24 @@ const DevicesTable = memo(function DevicesTable({
       {pendingBulkAction && (
         <ConfirmationModal
           title={BULK_ACTIONS[pendingBulkAction].title(devicesPhrase(selectedIds.size))}
-          confirmLabel={BULK_ACTIONS[pendingBulkAction].confirm}
+          confirmLabel={
+            pendingBulkAction === "update_agent" && updatePlan.data?.update.length
+              ? `Update ${devicesPhrase(updatePlan.data.update.length)}`
+              : BULK_ACTIONS[pendingBulkAction].confirm
+          }
           destructive={BULK_ACTIONS[pendingBulkAction].destructive}
           loading={bulkBusy}
+          confirmDisabled={
+            pendingBulkAction === "update_agent" && (updatePlan.loading || !updatePlan.data?.update.length)
+          }
           onClose={() => setPendingBulkAction(null)}
           onConfirm={() => void runBulkAction(pendingBulkAction)}
         >
-          <p>{BULK_ACTIONS[pendingBulkAction].description}</p>
+          {pendingBulkAction === "update_agent" ? (
+            <BulkAgentUpdatePlan preview={updatePlan.data} loading={updatePlan.loading} error={updatePlan.error} />
+          ) : (
+            <p>{BULK_ACTIONS[pendingBulkAction].description}</p>
+          )}
           {pendingBulkAction === "maintenance_enter" && (
             <fieldset className="mt-4">
               <legend className="mb-2 text-[13px] font-semibold" style={{ color: "var(--th-text-secondary)" }}>

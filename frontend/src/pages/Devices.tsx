@@ -1025,6 +1025,7 @@ export default function Devices() {
             activeActionMap={activeActionMap}
             alertsMap={alertsMap}
             canOperate={can("operator")}
+            canUpdateAgents={can("admin")}
             canDelete={can("admin")}
             currentUser={user?.display_name ?? user?.username}
             onBulkComplete={handleRefresh}

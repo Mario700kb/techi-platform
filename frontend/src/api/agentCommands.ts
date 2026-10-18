@@ -126,10 +126,44 @@ export interface BulkCommandCreate {
   timeout_seconds?: number;
 }
 
+export interface SkippedDevice {
+  device_id: number;
+  name: string;
+  reason: string;
+}
+
 export interface BatchCreateResponse {
   batch_id: string;
   device_count: number;
   created_at: string;
+  /** Selected devices left out (already current, busy, no agent to update). */
+  skipped?: SkippedDevice[];
+  /** Actions that went out over the live channel at once. */
+  pushed?: number;
+}
+
+export interface SelfUpdatePlanItem {
+  device_id: number;
+  name: string;
+  from_version: string | null;
+  to_version: string;
+  /** The agent holds the live channel: the update starts at once. */
+  live: boolean;
+}
+
+export interface SelfUpdatePreview {
+  version: string | null;
+  update: SelfUpdatePlanItem[];
+  skipped: SkippedDevice[];
+}
+
+/** What updating the agent on these devices would do; changes nothing. Admin and owner. */
+export async function previewBulkSelfUpdate(deviceIds: number[]): Promise<SelfUpdatePreview> {
+  return fetchJson<SelfUpdatePreview>("/api/v1/commands/bulk/self-update/preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ device_ids: deviceIds }),
+  });
 }
 
 export interface DeviceCommandStatus {

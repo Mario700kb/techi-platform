@@ -13,6 +13,8 @@ from app.schemas.agent_command import (
     BatchProgressResponse,
     BatchSummary,
     BulkCommandCreate,
+    SelfUpdatePreview,
+    SelfUpdatePreviewRequest,
 )
 from app.services.agent_command_service import AgentCommandService
 
@@ -50,6 +52,20 @@ def bulk_command(
         raise HTTPException(status_code=400, detail=str(exc))
 
     return result
+
+
+@router.post("/commands/bulk/self-update/preview", response_model=SelfUpdatePreview)
+def preview_bulk_self_update(
+    *,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(require_min_role(OperatorRole.OPERATOR.value)),
+    payload: SelfUpdatePreviewRequest,
+):
+    """What updating the agent on these devices would do: who updates to which
+    version, who is left out and why. Changes nothing."""
+    if operator.role not in {"admin", "owner"}:
+        raise HTTPException(status_code=403, detail="Command 'self_update' requires admin or owner role")
+    return AgentCommandService(db).preview_self_update(payload.device_ids)
 
 
 @router.get("/commands/history", response_model=List[BatchSummary])

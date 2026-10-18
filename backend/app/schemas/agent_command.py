@@ -62,10 +62,50 @@ class BulkCommandCreate(BaseModel):
         return v
 
 
+class SkippedDevice(BaseModel):
+    device_id: int
+    name: str
+    reason: str
+
+
+class SelfUpdatePlanItem(BaseModel):
+    device_id: int
+    name: str
+    from_version: Optional[str] = None
+    to_version: str
+    live: bool = False  # its agent holds the live channel: the update starts at once
+
+
+class SelfUpdatePreview(BaseModel):
+    """What a bulk agent update of the selected devices would do."""
+
+    version: Optional[str] = None  # the active Windows agent
+    update: List[SelfUpdatePlanItem] = []
+    skipped: List[SkippedDevice] = []
+
+
+class SelfUpdatePreviewRequest(BaseModel):
+    device_ids: List[int]
+
+    @field_validator("device_ids")
+    @classmethod
+    def _bounded(cls, v: List[int]) -> List[int]:
+        if not v:
+            raise ValueError("Select at least one device")
+        if len(v) > 2000:
+            raise ValueError("At most 2,000 devices at once")
+        return v
+
+
 class BatchCreateResponse(BaseModel):
     batch_id: str
     device_count: int
     created_at: datetime
+    # Selected devices left out (already current, busy, no agent to update).
+    skipped: List[SkippedDevice] = []
+    # Actions that went out over the live channel at once (the rest wait for
+    # the device's next heartbeat).
+    pushed: int = 0
 
 
 class DeviceCommandStatus(BaseModel):
