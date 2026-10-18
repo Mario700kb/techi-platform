@@ -162,7 +162,7 @@ func runSingleHeartbeat(configPath string, enrollmentToken string) error {
 
 	// Trigger self-update in background goroutine if server signals a new version.
 	if hbResp.AgentUpdate != nil && hbResp.AgentUpdate.Available {
-		go performSelfUpdate(hbResp.AgentUpdate)
+		go performSelfUpdate(hbResp.AgentUpdate, nil) // no action to report to
 	}
 
 	// If restart_agent was dispatched, fire an immediate follow-up heartbeat

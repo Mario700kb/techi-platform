@@ -136,7 +136,7 @@ func handleRunCommand(ctx context.Context, params map[string]interface{}) action
 	return runLinuxCommand(ctx, name, args...)
 }
 
-func handleSelfUpdate(_ context.Context, params map[string]interface{}) actionResult {
+func handleSelfUpdate(ctx context.Context, params map[string]interface{}) actionResult {
 	// Mirrors the Windows handler: the server supplies the exact package to
 	// install, and performSelfUpdate (update_linux.go) downloads, verifies the
 	// SHA-256, swaps the binary atomically and restarts the service.
@@ -150,12 +150,14 @@ func handleSelfUpdate(_ context.Context, params map[string]interface{}) actionRe
 	if url == "" {
 		return actionResult{err: fmt.Errorf("self_update: missing 'download_url' parameter")}
 	}
+	// The update outlives this handler (and its context): it reports its own
+	// progress and any failure to the action.
 	go performSelfUpdate(&AgentUpdate{
 		Available: true,
 		Version:   version,
 		URL:       url,
 		Checksum:  checksum,
-	})
+	}, actionReporterFrom(ctx))
 	return actionResult{message: fmt.Sprintf("Self-update to v%s initiated in background", version)}
 }
 

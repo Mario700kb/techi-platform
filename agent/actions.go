@@ -92,6 +92,9 @@ func runAction(cfg *Config, action PendingAction) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
+	// Handlers that outlive their own return (self_update) report progress
+	// and failure through this, bound to the action's id and secret.
+	ctx = withActionReporter(ctx, newActionReporter(cfg, action.ActionID, secret))
 
 	result := dispatch(ctx, cfg, action)
 	elapsed := time.Since(startedAt)
@@ -259,6 +262,10 @@ func failAction(cfg *Config, actionID int, errMsg, stderrOutput, secret string) 
 }
 
 func postActionEndpoint(cfg *Config, path string, body interface{}, callbackSecret string) error {
+	return postActionEndpointTimeout(cfg, path, body, callbackSecret, time.Duration(cfg.TimeoutSeconds)*time.Second)
+}
+
+func postActionEndpointTimeout(cfg *Config, path string, body interface{}, callbackSecret string, timeout time.Duration) error {
 	var reqBody []byte
 	var err error
 	if body != nil {
@@ -269,7 +276,7 @@ func postActionEndpoint(cfg *Config, path string, body interface{}, callbackSecr
 	}
 
 	url := cfg.APIURL + path
-	client := &http.Client{Timeout: time.Duration(cfg.TimeoutSeconds) * time.Second}
+	client := &http.Client{Timeout: timeout}
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(reqBody))
 	if err != nil {
 		return err

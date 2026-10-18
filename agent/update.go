@@ -16,36 +16,29 @@ import (
 // The swap process survives when SCM stops this service process during the
 // replacement.
 //
+// rep (may be nil) receives the progress and any failure; see
+// update_progress.go for the stages.
+//
 // The MSI is never touched here -- self_update ships only the agent binary.
 // TECHI Remote Support is never affected.
-func performSelfUpdate(update *AgentUpdate) {
+func performSelfUpdate(update *AgentUpdate, rep updateReporter) {
 	if update == nil || !update.Available || update.URL == "" {
 		return
 	}
 	log.Printf("[self_update] starting binary update to v%s from %s", update.Version, update.URL)
 
 	exePath := agentBinaryCachePath(update.Version)
-	if err := downloadAgentBinary(update.URL, exePath); err != nil {
-		log.Printf("[self_update] download failed: %v", err)
-		return
-	}
-
-	if update.Checksum != "" {
-		if !sha256Matches(exePath, strings.ToLower(update.Checksum)) {
-			log.Printf("[self_update] checksum mismatch; aborting")
-			_ = os.Remove(exePath)
-			return
-		}
-		log.Printf("[self_update] checksum verified")
-	}
-
-	log.Printf("[self_update] scheduling detached binary swap for %s", exePath)
-	if err := swapAgentBinary(exePath); err != nil {
-		log.Printf("[self_update] schedule failed: %v", err)
+	if err := runSelfUpdate(update, rep, exePath, func(path string) error {
+		log.Printf("[self_update] scheduling detached binary swap for %s", path)
+		return swapAgentBinary(path)
+	}); err != nil {
 		return
 	}
 
 	log.Printf("[self_update] v%s swap helper launched", update.Version)
+	reportProgress(rep, stageRestarting, progressRestarting,
+		fmt.Sprintf("Swap scheduled; the agent service restarts with v%s", update.Version))
+	flushReporter(rep, reporterFlushWait)
 }
 
 // agentBinaryCachePath returns a stable temp path for the downloaded exe.
@@ -62,24 +55,6 @@ func agentBinaryCachePath(version string) string {
 		v = "latest"
 	}
 	return filepath.Join(dir, "techi-agent-"+v+".exe")
-}
-
-// downloadAgentBinary downloads url to dest with 3 attempts and exponential backoff.
-func downloadAgentBinary(url, dest string) error {
-	var lastErr error
-	for attempt := 1; attempt <= 3; attempt++ {
-		if err := downloadFile(url, dest, 120); err == nil {
-			return nil
-		} else {
-			lastErr = err
-			if attempt < 3 {
-				delay := time.Duration(attempt*15) * time.Second
-				log.Printf("[self_update] download attempt %d failed: %v; retrying in %s", attempt, err, delay)
-				time.Sleep(delay)
-			}
-		}
-	}
-	return fmt.Errorf("download failed after 3 attempts: %w", lastErr)
 }
 
 // swapAgentBinary runs the downloaded new exe itself through a one-shot

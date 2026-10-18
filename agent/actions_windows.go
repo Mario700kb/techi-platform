@@ -778,7 +778,7 @@ func handleRunPowerShell(ctx context.Context, params map[string]interface{}) act
 // self_update (manual trigger via pending_action)                      //
 // ------------------------------------------------------------------ //
 
-func handleSelfUpdate(_ context.Context, params map[string]interface{}) actionResult {
+func handleSelfUpdate(ctx context.Context, params map[string]interface{}) actionResult {
 	url := stringParam(params, "download_url")
 	version := stringParam(params, "version")
 	checksum := stringParam(params, "sha256")
@@ -791,7 +791,9 @@ func handleSelfUpdate(_ context.Context, params map[string]interface{}) actionRe
 		URL:       url,
 		Checksum:  checksum,
 	}
-	go performSelfUpdate(update)
+	// The update outlives this handler (and its context): it reports its own
+	// progress and any failure to the action.
+	go performSelfUpdate(update, actionReporterFrom(ctx))
 	return actionResult{message: fmt.Sprintf("Self-update to v%s initiated in background", version)}
 }
 
