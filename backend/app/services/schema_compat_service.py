@@ -60,6 +60,8 @@ HEARTBEAT_COLUMNS = {
 INVENTORY_COLUMNS = {
     "software_json": "TEXT",
     "patch_json": "TEXT",
+    "security_json": "TEXT",
+    "security_collected_at": "DATETIME",
 }
 
 OPERATOR_COLUMNS = {
@@ -252,6 +254,7 @@ DEV_TABLES = {
             name VARCHAR(160) NOT NULL,
             client_id INTEGER NOT NULL,
             report_format VARCHAR(8) NOT NULL,
+            report_type VARCHAR(32) NOT NULL DEFAULT 'full',
             cadence VARCHAR(16) NOT NULL,
             period_days INTEGER NOT NULL DEFAULT 30,
             hour_local INTEGER NOT NULL DEFAULT 6,
@@ -344,6 +347,7 @@ def ensure_sqlite_dev_schema(engine: Engine) -> None:
         "trusted_domains": TRUSTED_DOMAIN_COLUMNS,
         "vault_credentials": VAULT_CREDENTIAL_COLUMNS,
         "terminal_sessions": TERMINAL_SESSION_COLUMNS,
+        "report_schedules": {"report_type": "VARCHAR(32) NOT NULL DEFAULT 'full'"},
         "report_runs": {
             "scope_type": "VARCHAR(16) NOT NULL DEFAULT 'client'",
             "device_id": "INTEGER",

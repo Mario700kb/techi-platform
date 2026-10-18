@@ -14,6 +14,9 @@ from app.core.time import format_display, to_display, utcnow
 from app.models.report import ReportCadence, ReportFormat, ReportRun, ReportRunStatus, ReportSchedule
 from app.models.device import Device
 from app.models.device_group import DeviceGroup
+from app.services.client_reports.catalog import CLIENT_REPORT_TYPES, format_allowed
+from app.services.client_reports.render import render_document_csv, render_document_pdf
+from app.services.client_reports.service import build_report
 from app.services.device_report import SECTION_ORDER, SECTION_TITLES, build_device_snapshot, device_csv
 from app.services.report_output import csv_cell, safe_text
 from app.services.report_pdf import render_report_pdf
@@ -98,16 +101,20 @@ class ReportService:
         schedule_id: Optional[int] = None,
         period_end: Optional[datetime] = None,
         period_start: Optional[datetime] = None,
+        report_type: str = "full",
     ) -> ReportRun:
         client = self.client_or_none(client_id)
         if client is None or not client.is_active:
             raise ValueError("Client not found")
+        if report_type not in CLIENT_REPORT_TYPES:
+            raise ValueError("Unknown client report type")
         end = period_end or utcnow()
         start = period_start or end - timedelta(days=period_days)
         run = self.runs.create(
             schedule_id=schedule_id,
             client_id=client.id,
             client_name=client.name,
+            report_type=report_type,
             report_format=report_format,
             period_start=start,
             period_end=end,
@@ -115,9 +122,21 @@ class ReportService:
             generated_by=generated_by,
         )
         try:
-            snapshot = self._snapshot(client.id, client.name, start, end, generated_by)
-            content = self._render(snapshot, report_format)
-            filename = f"CLIENT_{_safe_name(safe_text(client.name))}_Full_{to_display(snapshot['generated_at']):%Y%m%d_%H%M}.{report_format}"
+            if report_type == "full":
+                snapshot = self._snapshot(client.id, client.name, start, end, generated_by)
+                content = self._render(snapshot, report_format)
+                generated_at, label = snapshot["generated_at"], "Full"
+            else:
+                if not format_allowed(report_type, report_format):
+                    raise ValueError("Unsupported report format")
+                document = build_report(self.db, report_type, client_id=client.id, client_name=client.name,
+                                        start=start, end=end)
+                if report_format == ReportFormat.PDF.value:
+                    content = render_document_pdf(document, generated_by)
+                else:
+                    content = render_document_csv(document, generated_by)
+                generated_at, label = document.generated_at, "".join(part.title() for part in report_type.split("_"))
+            filename = f"CLIENT_{_safe_name(safe_text(client.name))}_{label}_{to_display(generated_at):%Y%m%d_%H%M}.{report_format}"
             storage_root = Path(settings.REPORT_STORAGE_DIR).resolve()
             storage_root.mkdir(parents=True, exist_ok=True)
             path = storage_root / f"{run.id}-{filename}"
@@ -279,6 +298,13 @@ class ReportService:
         return self.schedules.create(**values)
 
     def update_schedule(self, schedule: ReportSchedule, **updates) -> ReportSchedule:
+        if updates.get("report_type", "") is None:
+            updates.pop("report_type")
+        report_type = updates.get("report_type") or schedule.report_type or "full"
+        if report_type not in CLIENT_REPORT_TYPES:
+            raise ValueError("Unknown client report type")
+        if not format_allowed(report_type, updates.get("report_format") or schedule.report_format):
+            raise ValueError(f"The {report_type} report is not available in this format")
         effective = {
             "cadence": updates.get("cadence", schedule.cadence),
             "hour_local": updates.get("hour_local", schedule.hour_local),

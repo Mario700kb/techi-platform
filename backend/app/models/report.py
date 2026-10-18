@@ -30,6 +30,8 @@ class ReportSchedule(Base):
     name = Column(String(160), nullable=False)
     client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True)
     report_format = Column(String(8), nullable=False, default=ReportFormat.PDF.value)
+    # A key of the client report catalog (app/services/client_reports/catalog.py).
+    report_type = Column(String(32), nullable=False, default="full", server_default="full")
     cadence = Column(String(16), nullable=False, default=ReportCadence.MONTHLY.value)
     period_days = Column(Integer, nullable=False, default=30)
     hour_local = Column(Integer, nullable=False, default=6)

@@ -92,10 +92,12 @@ class ReportWorker:
                         generated_by="system",
                         schedule_id=schedule.id,
                         period_end=now,
+                        report_type=getattr(schedule, "report_type", None) or "full",
                     )
                     system_audit_log(
                         db, action="report_generated", entity_type="report_run", entity_id=run.id,
-                        details={"client_id": run.client_id, "schedule_id": schedule.id, "format": run.report_format},
+                        details={"client_id": run.client_id, "schedule_id": schedule.id, "format": run.report_format,
+                                 "report_type": run.report_type},
                     )
                     generated += 1
                 except Exception:

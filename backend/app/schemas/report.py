@@ -4,6 +4,15 @@ from typing import List, Optional
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.report import ReportCadence, ReportFormat, ReportRunStatus
+from app.services.client_reports.catalog import CLIENT_REPORT_TYPES, FORMATS, format_allowed
+
+
+def _check_client_report(report_type: str, report_format) -> None:
+    if report_type not in CLIENT_REPORT_TYPES:
+        raise ValueError(f"Unknown client report type; expected one of {', '.join(CLIENT_REPORT_TYPES)}")
+    fmt = getattr(report_format, "value", report_format)
+    if not format_allowed(report_type, fmt):
+        raise ValueError(f"The {report_type} report is available as {' or '.join(FORMATS[report_type]).upper()} only")
 
 
 class ReportGenerateRequest(BaseModel):
@@ -20,8 +29,9 @@ class ReportGenerateRequest(BaseModel):
     def validate_scope_and_period(self):
         device_types = {"full", "overview", "user_activity", "status_uptime", "health", "alerts", "actions", "software", "remote_support", "assignments", "notes", "event_history"}
         if self.scope_type == "client":
-            if self.client_id is None or self.device_id is not None or self.report_type != "full":
-                raise ValueError("Client reports require client_id and Full Report")
+            if self.client_id is None or self.device_id is not None:
+                raise ValueError("Client reports require client_id")
+            _check_client_report(self.report_type, self.report_format)
         elif self.scope_type == "device":
             if self.device_id is None or self.client_id is not None or self.report_type not in device_types:
                 raise ValueError("Device report scope, target or type is invalid")
@@ -44,6 +54,7 @@ class ReportGenerateRequest(BaseModel):
 class ReportScheduleCreate(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     client_id: int = Field(gt=0)
+    report_type: str = "full"
     report_format: ReportFormat = ReportFormat.PDF
     cadence: ReportCadence = ReportCadence.MONTHLY
     period_days: int = Field(default=30, ge=1, le=366)
@@ -54,6 +65,7 @@ class ReportScheduleCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_cadence_fields(self):
+        _check_client_report(self.report_type, self.report_format)
         if self.cadence == ReportCadence.WEEKLY and self.day_of_week is None:
             raise ValueError("day_of_week is required for weekly schedules")
         if self.cadence == ReportCadence.MONTHLY and self.day_of_month is None:
@@ -63,6 +75,7 @@ class ReportScheduleCreate(BaseModel):
 
 class ReportScheduleUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=160)
+    report_type: Optional[str] = None
     report_format: Optional[ReportFormat] = None
     cadence: Optional[ReportCadence] = None
     period_days: Optional[int] = Field(default=None, ge=1, le=366)
@@ -70,6 +83,13 @@ class ReportScheduleUpdate(BaseModel):
     day_of_week: Optional[int] = Field(default=None, ge=0, le=6)
     day_of_month: Optional[int] = Field(default=None, ge=1, le=28)
     enabled: Optional[bool] = None
+
+    @model_validator(mode="after")
+    def validate_report_type(self):
+        # The format pairing is checked against the stored schedule (ReportService.update_schedule).
+        if self.report_type is not None and self.report_type not in CLIENT_REPORT_TYPES:
+            raise ValueError(f"Unknown client report type; expected one of {', '.join(CLIENT_REPORT_TYPES)}")
+        return self
 
 
 class ReportScheduleOut(BaseModel):
@@ -79,6 +99,7 @@ class ReportScheduleOut(BaseModel):
     name: str
     client_id: int
     client_name: str
+    report_type: str = "full"
     report_format: str
     cadence: str
     period_days: int

@@ -2,8 +2,11 @@ import logging
 from datetime import timedelta
 from typing import Optional
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import FileResponse
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_operator, get_operator_scope, require_min_role, require_team_permission
@@ -16,6 +19,7 @@ from app.models.report import ReportRunStatus
 from app.platform_core.flags import feature_enabled
 from app.repositories.client_repository import ClientRepository
 from app.repositories.report_repository import ReportRunRepository, ReportScheduleRepository
+from app.schemas.client_report import ReportCatalogItem, ReportDocument
 from app.schemas.report import (
     ReportGenerateRequest,
     ReportRunList,
@@ -25,6 +29,8 @@ from app.schemas.report import (
     ReportScheduleUpdate,
 )
 from app.services.audit_service import AuditAction, audit_log
+from app.services.client_reports.catalog import catalog_items
+from app.services.client_reports.service import BUILDERS, build_report
 from app.services.permission_service import VIEW_DEVICES
 from app.services.report_service import ReportService
 
@@ -66,7 +72,7 @@ def _ensure_run_scope(run, db: Session, scope: Optional[AllowedScope]) -> None:
 def _schedule_out(schedule, client_name: str) -> ReportScheduleOut:
     return ReportScheduleOut(
         id=schedule.id, name=schedule.name, client_id=schedule.client_id, client_name=client_name,
-        report_format=schedule.report_format, cadence=schedule.cadence, period_days=schedule.period_days,
+        report_type=schedule.report_type or "full", report_format=schedule.report_format, cadence=schedule.cadence, period_days=schedule.period_days,
         hour_local=schedule.hour_local, day_of_week=schedule.day_of_week, day_of_month=schedule.day_of_month,
         enabled=schedule.enabled, next_run_at=schedule.next_run_at, last_run_at=schedule.last_run_at,
         created_by=schedule.created_by, created_at=schedule.created_at, updated_at=schedule.updated_at,
@@ -83,6 +89,44 @@ def report_clients(
     if scope is not None:
         clients = [client for client in clients if client.id in scope.client_ids]
     return [{"id": client.id, "name": client.name} for client in clients]
+
+
+@router.get("/catalog", response_model=list[ReportCatalogItem],
+            dependencies=[Depends(_require_reporting_enabled), Depends(_require_view)])
+def report_catalog(_: Operator = Depends(get_current_operator)):
+    return catalog_items()
+
+
+@router.get("/preview", response_model=ReportDocument,
+            dependencies=[Depends(_require_reporting_enabled), Depends(_require_view)])
+def preview_report(
+    client_id: int = Query(gt=0),
+    report_type: str = Query(...),
+    period_days: int = Query(default=30, ge=1, le=366),
+    period_from: Optional[datetime] = Query(default=None),
+    period_to: Optional[datetime] = Query(default=None),
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+):
+    """The report as JSON (a ReportDocument) for the preview page; nothing is stored."""
+    _ensure_client_scope(client_id, scope)
+    try:
+        request = ReportGenerateRequest(
+            scope_type="client", client_id=client_id, report_type=report_type, period_days=period_days,
+            period_from=period_from, period_to=period_to,
+            report_format="pdf" if report_type == "executive" else "csv",
+        )
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail="; ".join(error["msg"] for error in exc.errors()))
+    if request.report_type not in BUILDERS:
+        raise HTTPException(status_code=422, detail="This report has no preview; generate it as a file")
+    client = ClientRepository(db).get(client_id)
+    if client is None or not client.is_active:
+        raise HTTPException(status_code=404, detail="Client not found")
+    end = request.period_to or utcnow()
+    start = request.period_from or end - timedelta(days=request.period_days)
+    return build_report(db, request.report_type, client_id=client.id, client_name=client.name, start=start, end=end)
 
 
 @router.post("/generate", response_model=ReportRunOut, dependencies=[Depends(_require_reporting_enabled), Depends(_require_view)])
@@ -111,6 +155,7 @@ def generate_report(
                 client_id=payload.client_id, report_format=payload.report_format.value,
                 period_days=payload.period_days, generated_by=operator.username,
                 period_start=payload.period_from, period_end=payload.period_to,
+                report_type=payload.report_type,
             )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -216,7 +261,8 @@ def create_schedule(
     audit_log(
         db, operator=operator, action=AuditAction.REPORT_SCHEDULE_CREATED,
         entity_type="report_schedule", entity_id=schedule.id,
-        details={"client_id": schedule.client_id, "cadence": schedule.cadence, "format": schedule.report_format},
+        details={"client_id": schedule.client_id, "cadence": schedule.cadence, "format": schedule.report_format,
+                 "report_type": schedule.report_type},
     )
     return _schedule_out(schedule, client.name)
 
