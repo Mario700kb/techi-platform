@@ -9,3 +9,4 @@ export { default as ConnectButton } from "./ConnectButton";
 export { default as TablePagination } from "./TablePagination";
 export { default as Modal } from "./Modal";
 export { default as DatePicker } from "./DatePicker";
+export { default as Kv } from "./KeyValue";

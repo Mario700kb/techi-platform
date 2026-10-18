@@ -256,7 +256,7 @@ export default function DeviceLivePanel({
 }) {
   const streaming = liveCapable && live.snapshot !== null;
   return (
-    <section className="mb-5" aria-label="Live">
+    <section className="mb-3.5" aria-label="Live">
       <div className="mb-2 flex items-center justify-between gap-2">
         <p className="premium-kicker">{streaming ? "Live" : "Latest"}</p>
         {liveCapable ? (

@@ -92,7 +92,7 @@ export default function DeviceLast24hCard({
   const hasPoints = (metrics?.points.length ?? 0) > 0;
 
   return (
-    <section className="mb-5" aria-label="Last 24 hours">
+    <section className="mb-3.5" aria-label="Last 24 hours">
       <div className="mb-2 flex items-center justify-between gap-2">
         <p className="premium-kicker">Last 24 hours</p>
         {source && metrics?.source !== "none" && (

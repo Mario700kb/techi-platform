@@ -6053,7 +6053,7 @@ input.th-switch:checked::after {
   color: var(--th-text-primary);
 }
 .th-drawer-card {
-  padding: 16px;
+  padding: 14px;
   border-radius: 10px;
   border: 1px solid var(--th-border-drawer-section);
   background: var(--th-bg-drawer-section);
@@ -6115,6 +6115,256 @@ button.th-drawer-tile:hover {
 }
 .th-drawer-callout[data-tone="critical"] {
   --tone: var(--th-status-critical);
+}
+
+/* Device drawer → Overview: compact key/value rows, two pairs per line
+   (label column, then the value), one pair per line on a phone. */
+.th-kv {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 24px;
+  margin: 0;
+}
+.th-kv-row {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  column-gap: 12px;
+  align-items: start;
+  min-width: 0;
+  min-height: 28px;
+  padding: 4px 0;
+}
+.th-kv-row[data-span="2"] {
+  grid-column: 1 / -1;
+}
+.th-kv-row > dt {
+  font-size: 12.5px;
+  line-height: 20px;
+  color: var(--th-text-muted);
+  white-space: nowrap;
+}
+.th-kv-row > dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  color: var(--th-text-primary);
+  overflow-wrap: anywhere;
+}
+.th-kv-row > dd[data-empty] {
+  color: var(--th-text-faint);
+}
+.th-kv-row > dd .th-kv-muted {
+  font-weight: 400;
+  color: var(--th-text-muted);
+}
+.th-kv-row > dd .th-kv-sub {
+  flex-basis: 100%;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
+  color: var(--th-text-muted);
+}
+.th-kv-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 6px;
+  border: 1px solid var(--th-border-default);
+  background: var(--th-chip-bg);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--th-text-secondary);
+  white-space: nowrap;
+}
+.th-kv-chip[data-pill] {
+  border-radius: 999px;
+}
+
+/* Health issues as tinted chips on one wrapping line. */
+.th-issue-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  max-width: 100%;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--chip-tone) 32%, transparent);
+  background: color-mix(in srgb, var(--chip-tone) 10%, transparent);
+  font-size: 12px;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--chip-tone) 62%, var(--th-text-primary));
+  white-space: nowrap;
+}
+.th-issue-chip > i {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--chip-tone);
+}
+.th-issue-chip > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Services: four equal tiles in one row (2×2 on a phone). */
+.th-svc-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.th-svc-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 12px 9px;
+  text-align: left;
+}
+.th-svc-tile-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--th-text-muted);
+}
+.th-svc-tile-label svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--th-text-faint);
+  transition: color 120ms ease;
+}
+button.th-svc-tile:hover .th-svc-tile-label svg {
+  color: var(--th-text-primary);
+}
+.th-svc-tile-value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--th-text-primary);
+  white-space: nowrap;
+}
+.th-svc-tile-value > i {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--tile-tone);
+}
+.th-svc-tile-value > small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--th-text-muted);
+}
+
+/* Identity → Hardware: CPU, memory and storage as three equal mini-stats. */
+.th-hw-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 8px 0 0;
+}
+.th-hw-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--th-border-drawer-section);
+  background: var(--th-chip-bg);
+}
+.th-hw-stat > dt {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--th-text-muted);
+}
+.th-hw-stat > dd {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  color: var(--th-text-primary);
+}
+.th-hw-stat > dd > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.th-hw-stat > dd > span[data-wrap] {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+}
+.th-hw-stat .th-hw-bar {
+  max-width: none;
+}
+
+/* Client assignment → edit: the pickers side by side under the read view. */
+.th-assign-edit {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--th-border-drawer-section);
+}
+.th-assign-edit > * {
+  min-width: 0;
+}
+.th-assign-edit-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--th-text-muted);
+}
+
+@media (max-width: 639px) {
+  .th-kv {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .th-kv-row {
+    grid-template-columns: 96px minmax(0, 1fr);
+  }
+  .th-svc-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .th-hw-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .th-hw-stats > :first-child {
+    grid-column: 1 / -1;
+  }
+  .th-assign-edit {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* ── Device inventory (drawer Software tab) ── a 2×2 patch summary, then one

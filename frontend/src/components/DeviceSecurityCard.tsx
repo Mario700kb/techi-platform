@@ -148,7 +148,7 @@ export default function DeviceSecurityCard({
   let body: ReactNode;
   if (posture) {
     body = (
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-3" aria-label="Security posture">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5" aria-label="Security posture">
         {securityFacts(posture).map((f) => (
           <div key={f.label} className="min-w-0" title={f.title}>
             <dt className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>
@@ -200,7 +200,7 @@ export default function DeviceSecurityCard({
   }
 
   return (
-    <section className="mb-5">
+    <section className="mb-3.5" aria-label="Security">
       <div className="mb-2 flex items-baseline justify-between gap-3">
         <p className="premium-kicker">Security</p>
         {posture && collectedAt && (

@@ -331,7 +331,8 @@ test("a device is placed by hand from its drawer, even at a site made on the spo
 
   await page.goto("/devices");
   await page.locator("tr", { hasText: "NW-RECEPTION-01" }).getByText("NW-RECEPTION-01").first().click();
-  // Overview → Client assignment, where the device's client and group are set.
+  // Overview → Client assignment → Edit assignment, where the device's client and group are set.
+  await page.getByRole("button", { name: "Edit assignment" }).click();
   const picker = page.getByRole("combobox", { name: "Assign location" });
   await expect(picker).toBeVisible();
   await picker.click();

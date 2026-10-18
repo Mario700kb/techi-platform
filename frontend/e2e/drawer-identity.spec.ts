@@ -24,19 +24,21 @@ test("the drawer names the Windows release and lists CPU, memory and storage apa
   await page.goto("/devices");
   await page.locator("tr", { hasText: "NW-RECEPTION-01" }).getByText("NW-RECEPTION-01").first().click();
 
-  const identity = page.locator(".th-drawer-card").filter({ hasText: "Current user" });
+  const identity = page.getByRole("region", { name: "Identity" });
+  await expect(identity).toContainText("Current user");
   await expect(identity).toContainText("Windows 11 Pro");
   await expect(identity).toContainText("25H2 · build 26200");
   await expect(identity).toContainText("Platform");
   await expect(identity).toContainText("Windows");
 
-  const hw = identity.locator(".th-hw");
-  await expect(hw.locator("dt")).toHaveText(["CPU", "Memory", "Storage"]);
-  await expect(hw.locator("dd").nth(0)).toContainText("Intel · Skylake-SP / Cascade Lake (Xeon)");
-  await expect(hw.locator("dd").nth(0)).toContainText("Intel64 Family 6 Model 85 Stepping 4");
-  await expect(hw.locator("dd").nth(1)).toHaveText("7 GB");
-  await expect(hw.locator("dd").nth(2)).toContainText("149 GB · 76 GB free");
-  await expect(hw.getByRole("img", { name: "49% used" })).toBeVisible();
+  // Hardware: three equal mini-stats; the raw CPU string is the tooltip.
+  const stats = identity.locator(".th-hw-stat");
+  await expect(stats.locator("dt")).toHaveText(["CPU", "Memory", "Storage"]);
+  await expect(stats.nth(0).locator("dd")).toContainText("Intel · Skylake-SP / Cascade Lake (Xeon)");
+  await expect(stats.nth(0).locator("dd")).toHaveAttribute("title", /Intel64 Family 6 Model 85 Stepping 4/);
+  await expect(stats.nth(1).locator("dd")).toHaveText("7 GB");
+  await expect(stats.nth(2).locator("dd")).toContainText("76 GB free of 149 GB");
+  await expect(identity.getByRole("img", { name: "49% used" })).toBeVisible();
   await identity.scrollIntoViewIfNeeded();
   await identity.screenshot({ path: test.info().outputPath("drawer-identity.png") });
 });

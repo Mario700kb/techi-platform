@@ -15,6 +15,8 @@ test("a device's group can be any of the six standard groups, made on first use"
   await page.goto("/devices");
   await page.locator("tr", { hasText: "NW-RECEPTION-01" }).getByText("NW-RECEPTION-01").first().click();
 
+  // Overview → Client assignment is read-only until "Edit assignment".
+  await page.getByRole("button", { name: "Edit assignment" }).click();
   const picker = page.getByRole("combobox", { name: "Assign group" });
   await expect(picker).toContainText("Front desk");
   await picker.click();

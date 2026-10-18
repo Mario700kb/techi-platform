@@ -9,6 +9,7 @@ import {
   AlertTriangle,
   AppWindow,
   CheckCircle,
+  ChevronRight,
   ClipboardCopy,
   Download,
   Edit3,
@@ -42,7 +43,6 @@ import {
 import { Client, DeviceGroup } from "../api/clients";
 import {
   archiveDevice,
-  assignDeviceClient,
   clearDeviceMaintenance,
   Device,
   DeviceOfflineAnalysis,
@@ -91,17 +91,15 @@ import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import ConnectMenu from "./ConnectMenu";
 import DeviceInventoryPanel from "./DeviceInventoryPanel";
 import DeviceSecurityCard from "./DeviceSecurityCard";
-import { Button, ConnectButton, EmptyState, SelectField } from "./ui";
+import { Button, ConnectButton, EmptyState, Kv } from "./ui";
+import DeviceAssignmentCard from "./DeviceAssignmentCard";
+import DeviceIdentityCard from "./DeviceIdentityCard";
 import { Alert, ALERT_KIND_LABELS, ALERT_SEVERITY_TONE, AlertSeverity } from "../types/alert";
 import AlertKindIcon from "./AlertKindIcon";
 import ActivityTimeline from "./ActivityTimeline";
 import ComponentStatesPanel from "./ComponentStatesPanel";
 import ConfirmationModal from "./ConfirmationModal";
-import GroupPicker from "./GroupPicker";
 import HealthBadge from "./HealthBadge";
-import LocationPicker from "./LocationPicker";
-import { deviceSite } from "../utils/location";
-import { cpuView, osView, storageView } from "../utils/system";
 import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
 import DeviceLivePanel, { HeartbeatValues } from "./DeviceLivePanel";
 import DeviceLast24hCard from "./DeviceLast24hCard";
@@ -143,98 +141,34 @@ const drawerTabs: Array<{ id: DrawerTab; label: string }> = [
 // bundle and the flag-off experience are unchanged.
 const DeviceTerminal = lazy(() => import("./DeviceTerminal"));
 
-function DetailRow({
-  label,
-  value,
-  mono = false,
-  hint,
-}: {
-  label: string;
-  value?: string | null;
-  mono?: boolean;
-  /** A muted second line, e.g. the OS release and build. */
-  hint?: string | null;
-}) {
+/** How serious a health reason reads: "critical"/"offline" ones are red. */
+function issueTone(reason: string): string {
+  if (/critical|offline|down|fail|stopped/i.test(reason)) return TONE.critical;
+  return TONE.warning;
+}
+
+/** Health issues as tinted chips on one wrapping line (the first four; the rest in a "+N" chip). */
+function HealthIssueChips({ reasons }: { reasons: string[] }) {
+  const shown = reasons.slice(0, 4);
+  const rest = reasons.slice(4);
   return (
-    <div>
-      <p className="premium-kicker mb-1">{label}</p>
-      <p
-        className={`text-xs font-medium leading-5 ${mono ? "font-mono" : ""} ${value ? "text-slate-100" : "text-slate-500"}`}
-      >
-        {value || "—"}
-      </p>
-      {hint && (
-        <p className="text-[11px] leading-4" style={{ color: "var(--th-text-muted)" }}>
-          {hint}
-        </p>
+    <ul className="flex min-w-0 flex-wrap gap-1.5" aria-label="Health issues">
+      {shown.map((r) => (
+        <li key={r} className="th-issue-chip" title={r} style={{ "--chip-tone": issueTone(r) } as React.CSSProperties}>
+          <i aria-hidden="true" />
+          <span>{r}</span>
+        </li>
+      ))}
+      {rest.length > 0 && (
+        <li
+          className="th-issue-chip"
+          title={rest.join("\n")}
+          style={{ "--chip-tone": TONE.neutral } as React.CSSProperties}
+        >
+          <span>+{rest.length} more</span>
+        </li>
       )}
-    </div>
-  );
-}
-
-/** CPU, memory and storage as labelled rows; storage with how full it is. */
-function HardwareRows({ device }: { device: Device }) {
-  const cpu = cpuView(device.cpu);
-  const disk = storageView(device.storage);
-  return (
-    <dl className="th-hw">
-      <dt>CPU</dt>
-      <dd>
-        <span>{cpu?.name ?? "—"}</span>
-        {cpu?.raw && <small className="font-mono">{cpu.raw}</small>}
-      </dd>
-      <dt>Memory</dt>
-      <dd>
-        <span>{device.ram || "—"}</span>
-      </dd>
-      <dt>Storage</dt>
-      <dd>
-        {disk ? (
-          <>
-            <span>
-              {disk.totalGb} GB · {disk.freeGb} GB free
-            </span>
-            <span
-              className="th-hw-bar"
-              role="img"
-              aria-label={`${disk.usedPct}% used`}
-              title={`${disk.usedPct}% used`}
-              data-tone={disk.usedPct >= 90 ? "critical" : disk.usedPct >= 80 ? "warning" : undefined}
-            >
-              <i style={{ width: `${disk.usedPct}%` }} />
-            </span>
-          </>
-        ) : (
-          <span>{device.storage || "—"}</span>
-        )}
-      </dd>
-    </dl>
-  );
-}
-
-function AssignmentSourceBadge({ source }: { source?: string | null }) {
-  const normalized = (source || "unassigned").toLowerCase();
-  const label =
-    normalized === "manual" || normalized === "legacy_manual"
-      ? "Manual"
-      : normalized === "trusted_domain"
-        ? "Domain"
-        : normalized === "enrollment_token"
-          ? "Token"
-          : normalized === "auto_os" || normalized === "system_auto"
-            ? "Auto"
-            : "Unassigned";
-  return (
-    <span
-      className="inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold"
-      style={{
-        borderColor: "var(--th-border-default)",
-        background: "var(--th-chip-bg)",
-        color: "var(--th-text-secondary)",
-      }}
-    >
-      {label}
-    </span>
+    </ul>
   );
 }
 
@@ -281,7 +215,7 @@ function AlertRow({ alert, resolved = false }: { alert: Alert; resolved?: boolea
       : formatDateTime(alert.created_at);
   const tone = ALERT_SEVERITY_TONE[alert.severity as AlertSeverity] ?? "var(--th-text-muted)";
   return (
-    <div className={`flex items-start gap-2.5 py-2 ${resolved ? "opacity-80" : ""}`}>
+    <div className={`flex items-start gap-2.5 py-1.5 ${resolved ? "opacity-80" : ""}`}>
       {/* The kind says what happened; the colour says how serious it was. */}
       <span className="mt-0.5 flex-none" style={{ color: tone }} aria-hidden="true">
         <AlertKindIcon kind={alert.kind} className="h-3.5 w-3.5" />
@@ -646,9 +580,6 @@ export default function DeviceDrawer({
     [activeTab, device.id, reload, setNotes],
   );
 
-  const assignmentClientId = device.client_id ?? device.resolved_client_id ?? null;
-  const availableGroups = groups.filter((group) => group.client_id === assignmentClientId);
-
   const syncColor = device.rustdesk_conflict_detected
     ? "text-red-400"
     : device.rustdesk_sync_state === "synced"
@@ -951,7 +882,7 @@ export default function DeviceDrawer({
             {/* Paralajmerim per pajisje te arkivuar por aktive */}
             {device.is_archived && freshness !== "offline" && (
               <div
-                className="mb-4 flex items-start gap-3 rounded-lg px-4 py-3"
+                className="mb-3.5 flex items-start gap-3 rounded-lg px-4 py-3"
                 style={{
                   border: "1px solid color-mix(in srgb, var(--th-accent) 25%, transparent)",
                   background: "color-mix(in srgb, var(--th-accent) 7%, transparent)",
@@ -970,7 +901,7 @@ export default function DeviceDrawer({
 
             {/* Paralajmerim per duplikim */}
             {device.duplicate_candidate && (
-              <div className="th-drawer-callout mb-4" data-tone="warning">
+              <div className="th-drawer-callout mb-3.5" data-tone="warning">
                 <div className="flex items-start gap-3">
                   <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
                   <div className="min-w-0 flex-1">
@@ -1006,42 +937,43 @@ export default function DeviceDrawer({
             )}
 
             {/* Status */}
-            <section className="mb-5">
+            <section className="mb-3.5" aria-label="Status">
               <p className="premium-kicker mb-2">Status</p>
               <div className="th-drawer-card">
-                <dl className="th-dl">
-                  <dt>Last seen</dt>
-                  <dd>
+                <dl className="th-kv">
+                  <Kv label="Last seen">
                     {streaming ? (
                       <>
                         <span style={{ color: "var(--th-status-online)" }}>Live now</span>
                         {device.last_seen && (
-                          <span style={{ color: "var(--th-text-muted)" }}>
-                            {" "}
-                            · last heartbeat {formatLocalDateTime(device.last_seen)}
-                          </span>
+                          <span className="th-kv-sub">last heartbeat {formatLocalDateTime(device.last_seen)}</span>
                         )}
                       </>
                     ) : device.last_seen ? (
                       <>
                         {formatLocalDateTime(device.last_seen)}
-                        <span style={{ color: "var(--th-text-muted)" }}>
-                          {" "}
+                        <span className="th-kv-muted">
                           · <HeartbeatFreshness lastSeen={device.last_seen} />
                         </span>
                       </>
                     ) : (
-                      <span style={{ color: "var(--th-text-muted)" }}>Never</span>
+                      <span className="th-kv-muted">Never</span>
                     )}
-                  </dd>
-                  <dt>Health</dt>
-                  <dd>
+                  </Kv>
+                  <Kv label="Health">
                     <HealthBadge state={healthState} score={healthScore} showLabel />
-                  </dd>
+                  </Kv>
+                  <Kv label="Health issues" span>
+                    {healthReasons.length > 0 ? (
+                      <HealthIssueChips reasons={healthReasons} />
+                    ) : (
+                      <span className="th-kv-muted">No issues</span>
+                    )}
+                  </Kv>
                 </dl>
 
                 {freshness !== "online" && offlineAnalysis && offlineAnalysis.reason && (
-                  <div className="th-drawer-callout mt-3" data-tone="warning">
+                  <div className="th-drawer-callout mt-2" data-tone="warning">
                     <div className="flex flex-wrap items-center gap-2">
                       <AlertTriangle className="h-4 w-4 flex-none" />
                       <span className="text-[13px] font-semibold">
@@ -1065,29 +997,6 @@ export default function DeviceDrawer({
                     )}
                   </div>
                 )}
-
-                {healthReasons.length > 0 && (
-                  <div className="mt-3 border-t pt-3" style={{ borderColor: "var(--th-border-drawer-section)" }}>
-                    <p className="mb-1.5 text-[12px] font-medium" style={{ color: "var(--th-text-muted)" }}>
-                      Health issues
-                    </p>
-                    <ul className="space-y-1">
-                      {healthReasons.slice(0, 4).map((r) => (
-                        <li
-                          key={r}
-                          className="flex items-start gap-2 text-[13px]"
-                          style={{ color: "var(--th-text-primary)" }}
-                        >
-                          <span
-                            className="mt-1.5 h-1.5 w-1.5 flex-none rounded-full"
-                            style={{ background: "var(--th-status-warning)" }}
-                          />
-                          {r}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
               </div>
             </section>
 
@@ -1109,12 +1018,21 @@ export default function DeviceDrawer({
             />
 
             {/* Services */}
-            <section className="mb-5">
+            <section className="mb-3.5" aria-label="Services">
               <p className="premium-kicker mb-2">Services</p>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="th-svc-strip">
                 {(() => {
                   const rs = remoteSupportStatus(device);
-                  const tiles: { label: string; value: string; tone: string; sub?: string; onClick?: () => void }[] = [
+                  const tiles: {
+                    label: string;
+                    value: string;
+                    tone: string;
+                    /** Shown small beside the value. */
+                    sub?: string;
+                    /** Shown only as the tile's tooltip. */
+                    hint?: string;
+                    onClick?: () => void;
+                  }[] = [
                     {
                       label: TERMS.remoteSupport,
                       value: rs.label,
@@ -1126,7 +1044,7 @@ export default function DeviceDrawer({
                       label: "Updates",
                       value: "View software",
                       tone: TONE.neutral,
-                      sub: "Patches and installed apps",
+                      hint: "Patches and installed apps",
                       onClick: () => setActiveTab("software"),
                     },
                     {
@@ -1146,23 +1064,20 @@ export default function DeviceDrawer({
                     },
                   ];
                   return tiles.map((t) => {
+                    const value = t.value.charAt(0).toUpperCase() + t.value.slice(1);
+                    const title = [`${t.label}: ${value}`, t.sub, t.hint].filter(Boolean).join(" · ");
                     const body = (
                       <>
-                        <span className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                        <span className="th-svc-tile-label">
                           {t.label}
+                          {t.onClick && <ChevronRight aria-hidden="true" />}
                         </span>
-                        <span
-                          className="mt-1 flex items-center gap-2 text-[14px] font-semibold first-letter:uppercase"
-                          style={{ color: "var(--th-text-primary)" }}
-                        >
-                          <span className="h-2 w-2 flex-none rounded-full" style={{ background: t.tone }} />
-                          {t.value}
+                        <span className="th-svc-tile-value" style={{ "--tile-tone": t.tone } as React.CSSProperties}>
+                          <i aria-hidden="true" />
+                          {value}
+                          {t.sub && <small>{t.sub}</small>}
                         </span>
-                        {t.sub && (
-                          <span className="mt-0.5 block truncate text-[12px]" style={{ color: "var(--th-text-faint)" }}>
-                            {t.sub}
-                          </span>
-                        )}
+                        {t.hint && <span className="sr-only">{t.hint}</span>}
                       </>
                     );
                     return t.onClick ? (
@@ -1170,12 +1085,13 @@ export default function DeviceDrawer({
                         key={t.label}
                         type="button"
                         onClick={t.onClick}
-                        className="th-drawer-tile flex flex-col items-start justify-start text-left"
+                        title={title}
+                        className="th-drawer-tile th-svc-tile"
                       >
                         {body}
                       </button>
                     ) : (
-                      <div key={t.label} className="th-drawer-tile flex flex-col items-start">
+                      <div key={t.label} title={title} className="th-drawer-tile th-svc-tile">
                         {body}
                       </div>
                     );
@@ -1185,7 +1101,7 @@ export default function DeviceDrawer({
             </section>
 
             {/* Sinjalizimet */}
-            <section className="mb-4">
+            <section className="mb-3.5" aria-label="Alerts">
               <div className="mb-2 flex items-center gap-2">
                 <p className="premium-kicker">Alerts</p>
                 {openAlerts.length > 0 && (
@@ -1196,7 +1112,7 @@ export default function DeviceDrawer({
               </div>
               <div className="th-drawer-card">
                 {openAlerts.length === 0 && resolvedAlerts.length === 0 ? (
-                  <div className="flex items-center gap-2 py-1">
+                  <div className="flex items-center gap-2">
                     <CheckCircle className="h-4 w-4 text-emerald-500" />
                     <p className="text-xs font-medium text-slate-400">No alerts for this device</p>
                   </div>
@@ -1237,7 +1153,7 @@ export default function DeviceDrawer({
               </div>
             </section>
             {/* Mirembajtja */}
-            <section className="mb-4">
+            <section className="mb-3.5" aria-label="Maintenance">
               <div className="mb-2 flex items-center gap-2">
                 <p className="premium-kicker">Maintenance</p>
                 {device.is_in_maintenance && (
@@ -1252,7 +1168,7 @@ export default function DeviceDrawer({
               </div>
               <div className="th-drawer-card">
                 {device.is_in_maintenance ? (
-                  <div className="space-y-3">
+                  <div className="space-y-2.5">
                     <div className="flex items-start gap-2">
                       <Wrench className="mt-0.5 h-3.5 w-3.5 flex-none" style={{ color: TONE.maintenance }} />
                       <div className="min-w-0 flex-1">
@@ -1264,36 +1180,19 @@ export default function DeviceDrawer({
                         )}
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-x-5 gap-y-2">
-                      {device.maintenance_started_by && (
-                        <div>
-                          <p className="premium-kicker mb-0.5">Started by</p>
-                          <p className="text-xs font-medium text-slate-200">{device.maintenance_started_by}</p>
-                        </div>
-                      )}
+                    <dl className="th-kv">
+                      {device.maintenance_started_by && <Kv label="Started by">{device.maintenance_started_by}</Kv>}
                       {device.maintenance_started_at && (
-                        <div>
-                          <p className="premium-kicker mb-0.5">Started at</p>
-                          <p className="text-xs font-medium text-slate-200">
-                            {formatLocalDateTime(device.maintenance_started_at)}
-                          </p>
-                        </div>
+                        <Kv label="Started at">{formatLocalDateTime(device.maintenance_started_at)}</Kv>
                       )}
-                      {device.maintenance_ends_at && (
-                        <div className="col-span-2">
-                          <p className="premium-kicker mb-0.5">Ends at</p>
-                          <p className="text-xs font-medium text-slate-200">
-                            {formatLocalDateTime(device.maintenance_ends_at)}
-                          </p>
-                        </div>
+                      {device.maintenance_ends_at ? (
+                        <Kv label="Ends at">{formatLocalDateTime(device.maintenance_ends_at)}</Kv>
+                      ) : (
+                        <Kv label="Duration">
+                          <span className="th-kv-muted">Indefinite</span>
+                        </Kv>
                       )}
-                      {!device.maintenance_ends_at && (
-                        <div className="col-span-2">
-                          <p className="premium-kicker mb-0.5">Duration</p>
-                          <p className="text-xs font-medium text-slate-400">Indefinite</p>
-                        </div>
-                      )}
-                    </div>
+                    </dl>
                     {hasPermission("maintenance_mode") && (
                       <Button
                         type="button"
@@ -1395,161 +1294,40 @@ export default function DeviceDrawer({
               </div>
             </section>
 
-            {/* Identiteti */}
-            <section className="mb-4">
-              <p className="premium-kicker mb-2">Identity</p>
-              <div className="th-drawer-card grid grid-cols-2 gap-x-5 gap-y-3">
-                <div>
-                  <p className="premium-kicker mb-1">Current user</p>
-                  <div className="flex items-center gap-1.5">
-                    <p
-                      className={`text-xs font-medium leading-5 ${device.current_user ? "text-slate-100" : "text-slate-500"}`}
-                    >
-                      {(streaming && live.snapshot?.current_user) || device.current_user || "—"}
-                    </p>
-                    {device.user_source &&
-                      device.user_source !== "no_interactive_user" &&
-                      device.user_source !== "fallback" && (
-                        <span
-                          className={`inline-flex items-center rounded px-1 py-0.5 text-[11px] font-semibold leading-3 ${
-                            device.user_source === "rdp_session"
-                              ? "border border-purple-400/25 bg-purple-400/[0.1] text-purple-300"
-                              : "border border-sky-400/25 bg-sky-400/[0.1] text-sky-300"
-                          }`}
-                          title={device.user_source}
-                        >
-                          {device.user_source === "rdp_session" ? "RDP" : "Console"}
-                        </span>
-                      )}
-                  </div>
-                  {device.user_session_state && device.user_session_state !== "unknown" && (
-                    <p className="mt-0.5 text-[11px] font-medium text-slate-500">
-                      Session: {device.user_session_state}
-                    </p>
-                  )}
-                </div>
-                <DetailRow label="Domain" value={device.domain} />
-                <DetailRow label="OS" value={osView(device).name} hint={osView(device).detail} />
-                <DetailRow label="Platform" value={humanize(device.platform || device.os_name || "")} />
-                {platformFeatures.FEATURE_LINUX && device.kernel_version && (
-                  <DetailRow label="Kernel" value={device.kernel_version} mono />
-                )}
-                {platformFeatures.FEATURE_LINUX && device.architecture && (
-                  <DetailRow label="Architecture" value={device.architecture} mono />
-                )}
-                {(device.cpu || device.ram || device.storage) && (
-                  <div className="col-span-2">
-                    <p className="premium-kicker mb-1.5">Hardware</p>
-                    <HardwareRows device={device} />
-                  </div>
-                )}
-                {/* Capabilities — capability-driven, real data reported by the
-                  agent. Only rendered when Linux is enabled and the device
-                  reported some (Windows never does → Windows drawer unchanged). */}
-                {platformFeatures.FEATURE_LINUX &&
-                  device.capabilities &&
-                  Object.keys(device.capabilities).length > 0 && (
-                    <div className="col-span-2">
-                      <p className="premium-kicker mb-1.5">Capabilities</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {Object.entries(device.capabilities).map(([name, version]) => (
-                          <span
-                            key={name}
-                            className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold"
-                            style={{
-                              borderColor: "var(--th-border-default)",
-                              background: "var(--th-chip-bg)",
-                              color: "var(--th-text-secondary)",
-                            }}
-                          >
-                            {name}
-                            {version ? <span className="font-mono text-slate-500">{version}</span> : null}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-              </div>
-            </section>
+            <DeviceIdentityCard
+              device={device}
+              liveUser={streaming ? live.snapshot?.current_user : null}
+              linux={platformFeatures.FEATURE_LINUX}
+            />
 
-            {/* Caktimi */}
-            <section className="mb-4">
-              <p className="premium-kicker mb-2">Client assignment</p>
-              <div className="th-drawer-card grid grid-cols-2 gap-x-5 gap-y-3">
-                <DetailRow label="Client" value={device.resolved_client_name || device.client_name || TERMS.noClient} />
-                <DetailRow label="Group" value={device.resolved_group || device.group_name || TERMS.noGroup} />
-                <div className="col-span-2">
-                  <DetailRow
-                    label="Location"
-                    value={
-                      device.location_name
-                        ? (deviceSite(device)?.title ?? device.location_name)
-                        : device.location_source === "manual"
-                          ? "No location · placed by hand"
-                          : "No location"
-                    }
-                  />
-                </div>
-                <div className="col-span-2">
-                  <p className="premium-kicker mb-1">Assignment source</p>
-                  <AssignmentSourceBadge source={device.resolved_assignment_source || device.assignment_source} />
-                </div>
-                {canOperate && (
-                  <label className="col-span-2 block">
-                    <span className="premium-kicker mb-1 block">Assign client</span>
-                    <SelectField
-                      value={device.client_id ?? "none"}
-                      onChange={async (event) => {
-                        const value = event.target.value === "none" ? null : Number(event.target.value);
-                        const updated = await assignDeviceClient(device.id, value);
-                        onDeviceUpdated?.(updated);
-                      }}
-                      className="w-full"
-                    >
-                      <option value="none">{TERMS.noClient}</option>
-                      {clients.map((client) => (
-                        <option key={client.id} value={client.id}>
-                          {client.name}
-                        </option>
-                      ))}
-                    </SelectField>
-                  </label>
-                )}
-                {hasPermission("manage_clients") && (
-                  <div className="col-span-2">
-                    <span className="premium-kicker mb-1 block">Assign location</span>
-                    <LocationPicker
-                      device={device}
-                      active={activeTab === "overview"}
-                      onDeviceUpdated={onDeviceUpdated}
-                    />
-                  </div>
-                )}
-                {canOperate && (
-                  <div className="col-span-2 block">
-                    <span className="premium-kicker mb-1 block">Assign group</span>
-                    <GroupPicker
-                      device={device}
-                      groups={availableGroups}
-                      disabled={!assignmentClientId}
-                      onDeviceUpdated={onDeviceUpdated}
-                    />
-                  </div>
-                )}
-              </div>
-            </section>
+            <DeviceAssignmentCard
+              device={device}
+              clients={clients}
+              groups={groups}
+              canAssignClient={canOperate}
+              canAssignLocation={hasPermission("manage_clients")}
+              canAssignGroup={canOperate}
+              active={activeTab === "overview"}
+              onDeviceUpdated={onDeviceUpdated}
+            />
 
             {/* Rrjeti */}
-            <section className="mb-4">
+            <section className="mb-3.5" aria-label="Network">
               <p className="premium-kicker mb-2">Network</p>
-              <div className="th-drawer-card grid grid-cols-2 gap-x-5 gap-y-3">
-                <DetailRow label="Local IP" value={device.local_ip} mono />
-                <DetailRow label="Public IP" value={device.public_ip} mono />
+              <div className="th-drawer-card !py-2.5">
+                <dl className="th-kv">
+                  <Kv label="Local IP" mono>
+                    {device.local_ip}
+                  </Kv>
+                  <Kv label="Public IP" mono>
+                    {device.public_ip}
+                  </Kv>
+                </dl>
               </div>
             </section>
 
             {/* Platform Components — Installed/Desired/Health + lifecycle metadata (read-only) */}
-            <div className="mb-4">
+            <div className="mb-3.5">
               <ComponentStatesPanel
                 key={device.id}
                 deviceId={device.id}
