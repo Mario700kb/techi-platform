@@ -21,7 +21,6 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 import app.models  # noqa: F401
 from app.core.auth import get_current_operator, get_operator_scope
@@ -50,8 +49,11 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.fixture()
-def make(monkeypatch):
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+def make(monkeypatch, tmp_path):
+    # A file, not one shared in-memory connection: the channel's worker
+    # threads write while the test polls, and each needs its own connection
+    # (two threads on one SQLite connection at once lose reads).
+    engine = create_engine(f"sqlite:///{tmp_path / 'realtime.db'}", connect_args={"check_same_thread": False})
     Base.metadata.create_all(bind=engine)
     factory = sessionmaker(bind=engine)
     db = factory()
@@ -73,6 +75,7 @@ def make(monkeypatch):
     agent_command_channel._connections.clear()
     agent_command_channel._lost_at.clear()
     device_overview_service.invalidate_overview_cache()
+    engine.dispose()
 
 
 @pytest.fixture()
@@ -242,14 +245,19 @@ def test_connect_and_drop_each_publish_the_live_state_at_once(make, events, monk
             assert online[0]["data"]["freshness_state"] == "online"
             ws.close()
             assert _wait_for(lambda: any(e["reason"] == "agent_channel_dropped" for e in events))
-        dropped = [e for e in events if e["reason"] == "agent_channel_dropped"][0]["data"]
-        # Before the grace decides: still online, no longer live, and when.
-        assert dropped["live"] is False
-        assert dropped["status"] == "online"
-        assert dropped["live_lost_at"] is not None
-        assert agent_command_channel.lost_since(924) is not None
-        agent_channel_routes.cancel_presence_checks()
-        assert _wait_for(lambda: agent_command_channel.lost_since(924) is None)
+            assert _wait_for(lambda: agent_command_channel.lost_since(924) is not None)
+            # Cancelling the grace check ends the reconnecting state. The
+            # check lives on the session's own event loop (TestClient runs it
+            # in another thread), so it is cancelled there: Task.cancel from
+            # this thread would not wake a loop asleep in the grace.
+            for task in list(agent_channel_routes._offline_checks):
+                task.get_loop().call_soon_threadsafe(task.cancel)
+            assert _wait_for(lambda: agent_command_channel.lost_since(924) is None)
+    dropped = [e for e in events if e["reason"] == "agent_channel_dropped"][0]["data"]
+    # Before the grace decides: still online, no longer live, and when.
+    assert dropped["live"] is False
+    assert dropped["status"] == "online"
+    assert dropped["live_lost_at"] is not None
 
 
 def test_a_device_already_online_still_hears_that_it_is_live(make, events, monkeypatch):
