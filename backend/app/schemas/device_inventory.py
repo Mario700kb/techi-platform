@@ -3,6 +3,8 @@ from typing import List, Optional
 
 from pydantic import BaseModel
 
+from app.schemas.security_posture import SecurityPosture
+
 
 class ProcessSnapshot(BaseModel):
     pid: int
@@ -42,3 +44,6 @@ class DeviceInventoryResponse(BaseModel):
     last_update_at: Optional[str] = None
     patch_state: str = "unknown"
     collected_at: Optional[datetime] = None
+    # Windows agents >= 2.1.31; None until the first report.
+    security_posture: Optional[SecurityPosture] = None
+    security_collected_at: Optional[datetime] = None

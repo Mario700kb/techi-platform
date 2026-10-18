@@ -30,6 +30,26 @@ export interface DeviceInventory {
   last_update_at?: string | null;
   patch_state: PatchState;
   collected_at?: string | null;
+  /** Windows agents >= 2.1.31; null until the first report. */
+  security_posture?: SecurityPosture | null;
+  security_collected_at?: string | null;
+}
+
+/** Read-only security snapshot from the Windows agent; null = could not be read. */
+export interface SecurityPosture {
+  collected_at?: string | null;
+  defender: {
+    present: boolean;
+    antivirus_enabled: boolean | null;
+    realtime_enabled: boolean | null;
+    signature_age_days: number | null;
+  };
+  third_party_av: string[];
+  firewall: { domain: boolean | null; private: boolean | null; public: boolean | null };
+  bitlocker: { system_drive: string; protection: "on" | "off" | "unknown"; encryption_percent: number | null };
+  uac_enabled: boolean | null;
+  secure_boot: boolean | null;
+  local_admins: string[];
 }
 
 export type PatchState = "up_to_date" | "updates_available" | "reboot_required" | "unknown";

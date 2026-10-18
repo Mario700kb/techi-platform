@@ -15,6 +15,7 @@ from app.platform_core.classification import classify_platform
 from app.repositories.device_repository import DeviceRepository
 from app.repositories.device_heartbeat_repository import DeviceHeartbeatRepository
 from app.schemas.agent import AgentHeartbeatPayload, DeviceHeartbeatCreate
+from app.schemas.security_posture import parse_security_posture
 from app.services.remote_session_service import RemoteSessionService
 from app.schemas.device import DeviceCreate, DeviceUpdate
 from app.services.alert_engine import AlertEngine
@@ -408,7 +409,7 @@ class DeviceHeartbeatService:
                 fail_silently=True,
             )
         self._process_telemetry(payload, device)
-        self._process_inventory(payload, device)
+        self._process_inventory(payload, device, verified=bool(ctx.get("verified")))
         self._process_capabilities(payload, device)
         # Only a verified agent may drive the device's Remote Support session
         # flag; an unverified caller (a clone, a probe) must not start or end it.
@@ -807,8 +808,22 @@ class DeviceHeartbeatService:
                 fail_silently=True,
             )
 
-    def _process_inventory(self, payload: AgentHeartbeatPayload, device) -> None:
-        if payload.processes is None and payload.services is None and payload.software is None and payload.patch_status is None:
+    def _process_inventory(self, payload: AgentHeartbeatPayload, device, verified: bool = False) -> None:
+        posture = None
+        if payload.security_posture is not None:
+            # Who is a local administrator and whether the disk is encrypted
+            # is identity-sensitive: only the device's own agent may set it.
+            if verified:
+                posture = parse_security_posture(payload.security_posture, device_id=device.id)
+            else:
+                logger.info("device %d: security_posture from an unverified heartbeat ignored", device.id)
+        if (
+            payload.processes is None
+            and payload.services is None
+            and payload.software is None
+            and payload.patch_status is None
+            and posture is None
+        ):
             return
         try:
             DeviceInventoryService(self.db).save_snapshot(
@@ -817,6 +832,7 @@ class DeviceHeartbeatService:
                 services=payload.services,
                 software=payload.software,
                 patch_status=payload.patch_status,
+                security_posture=posture,
             )
             if classify_platform(device.platform) == "mikrotik":
                 DeviceActivityEventService(self.db).record(

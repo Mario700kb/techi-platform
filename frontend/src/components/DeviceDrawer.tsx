@@ -87,6 +87,7 @@ import { useDeviceTelemetry } from "../hooks/useDeviceTelemetry";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import ConnectMenu from "./ConnectMenu";
 import DeviceInventoryPanel from "./DeviceInventoryPanel";
+import DeviceSecurityCard from "./DeviceSecurityCard";
 import { Button, ConnectButton, EmptyState, SelectField } from "./ui";
 import { Alert, ALERT_KIND_LABELS, ALERT_SEVERITY_TONE, AlertSeverity } from "../types/alert";
 import AlertKindIcon from "./AlertKindIcon";
@@ -1067,6 +1068,16 @@ export default function DeviceDrawer({
                 )}
               </div>
             </section>
+
+            {isWindows && (
+              <DeviceSecurityCard
+                agentVersion={device.agent_version}
+                inventory={inventory ?? null}
+                loading={inventoryQuery.refreshing}
+                error={inventoryQuery.error}
+                onLoad={loadInventory}
+              />
+            )}
 
             {/* History only: current values are in the Live panel above. */}
             <DeviceLast24hCard

@@ -18,4 +18,8 @@ class DeviceInventory(Base):
     services_json = Column(Text, nullable=True)
     software_json = Column(Text, nullable=True)
     patch_json = Column(Text, nullable=True)
+    # Windows security posture (agent >= 2.1.31): the normalised JSON of
+    # app.schemas.security_posture.SecurityPosture, and when the agent read it.
+    security_json = Column(Text, nullable=True)
+    security_collected_at = Column(DateTime, nullable=True)
     collected_at = Column(DateTime, nullable=False, default=utcnow)

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.schemas.device import DeviceStatus, DeviceType
 from app.schemas.remote_action import PendingActionDelivery
@@ -59,8 +59,18 @@ class AgentHeartbeatPayload(BaseModel):
     services: Optional[List[Dict[str, Any]]] = None
     software: Optional[List[Dict[str, Any]]] = None
     patch_status: Optional[Dict[str, Any]] = None
+    # Windows security posture (agents >= 2.1.31), sent when it changed or
+    # every six hours. Validated by app.schemas.security_posture when stored;
+    # anything that is not an object is dropped here so it never fails the
+    # heartbeat.
+    security_posture: Optional[Dict[str, Any]] = None
     agent_version: Optional[str] = None
     agent_sha256: Optional[str] = None
+
+    @field_validator("security_posture", mode="before")
+    @classmethod
+    def _posture_object_only(cls, value: Any) -> Any:
+        return value if isinstance(value, dict) else None
 
 
 class DeviceHeartbeatCreate(BaseModel):

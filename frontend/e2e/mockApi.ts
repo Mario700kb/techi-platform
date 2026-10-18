@@ -481,6 +481,17 @@ const DEVICE_1_INVENTORY: DeviceInventory = {
   pending_updates: 0,
   reboot_required: true,
   patch_state: "reboot_required",
+  security_posture: {
+    collected_at: iso(90),
+    defender: { present: true, antivirus_enabled: true, realtime_enabled: true, signature_age_days: 1 },
+    third_party_av: [],
+    firewall: { domain: true, private: true, public: false },
+    bitlocker: { system_drive: "C:", protection: "on", encryption_percent: 100 },
+    uac_enabled: true,
+    secure_boot: true,
+    local_admins: ["NW-RECEPTION-01\\Administrator", "NORTHWIND\\Domain Admins"],
+  },
+  security_collected_at: iso(90),
 };
 
 function devicesPage(url: URL): DevicesResponse {
