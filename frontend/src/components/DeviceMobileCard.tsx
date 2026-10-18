@@ -13,13 +13,14 @@ import {
   ClientOfflineSummary,
   HEALTH_TONE_COLOR,
   healthTone,
-  lastSeenView,
   maintenanceBadge,
   offlineReasonBadge,
   patchBadge,
   remoteSupportIssue,
 } from "../utils/deviceBadges";
 import type { VersionStatus } from "../utils/version";
+import { deviceFreshness } from "../utils/devicePresence";
+import { DeviceStatusChip } from "./DeviceStatusChip";
 import { StatusDot, FreshnessState } from "./mobile/primitives";
 import { ConnectButton } from "./ui";
 
@@ -51,10 +52,7 @@ export interface DeviceMobileCardProps {
 }
 
 function freshnessOf(device: Device): FreshnessState {
-  const state = device.freshness_state ?? device.status;
-  if (state === "online") return "online";
-  if (state === "stale") return "stale";
-  return "offline";
+  return deviceFreshness(device);
 }
 
 function ToneBadge({ view, children }: { view?: BadgeView; children?: ReactNode }) {
@@ -116,7 +114,6 @@ export function DeviceMobileCard({
   onConnect,
   connectTitle,
 }: DeviceMobileCardProps) {
-  const lastSeen = lastSeenView(device.last_seen);
   const osShort = getOsShort(device.os_name);
   const offlineBadge = offlineReasonBadge(device, offlineSummary);
   const healthScore = health?.health_score;
@@ -222,42 +219,33 @@ export function DeviceMobileCard({
         </div>
       </div>
 
-      {(healthScore != null ||
-        device.resolved_device_category ||
-        device.device_type ||
-        patchView ||
-        maintenanceView ||
-        activeAction ||
-        alerts?.critical ||
-        alerts?.warning ||
-        offlineBadge ||
-        rsIssue) && (
-        <div className="mt-2.5 flex flex-wrap items-center gap-1 pl-[21px]">
-          {healthScore != null && (
-            <ToneBadge
-              view={{
-                label: `Health ${healthScore}`,
-                tone: HEALTH_TONE_COLOR[healthTone(health)],
-                title: `Health score ${healthScore} of 100`,
-              }}
-            />
-          )}
-          <DeviceTypeBadge device={device} />
-          {patchView && <ToneBadge view={patchView} />}
-          {maintenanceView && <ToneBadge view={maintenanceView} />}
-          {activeAction && <ActionIndicator entry={activeAction} />}
-          {alerts?.critical ? <ToneBadge view={{ label: `${alerts.critical} critical`, tone: TONE.critical }} /> : null}
-          {alerts?.warning ? (
-            <ToneBadge
-              view={{ label: `${alerts.warning} ${alerts.warning === 1 ? "warning" : "warnings"}`, tone: TONE.warning }}
-            />
-          ) : null}
-          {offlineBadge && (
-            <ToneBadge view={{ ...offlineBadge, title: offlineBadge.title ?? "Likely cause (inferred)" }} />
-          )}
-          {rsIssue && !offlineBadge && <ToneBadge view={rsIssue}>{TERMS.remoteSupport}</ToneBadge>}
-        </div>
-      )}
+      {/* The status first: online (live or its age), stale, offline and why. */}
+      <div className="mt-2.5 flex flex-wrap items-center gap-1 pl-[21px]">
+        <DeviceStatusChip device={device} className="th-mdev-presence" />
+        {healthScore != null && (
+          <ToneBadge
+            view={{
+              label: `Health ${healthScore}`,
+              tone: HEALTH_TONE_COLOR[healthTone(health)],
+              title: `Health score ${healthScore} of 100`,
+            }}
+          />
+        )}
+        <DeviceTypeBadge device={device} />
+        {patchView && <ToneBadge view={patchView} />}
+        {maintenanceView && <ToneBadge view={maintenanceView} />}
+        {activeAction && <ActionIndicator entry={activeAction} />}
+        {alerts?.critical ? <ToneBadge view={{ label: `${alerts.critical} critical`, tone: TONE.critical }} /> : null}
+        {alerts?.warning ? (
+          <ToneBadge
+            view={{ label: `${alerts.warning} ${alerts.warning === 1 ? "warning" : "warnings"}`, tone: TONE.warning }}
+          />
+        ) : null}
+        {offlineBadge && (
+          <ToneBadge view={{ ...offlineBadge, title: offlineBadge.title ?? "Likely cause (inferred)" }} />
+        )}
+        {rsIssue && !offlineBadge && <ToneBadge view={rsIssue}>{TERMS.remoteSupport}</ToneBadge>}
+      </div>
 
       <div className="th-mdev-meta">
         <span className="flex min-w-0 flex-1 items-center gap-x-2.5 overflow-hidden whitespace-nowrap">
@@ -271,9 +259,6 @@ export function DeviceMobileCard({
               {m.node}
             </span>
           ))}
-        </span>
-        <span className="flex-none font-medium tabular-nums" style={{ color: lastSeen.tone }}>
-          {lastSeen.text}
         </span>
       </div>
     </div>

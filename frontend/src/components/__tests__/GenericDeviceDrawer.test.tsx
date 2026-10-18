@@ -60,7 +60,8 @@ const DEVICE = {
   platform: "linux",
   status: "online",
   freshness_state: "stale",
-  last_seen: "2026-10-05T14:44:00",
+  // Stale by its age (the chip ages the device itself): 10 minutes ago.
+  last_seen: new Date(Date.now() - 10 * 60_000).toISOString(),
 } as unknown as Device;
 
 function renderDrawer() {

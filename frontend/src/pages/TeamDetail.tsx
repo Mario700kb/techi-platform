@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { deviceFreshness } from "../utils/devicePresence";
 import type { CSSProperties } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -493,7 +494,7 @@ function TreeCheckbox({
 }
 
 function DeviceStatusDot({ device }: { device: Device }) {
-  const state = device.freshness_state;
+  const state = deviceFreshness(device);
   const color = state === "online" ? TONE.online : state === "stale" ? TONE.warning : TONE.neutral;
   return <span className="th-onb-dot !h-2 !w-2" style={{ "--swatch": color } as CSSProperties} title={state} />;
 }

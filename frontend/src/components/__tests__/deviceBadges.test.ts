@@ -17,7 +17,7 @@ describe("shared device badges", () => {
   });
 
   it("falls back to Stale as the likely cause for a stale device", () => {
-    const stale = device({ freshness_state: "stale", last_seen: "2026-10-10T10:00:00" });
+    const stale = device({ freshness_state: "stale", last_seen: new Date(Date.now() - 10 * 60_000).toISOString() });
     expect(offlineReasonBadge(stale)).toEqual({ label: "Stale", tone: TONE.stale });
   });
 

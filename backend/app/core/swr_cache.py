@@ -23,11 +23,19 @@ T = TypeVar("T")
 
 
 class SWRCache(Generic[T]):
-    def __init__(self, name: str, ttl: float, max_age: float, max_size: int = 20):
+    def __init__(self, name: str, ttl: float, max_age: float, max_size: int = 20,
+                 min_age_after_change: Optional[float] = None):
         self.name = name
         self.ttl = ttl
         self.max_age = max_age
         self.max_size = max_size
+        # With this set, an entry computed before the data last changed
+        # (changed()) or past its own expiry (get's `expired`) is recomputed
+        # inline once it is this old: readers then see the change at once,
+        # and a burst of changes costs at most one compute per this many
+        # seconds per key.
+        self.min_age_after_change = min_age_after_change
+        self._changed_at = float("-inf")
         self._entries: "OrderedDict[str, tuple[T, float]]" = OrderedDict()
         self._lock = threading.Lock()
         self._key_locks: dict[str, threading.Lock] = {}
@@ -37,13 +45,24 @@ class SWRCache(Generic[T]):
         with self._lock:
             self._entries.clear()
 
-    def get(self, key: str, db: Session, compute: Callable[[Session], T]) -> T:
+    def changed(self) -> None:
+        """The data behind the entries changed (a device went online or
+        offline): entries computed before now are out of date."""
+        self._changed_at = time.monotonic()
+
+    def _outdated(self, entry, now: float, expired: Optional[Callable[[T], bool]]) -> bool:
+        if self.min_age_after_change is None or now - entry[1] < self.min_age_after_change:
+            return False
+        return entry[1] < self._changed_at or (expired is not None and expired(entry[0]))
+
+    def get(self, key: str, db: Session, compute: Callable[[Session], T],
+            expired: Optional[Callable[[T], bool]] = None) -> T:
         now = time.monotonic()
         with self._lock:
             entry = self._entries.get(key)
             if entry is not None:
                 self._entries.move_to_end(key)
-        if entry is not None:
+        if entry is not None and not self._outdated(entry, now, expired):
             age = now - entry[1]
             if age < self.ttl:
                 return entry[0]
@@ -54,7 +73,8 @@ class SWRCache(Generic[T]):
         with self._key_lock(key):
             with self._lock:
                 entry = self._entries.get(key)
-            if entry is not None and time.monotonic() - entry[1] < self.ttl:
+            now = time.monotonic()
+            if entry is not None and now - entry[1] < self.ttl and not self._outdated(entry, now, expired):
                 return entry[0]
             value = compute(db)
             self._store(key, value)

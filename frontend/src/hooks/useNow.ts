@@ -4,8 +4,9 @@ import { useSyncExternalStore } from "react";
 // are computed at render time, and with the WebSocket connected nothing else
 // re-renders a quiet page, so without a tick a device that stops reporting
 // keeps reading "Fresh". A single interval serves all subscribers and stops
-// when the last one unmounts.
-const TICK_MS = 30_000;
+// when the last one unmounts. 15 s: a device's status (DeviceStatusChip)
+// turns stale or offline at most 15 s after its window ends.
+export const TICK_MS = 15_000;
 
 const listeners = new Set<() => void>();
 let now = Date.now();

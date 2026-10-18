@@ -28,7 +28,8 @@ Deliberately narrow
 
 import asyncio
 import logging
-from typing import Any, Dict, Optional
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 from fastapi import WebSocket
 
@@ -38,6 +39,12 @@ logger = logging.getLogger(__name__)
 class AgentCommandChannel:
     def __init__(self) -> None:
         self._connections: Dict[int, WebSocket] = {}
+        # Devices whose channel dropped and whose grace period is still
+        # running: when it dropped. The page shows them as "reconnecting"
+        # until the channel returns or the grace decides.
+        self._lost_at: Dict[int, datetime] = {}
+        # Sockets a failed push removed, until their own teardown runs.
+        self._evicted: Dict[int, WebSocket] = {}
         self._lock = asyncio.Lock()
         # Set while the backend shuts down: every channel drops then, and none
         # of those drops means a device went offline.
@@ -47,6 +54,8 @@ class AgentCommandChannel:
         async with self._lock:
             previous = self._connections.get(device_id)
             self._connections[device_id] = websocket
+            self._lost_at.pop(device_id, None)
+            self._evicted.pop(device_id, None)
         if previous is not None and previous is not websocket:
             # A reconnect before the old socket was reaped. Drop the stale one
             # rather than leaving two entries racing to receive a push.
@@ -59,8 +68,8 @@ class AgentCommandChannel:
             logger.info("[agent-channel] device #%d connected", device_id)
 
     async def unregister(self, device_id: int, websocket: WebSocket) -> bool:
-        """Returns True when this socket was the device's current channel
-        (and so the device has no channel now)."""
+        """Returns True when this socket was the device's channel until now
+        (current, or evicted by a failed push), so the device has none now."""
         async with self._lock:
             # Only clear if this is still the current socket: a slow disconnect
             # must not evict the connection that already replaced it.
@@ -68,10 +77,31 @@ class AgentCommandChannel:
                 self._connections.pop(device_id, None)
                 logger.info("[agent-channel] device #%d disconnected", device_id)
                 return True
+            # A failed push already evicted this socket: the device has had
+            # no channel since, and its drop still needs the grace check.
+            if self._evicted.pop(device_id, None) is websocket:
+                return True
         return False
 
     def is_connected(self, device_id: int) -> bool:
         return device_id in self._connections
+
+    def connected_ids(self) -> List[int]:
+        """The devices with an open channel now: live, so online."""
+        return list(self._connections)
+
+    def note_lost(self, device_id: int, at: datetime) -> None:
+        self._lost_at[device_id] = at
+
+    def lost_since(self, device_id: int) -> Optional[datetime]:
+        """When the device's channel dropped, while its grace period runs."""
+        return self._lost_at.get(device_id)
+
+    def clear_lost(self, device_id: int, at: Optional[datetime] = None) -> None:
+        """End the reconnecting state; with `at`, only the drop recorded then
+        (a later drop has its own grace period)."""
+        if at is None or self._lost_at.get(device_id) == at:
+            self._lost_at.pop(device_id, None)
 
     async def push(self, device_id: int, payload: Dict[str, Any]) -> bool:
         """Send to a connected agent. Returns False if it was not delivered.
@@ -90,6 +120,7 @@ class AgentCommandChannel:
             async with self._lock:
                 if self._connections.get(device_id) is websocket:
                     self._connections.pop(device_id, None)
+                    self._evicted[device_id] = websocket
             return False
 
     async def connection_count(self) -> int:

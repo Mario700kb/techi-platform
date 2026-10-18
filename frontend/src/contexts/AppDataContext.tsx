@@ -5,6 +5,8 @@ import { useDeviceRealtime } from "../hooks/useDeviceRealtime";
 import { DeviceRealtimeEvent, DeviceRealtimeStatus } from "../services/deviceRealtime";
 import { alertCountCacheKey, useAlerts } from "../hooks/useAlerts";
 import { Alert, AlertCount } from "../types/alert";
+import { serverNow } from "../utils/devicePresence";
+import { parseUTC } from "../utils/time";
 
 const OVERVIEW_STORAGE_KEY = "techi.fleet.overview.v2";
 const OVERVIEW_TTL_MS = 30_000;
@@ -28,6 +30,19 @@ const OVERVIEW_REFRESH_EVENTS = new Set([
   "alert_created",
   "alert_resolved",
 ]);
+/** A device changed status or live state: the counts are out of date now. */
+const STATUS_CHANGE_EVENTS = new Set(["device_online", "device_offline"]);
+/** Counted again this soon after a status change (a burst is counted once). */
+const STATUS_REFRESH_DELAY_MS = 3000;
+/** The earliest refresh for a time-based change (the server recounts at most every 5 s). */
+const MIN_CHANGE_REFRESH_MS = 5000;
+
+function isStatusChange(event: DeviceRealtimeEvent): boolean {
+  return (
+    STATUS_CHANGE_EVENTS.has(event.type) ||
+    (event.type === "device_updated" && (event.reason ?? "").startsWith("agent_channel"))
+  );
+}
 
 interface PersistedOverview {
   userId: number;
@@ -76,6 +91,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [latestEvent, setLatestEvent] = useState<DeviceRealtimeEvent | null>(null);
   const refreshPromiseRef = useRef<Promise<void> | null>(null);
   const refreshTimerRef = useRef<number | undefined>();
+  const statusTimerRef = useRef<number | undefined>();
   const activeUserIdRef = useRef(userId);
   const fleetOverviewRef = useRef(fleetOverview);
   const lastFetchTimeRef = useRef(lastFetchTime);
@@ -137,6 +153,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       refreshPromiseRef.current = null;
       window.clearTimeout(refreshTimerRef.current);
       refreshTimerRef.current = undefined;
+      window.clearTimeout(statusTimerRef.current);
+      statusTimerRef.current = undefined;
       setFleetOverview(null);
       setLastFetchTime(null);
       setFleetOverviewLoading(false);
@@ -174,6 +192,16 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     enabled: Boolean(userId),
     onEvent: (event) => {
       setLatestEvent(event);
+      if (isStatusChange(event)) {
+        // Counts (tabs, Explorer rings, client figures) move with the rows:
+        // forced past the overview's 30 s freshness, once per burst.
+        if (statusTimerRef.current) return;
+        statusTimerRef.current = window.setTimeout(() => {
+          statusTimerRef.current = undefined;
+          void refreshFleetOverview(true);
+        }, STATUS_REFRESH_DELAY_MS);
+        return;
+      }
       if (!OVERVIEW_REFRESH_EVENTS.has(event.type)) return;
       if (refreshTimerRef.current) return;
       refreshTimerRef.current = window.setTimeout(() => {
@@ -184,8 +212,26 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   });
 
   useEffect(() => {
-    return () => window.clearTimeout(refreshTimerRef.current);
+    return () => {
+      window.clearTimeout(refreshTimerRef.current);
+      window.clearTimeout(statusTimerRef.current);
+    };
   }, []);
+
+  // No event says a device turned stale at 6 minutes or offline at 25: the
+  // overview says when the next such change is due, and is fetched again
+  // then — one timer, not a poll.
+  const nextChangeAt = fleetOverview?.next_change_at ?? null;
+  useEffect(() => {
+    if (!userId || !nextChangeAt) return;
+    const due = parseUTC(nextChangeAt).getTime();
+    if (Number.isNaN(due)) return;
+    const delay = Math.max(MIN_CHANGE_REFRESH_MS, due - serverNow() + 1000);
+    const id = window.setTimeout(() => {
+      if (document.visibilityState === "visible") void refreshFleetOverview(true);
+    }, delay);
+    return () => window.clearTimeout(id);
+  }, [nextChangeAt, refreshFleetOverview, userId]);
 
   // Events are what keep the overview current. Without a socket there are
   // none, so poll instead (visible tabs only), and catch up as soon as the

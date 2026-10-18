@@ -5,6 +5,7 @@ import type { Device } from "../api/devices";
 import type { ActionStatus } from "../api/actions";
 import type { PatchStatus } from "../api/inventory";
 import type { DeviceHealthSummary } from "../types/telemetry";
+import { deviceFreshness } from "./devicePresence";
 import { TERMS, TONE, humanize, remoteSupportStatus } from "./deviceStatus";
 import { formatDateTime, parseUTC } from "./time";
 import { compareVersions, type VersionStatus } from "./version";
@@ -159,10 +160,15 @@ export function remoteSupportIssue(device: Device): BadgeView | null {
   };
 }
 
+const KNOWN_OFFLINE = new Set(["shutdown", "sleep", "hibernate", "connection_lost"]);
+
 /** Likely cause of a device being offline or stale, inferred client-side. */
 export function offlineReasonBadge(device: Device, clientSummary?: ClientOfflineSummary): BadgeView | null {
-  const freshness = device.freshness_state ?? device.status;
+  const freshness = deviceFreshness(device);
   if (freshness === "online") return null;
+  // The agent said why (shut down, asleep) or its live connection was lost:
+  // the status says so already, nothing to infer.
+  if (device.status === "offline" && KNOWN_OFFLINE.has(device.offline_reason ?? "")) return null;
   if (!device.last_seen) return null;
 
   const rs = remoteSupportStatus(device);
@@ -236,7 +242,7 @@ export function duplicateBadge(device: Device): BadgeView | null {
 }
 
 function isSuggestedArchive(device: Device) {
-  if (device.is_archived || device.freshness_state !== "offline" || !device.last_seen) return false;
+  if (device.is_archived || deviceFreshness(device) !== "offline" || !device.last_seen) return false;
   return (Date.now() - parseUTC(device.last_seen).getTime()) / 86_400_000 > 30;
 }
 
@@ -248,7 +254,7 @@ export function lifecycleBadges(device: Device): BadgeView[] {
       tone: TONE.neutral,
       title: device.archived_at ? `Archived ${formatDateTime(device.archived_at)}` : "Archived device",
     });
-    if (device.freshness_state !== "offline") {
+    if (deviceFreshness(device) !== "offline") {
       badges.push({
         label: "Checked in",
         tone: TONE.warning,

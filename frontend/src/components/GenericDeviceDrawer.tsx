@@ -13,6 +13,8 @@ import { useDeviceActivity } from "../hooks/useDeviceActivity";
 import { useDeviceTelemetry } from "../hooks/useDeviceTelemetry";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import { useNow } from "../hooks/useNow";
+import { deviceFreshness } from "../utils/devicePresence";
+import { DeviceStatusChip } from "./DeviceStatusChip";
 import { useTabIndicator } from "../hooks/useTabIndicator";
 import { freshnessTone, humanize, isDeviceOffline, OFFLINE_CONNECT_REASON, TERMS, TONE } from "../utils/deviceStatus";
 import { deviceSite } from "../utils/location";
@@ -160,8 +162,7 @@ function RegistryDeviceDrawer({
   const operate = canOperate !== false;
   const displayName = deviceDisplayName(device);
   const hostnameSubtitle = deviceHostnameSubtitle(device);
-  const freshness = device.freshness_state ?? (device.status === "online" ? "online" : "offline");
-  const freshnessColor = freshnessTone(freshness);
+  const freshnessColor = freshnessTone(deviceFreshness(device));
 
   useEffect(() => {
     if (!isOpen) return;
@@ -312,11 +313,7 @@ function RegistryDeviceDrawer({
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <span className="th-status-chip" style={{ "--chip-tone": freshnessColor } as React.CSSProperties}>
-              <i />
-              <span>{humanize(freshness)}</span>
-              <span style={{ color: "var(--th-text-faint)" }}>· {timeAgo(device.last_seen)}</span>
-            </span>
+            <DeviceStatusChip device={device} />
             {healthScore != null && (
               <span
                 className="th-status-chip"

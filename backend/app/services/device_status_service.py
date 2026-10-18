@@ -17,6 +17,13 @@ def _get_alert_engine(db):
     return AlertEngine(db)
 
 
+def _note_fleet_change() -> None:
+    """Counts (overview, Explorer rings) are out of date from now."""
+    from app.services.device_overview_service import note_fleet_change
+
+    note_fleet_change()
+
+
 class DeviceStatusService:
     def __init__(self, db: Session):
         self.db = db
@@ -55,6 +62,7 @@ class DeviceStatusService:
                 new_status=DeviceStatus.ONLINE,
                 reason=reason,
             )
+            _note_fleet_change()
             payload = device_payload(device)
             realtime_publisher.publish_threadsafe(
                 build_event(RealtimeEventType.DEVICE_ONLINE, data=payload, reason=reason),
@@ -70,11 +78,27 @@ class DeviceStatusService:
     def mark_online_from_channel(self, device: Device) -> Device:
         """The agent opened its live command channel, so it is running now:
         online at once, without waiting for its next heartbeat."""
+        was_online = device.status == DeviceStatus.ONLINE
         device.last_seen = utcnow()
         self.db.add(device)
         self.db.commit()
         self.db.refresh(device)
-        return self.mark_online_from_heartbeat(device, reason="agent_channel_connected")
+        device = self.mark_online_from_heartbeat(device, reason="agent_channel_connected")
+        if was_online:
+            # No status change, so mark_online_from_heartbeat published
+            # nothing; the page still has to learn the device is live now.
+            self.publish_presence(device, "agent_channel_connected")
+        return device
+
+    def publish_presence(self, device: Device, reason: str) -> None:
+        """A device event for a change of its live channel alone (connected,
+        dropped, grace ended), carrying live and live_lost_at."""
+        _note_fleet_change()
+        payload = device_payload(device)
+        realtime_publisher.publish_threadsafe(
+            build_event(RealtimeEventType.DEVICE_UPDATED, data=payload, reason=reason),
+            dedupe_key=f"device_presence:{device.id}:{payload['live']}:{payload['live_lost_at']}",
+        )
 
     def mark_offline_connection_lost(self, device: Device, disconnected_at: datetime) -> bool:
         """The live channel dropped and did not come back within the grace
@@ -86,6 +110,10 @@ class DeviceStatusService:
             return False
         device.offline_reason = "connection_lost"
         device.offline_confidence = "medium"
+        # The agent was heard on its channel until the drop: the last
+        # contact, and the time the device reads offline since.
+        device.last_seen = disconnected_at
+        device.network_disconnect_time = disconnected_at
         self._transition_offline(device, "agent_channel_lost")
         return True
 
@@ -116,10 +144,15 @@ class DeviceStatusService:
     def mark_offline_from_power_event(self, device: Device, state: str) -> Device:
         if device.status != DeviceStatus.ONLINE:
             return device
+        now = utcnow()
         device.offline_reason = state
         device.offline_confidence = "high"
+        # The power event is the agent's last word: the last contact, and the
+        # time the device reads offline since (not its last heartbeat, up to
+        # five minutes earlier).
+        device.last_seen = now
         if state == "shutdown":
-            device.last_shutdown_time = utcnow()
+            device.last_shutdown_time = now
         self._transition_offline(device, f"agent_{state}")
         return device
 
@@ -135,6 +168,7 @@ class DeviceStatusService:
             new_status=DeviceStatus.OFFLINE,
             reason=reason,
         )
+        _note_fleet_change()
         payload = device_payload(device)
         realtime_publisher.publish_threadsafe(
             build_event(RealtimeEventType.DEVICE_OFFLINE, data=payload, reason=reason),

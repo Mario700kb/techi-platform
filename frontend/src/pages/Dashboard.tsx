@@ -47,6 +47,8 @@ import { Button, EmptyState, PageHeader, TablePagination } from "../components/u
 import { formatLocalDateTime, timeAgo } from "../utils/time";
 import { formatCount } from "../utils/number";
 import { freshnessTone, humanize, TERMS, TONE } from "../utils/deviceStatus";
+import { deviceFreshness } from "../utils/devicePresence";
+import { DeviceStatusChip } from "../components/DeviceStatusChip";
 import { ALERT_KIND_LABELS, ALERT_SEVERITY_TONE, AlertKind } from "../types/alert";
 import { usePollingRefresh } from "../hooks/usePollingRefresh";
 import { useNow } from "../hooks/useNow";
@@ -1097,8 +1099,7 @@ export default function Dashboard() {
                 {recentDevices
                   .slice((enrollmentPage - 1) * enrollmentPageSize, enrollmentPage * enrollmentPageSize)
                   .map((device, index) => {
-                    const state = device.freshness_state ?? device.status;
-                    const tone = freshnessTone(state);
+                    const tone = freshnessTone(deviceFreshness(device));
                     return (
                       <li
                         key={device.id}
@@ -1124,13 +1125,7 @@ export default function Dashboard() {
                             </span>
                           </span>
                           <span className="text-right">
-                            <span
-                              className="th-status-chip capitalize"
-                              style={{ "--chip-tone": tone } as React.CSSProperties}
-                            >
-                              <i />
-                              {state}
-                            </span>
+                            <DeviceStatusChip device={device} />
                             <span
                               className="mt-0.5 block text-[11px] tabular-nums"
                               style={{ color: "var(--th-text-faint)" }}

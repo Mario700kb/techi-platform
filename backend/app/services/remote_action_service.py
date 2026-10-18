@@ -397,7 +397,7 @@ class RemoteActionService:
         _publish_action_status(action, RealtimeEventType.ACTION_STATUS_CHANGED)
         return action
 
-    def note_command_channel(self, device_id: int, connected: bool) -> None:
+    def note_command_channel(self, device_id: int, connected: bool) -> bool:
         """The device's command channel closed or opened.
 
         A self_update the agent is working on restarts the agent service, which
@@ -414,6 +414,8 @@ class RemoteActionService:
                     self._set_server_stage(action, "confirming")
             elif action.stage in (None, "installing"):
                 self._set_server_stage(action, "restarting")
+        # Whether a self_update is under way (a drop is then the restart).
+        return bool(actions)
 
     def _open_self_updates(self, device_id: int) -> List[RemoteAction]:
         return (

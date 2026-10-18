@@ -1,3 +1,5 @@
+import { noteServerTime } from "../utils/devicePresence";
+
 export type DeviceRealtimeEventType =
   | "connection_ready"
   | "device_online"
@@ -51,6 +53,9 @@ export interface DeviceRealtimeEvent {
       | "expired"
       | "cancelled";
     freshness_state?: "online" | "stale" | "offline";
+    live?: boolean;
+    live_lost_at?: string | null;
+    offline_reason?: string | null;
     last_seen?: string | null;
     client_id?: number | null;
     group_id?: number | null;
@@ -239,6 +244,7 @@ export class DeviceRealtimeClient {
       this.lastMessageAt = Date.now();
       try {
         const event = JSON.parse(message.data) as DeviceRealtimeEvent;
+        noteServerTime(event.occurred_at, this.lastMessageAt);
         this.eventHandlers.forEach((handler) => handler(event));
       } catch (error) {
         this.lastError = error instanceof Error ? error.message : "Invalid realtime payload";

@@ -1,6 +1,8 @@
 import React, { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTabIndicator } from "../hooks/useTabIndicator";
 import { useNow } from "../hooks/useNow";
+import { DeviceStatusChip } from "./DeviceStatusChip";
+import { deviceFreshness, onServerClock, presenceView } from "../utils/devicePresence";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import {
@@ -60,7 +62,6 @@ import {
   deviceTypeLabel,
   duplicateBadge,
   healthTone,
-  lastSeenView,
   lifecycleBadges,
   maintenanceBadge,
   offlineReasonBadge,
@@ -401,7 +402,8 @@ const DevicesTable = memo(function DevicesTable({
   agentVersionFilter,
   onAgentVersionFilterChange,
 }: DevicesTableProps) {
-  useNow();
+  // Rows age on the shared clock: a device turns stale or offline on time.
+  const now = useNow();
   const navigate = useNavigate();
   // Platform Expansion: show the platform icon only when Linux is enabled, so
   // with the flag off the catalog is visually identical to today.
@@ -601,7 +603,7 @@ const DevicesTable = memo(function DevicesTable({
     const summaries = new Map<number, ClientOfflineSummary>();
     for (const device of devices) {
       if (!device.client_id) continue;
-      const freshness = device.freshness_state ?? device.status;
+      const freshness = deviceFreshness(device, onServerClock(now));
       const summary = summaries.get(device.client_id) ?? { offlineCount: 0, inactiveLastSeen: [] };
       if (freshness === "offline") summary.offlineCount += 1;
       if ((freshness === "offline" || freshness === "stale") && device.last_seen) {
@@ -610,7 +612,7 @@ const DevicesTable = memo(function DevicesTable({
       summaries.set(device.client_id, summary);
     }
     return summaries;
-  }, [devices]);
+  }, [devices, now]);
 
   const allSelected = displayDevices.length > 0 && displayDevices.every((d) => selectedIds.has(d.id));
   const someSelected = !allSelected && displayDevices.some((d) => selectedIds.has(d.id));
@@ -1278,7 +1280,6 @@ const DevicesTable = memo(function DevicesTable({
                 {/* ── Rows ── */}
                 <tbody>
                   {displayDevices.map((device, rowIndex) => {
-                    const lastSeen = lastSeenView(device.last_seen);
                     const isWindowsDevice = !device.platform || device.platform.toLowerCase() === "windows";
                     const offline = isDeviceOffline(device);
                     const canConnect =
@@ -1363,32 +1364,15 @@ const DevicesTable = memo(function DevicesTable({
 
                         {/* ── Status ── */}
                         <td className="whitespace-nowrap px-2.5 py-1.5 align-middle">
-                          {(() => {
-                            const state = (device.freshness_state ?? device.status ?? "offline") as string;
-                            return (
-                              <>
-                                <div className="flex items-center gap-2">
-                                  <span className="th-status-dot" data-state={state} aria-hidden="true" />
-                                  <span
-                                    className="text-[13px] font-medium capitalize"
-                                    style={{ color: "var(--th-text-primary)" }}
-                                  >
-                                    {state}
-                                  </span>
-                                  {activeActionMap[device.id] && <ActionIndicator entry={activeActionMap[device.id]} />}
-                                </div>
-                                <div className="mt-0.5 pl-4 text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-                                  <span title="Last heartbeat">{lastSeen.text}</span>
-                                  {offlineBadge && (
-                                    <span title={offlineBadge.title ?? "Likely cause (inferred)"}>
-                                      {" "}
-                                      · {offlineBadge.label}
-                                    </span>
-                                  )}
-                                </div>
-                              </>
-                            );
-                          })()}
+                          {/* A steady width: the column does not jump as a row's words change. */}
+                          <DeviceStatusChip
+                            device={device}
+                            layout="stacked"
+                            hint={offlineBadge}
+                            className="min-w-[188px]"
+                          >
+                            {activeActionMap[device.id] && <ActionIndicator entry={activeActionMap[device.id]} />}
+                          </DeviceStatusChip>
                         </td>
 
                         {/* ── Health ── */}
@@ -1649,7 +1633,7 @@ const DevicesTable = memo(function DevicesTable({
           >
             {(() => {
               const device = activeActionDevice;
-              const state = (device.freshness_state ?? device.status ?? "offline") as string;
+              const presence = presenceView(device);
               const close = () => {
                 setOpenActionDeviceId(null);
                 setMenuAnchor(null);
@@ -1663,13 +1647,13 @@ const DevicesTable = memo(function DevicesTable({
               return (
                 <>
                   <div className="flex items-center gap-2.5 px-3 py-2.5">
-                    <span className="th-status-dot" data-state={state} aria-hidden="true" />
+                    <span className="th-status-dot" data-state={presence.state} aria-hidden="true" />
                     <div className="min-w-0">
                       <p className="truncate text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
                         {deviceDisplayName(device)}
                       </p>
-                      <p className="truncate text-[12px] capitalize" style={{ color: "var(--th-text-muted)" }}>
-                        {state} · {device.client_name || TERMS.noClient}
+                      <p className="truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                        {presence.label} · {device.client_name || TERMS.noClient}
                       </p>
                     </div>
                   </div>

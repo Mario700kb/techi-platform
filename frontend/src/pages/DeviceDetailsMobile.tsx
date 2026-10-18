@@ -41,9 +41,9 @@ import { useNow } from "../hooks/useNow";
 import { deviceSite } from "../utils/location";
 import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
 import { timeAgo } from "../utils/time";
-import { FreshnessState } from "../components/mobile/primitives";
+import { DeviceStatusChip } from "../components/DeviceStatusChip";
 import { Button, EmptyState } from "../components/ui";
-import { isDeviceOffline, TERMS, TONE } from "../utils/deviceStatus";
+import { DEVICE_PATCH_EVENTS, isDeviceOffline, TERMS, TONE } from "../utils/deviceStatus";
 import DeviceLivePanel from "../components/DeviceLivePanel";
 import { useDeviceLive } from "../hooks/useDeviceLive";
 import { AccordionSection } from "../components/mobile/AccordionSection";
@@ -68,18 +68,6 @@ import { Snackbar } from "../components/mobile/Snackbar";
  * new presentation layer.
  */
 
-function freshnessOf(device: Device): FreshnessState {
-  const state = device.freshness_state ?? device.status;
-  if (state === "online") return "online";
-  if (state === "stale") return "stale";
-  return "offline";
-}
-
-const FRESHNESS_TONE: Record<FreshnessState, string> = {
-  online: TONE.online,
-  stale: TONE.stale,
-  offline: TONE.offline,
-};
 const HEALTH_TONE = { online: TONE.online, warning: TONE.warning, critical: TONE.critical } as const;
 
 const MORE_ACTIONS = [
@@ -165,7 +153,9 @@ export default function DeviceDetailsMobile() {
   // Live-patch from realtime events for this device (mirrors DevicesTable's merge)
   useEffect(() => {
     const d = latestEvent?.data;
-    if (!d?.id || d.id !== deviceId) return;
+    // Device events only: an action event's id is the action's, and its
+    // status ("running") is not the device's.
+    if (!latestEvent || !d?.id || d.id !== deviceId || !DEVICE_PATCH_EVENTS.has(latestEvent.type)) return;
     setDevice((prev) => (prev ? ({ ...prev, ...d } as Device) : prev));
   }, [latestEvent, deviceId, setDevice]);
 
@@ -274,8 +264,6 @@ export default function DeviceDetailsMobile() {
     !isDeviceOffline(device) && isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected;
   const criticalCount = deviceAlerts.openAlerts.filter((a) => a.severity === "critical").length;
   const warningCount = deviceAlerts.openAlerts.length - criticalCount;
-  const freshness = freshnessOf(device);
-  const freshnessTone = FRESHNESS_TONE[freshness];
   const typeLabel = deviceTypeLabel(device);
   const healthScore = telemetry.healthScore;
   const healthTone = HEALTH_TONE[healthVariant(healthScore)];
@@ -377,13 +365,7 @@ export default function DeviceDetailsMobile() {
         </p>
 
         <div className="mt-3 flex flex-wrap items-center gap-1.5 pl-1">
-          <span
-            className="th-status-chip !h-6 capitalize"
-            style={{ "--chip-tone": freshnessTone, color: freshnessTone } as CSSProperties}
-          >
-            <i />
-            {freshness}
-          </span>
+          <DeviceStatusChip device={device} className="!h-6" />
           {typeLabel && (
             <span className="th-mdev-badge !h-6" style={{ "--chip-tone": typeLabel.tone } as CSSProperties}>
               {typeLabel.label}
@@ -399,12 +381,6 @@ export default function DeviceDetailsMobile() {
               Maintenance
             </span>
           )}
-          <span
-            className="ml-auto text-[12px] tabular-nums"
-            style={{ color: freshness === "online" ? TONE.online : "var(--th-text-muted)" }}
-          >
-            {device.last_seen ? `Seen ${timeAgo(device.last_seen)}` : "Never seen"}
-          </span>
         </div>
       </div>
 

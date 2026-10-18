@@ -1,3 +1,5 @@
+import { deviceFreshness, type PresenceFields } from "./devicePresence";
+
 // One vocabulary for how device state is named and coloured, shared by the
 // Devices table, the mobile cards, both device drawers and the Dashboard, so
 // the same state never reads or looks different from one screen to the next.
@@ -77,10 +79,9 @@ export function freshnessTone(state: string | null | undefined): string {
 
 export const OFFLINE_CONNECT_REASON = "Device is offline";
 
-/** Offline (not stale): Connect stays disabled until the device reports again. */
-export function isDeviceOffline(device: { freshness_state?: string | null; status?: string | null }): boolean {
-  const state = device.freshness_state ?? device.status;
-  return state !== "online" && state !== "stale";
+/** Offline (not stale) now: Connect stays disabled until the device reports again. */
+export function isDeviceOffline(device: PresenceFields): boolean {
+  return deviceFreshness(device) === "offline";
 }
 
 // Production bug fix (Device Catalog Connect button): this row action used

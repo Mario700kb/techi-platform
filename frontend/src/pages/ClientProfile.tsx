@@ -74,6 +74,8 @@ import { useCachedQuery } from "../hooks/useCachedQuery";
 import { useFavorites } from "../hooks/useFavorites";
 import { DESKTOP_QUERY, useMediaQuery } from "../hooks/useMediaQuery";
 import { useNow } from "../hooks/useNow";
+import { DeviceStatusChip } from "../components/DeviceStatusChip";
+import { deviceFreshness } from "../utils/devicePresence";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import { useTabIndicator } from "../hooks/useTabIndicator";
 import { DeviceRealtimeEvent } from "../services/deviceRealtime";
@@ -218,7 +220,7 @@ export default function ClientProfilePage() {
   // ── device drawer ── opened in place from any device on the profile, the
   // same drawer the Devices page uses. Phones open the device's own page.
   const isDesktop = useMediaQuery(DESKTOP_QUERY);
-  const { latestEvent } = useAppData();
+  const { latestEvent, fleetOverview } = useAppData();
   const { favorites, toggle: toggleFavorite } = useFavorites();
   const [drawerDevice, setDrawerDevice] = useState<Device | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -294,6 +296,18 @@ export default function ClientProfilePage() {
     }
   }, [latestEvent, clientId, reloadProfile]);
   useEffect(() => () => window.clearTimeout(profileRefreshTimer.current), []);
+
+  // The figures also follow this client's counts in the fleet overview, which
+  // is refetched when a device crosses a status window by time (6 or 25
+  // minutes without a heartbeat) — a change no event announces.
+  const clientCounts = fleetOverview?.tree_counts.by_client_status?.[String(clientId)];
+  const clientCountsKey = clientCounts ? JSON.stringify(clientCounts) : null;
+  const lastCountsKey = useRef(clientCountsKey);
+  useEffect(() => {
+    const previous = lastCountsKey.current;
+    lastCountsKey.current = clientCountsKey;
+    if (previous && clientCountsKey && previous !== clientCountsKey) void reloadProfile();
+  }, [clientCountsKey, reloadProfile]);
 
   // Analytics costs the server 1–3 s the first time a client is measured;
   // start it once the profile is on screen so the tab opens with its data.
@@ -1061,7 +1075,7 @@ function DevicesTab({
           <table className="th-alerts-table th-cp-devices" data-mobile="cards">
             <colgroup>
               <col />
-              <col className="w-[130px]" />
+              <col className="w-[192px]" />
               <col className="w-[120px]" />
               <col className="w-[14%]" />
               <col className="w-[15%]" />
@@ -1083,7 +1097,7 @@ function DevicesTab({
             </thead>
             <tbody>
               {devices.map((device: Device, index) => {
-                const state = device.freshness_state ?? device.status ?? "offline";
+                const state = deviceFreshness(device);
                 const health = healthById.get(device.id);
                 return (
                   <tr
@@ -1119,15 +1133,7 @@ function DevicesTab({
                       </div>
                     </td>
                     <td>
-                      <span className="flex items-center gap-2">
-                        <span className="th-status-dot" data-state={state} aria-hidden="true" />
-                        <span key={state} className="th-alerts-primary th-share-count !mt-0 capitalize">
-                          {state}
-                        </span>
-                      </span>
-                      <span className="th-alerts-secondary">
-                        {device.last_seen ? timeAgo(device.last_seen) : "Never"}
-                      </span>
+                      <DeviceStatusChip key={state} device={device} layout="stacked" className="th-share-count" />
                     </td>
                     <td data-m={health ? undefined : "hide"}>
                       {health ? (

@@ -226,6 +226,12 @@ class Device(DeviceBase):
     resolved_assignment_source: str = "unassigned"
     resolved_device_category: str = "unassigned"
     freshness_state: DeviceFreshnessState = DeviceFreshnessState.OFFLINE
+    # The agent's command channel is open now (agents from 2.1.27): online
+    # by itself, without waiting for a heartbeat.
+    live: bool = False
+    # When that channel dropped, while the grace period that decides whether
+    # the device is offline runs (the page says "reconnecting").
+    live_lost_at: Optional[datetime] = None
 
 
 class DeviceDirectoryEntry(BaseModel):
@@ -307,6 +313,9 @@ class DeviceFleetOverview(BaseModel):
     # whose build is arch-specific (e.g. {"linux:x86_64": "2.1.21"}). Windows is
     # absent by design — it keeps using active_agent_version above.
     active_agent_versions: Dict[str, str] = {}
+    # The next time a count changes by time alone (a device's heartbeat
+    # turning 6 or 25 minutes old): the page refreshes the counts then.
+    next_change_at: Optional[datetime] = None
     loaded_at: datetime
 
 

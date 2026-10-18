@@ -97,6 +97,10 @@ export interface Device {
   duplicate_candidate?: boolean;
   duplicate_of_device_id?: number | null;
   duplicate_score?: number | null;
+  // The agent's live channel is open now (agents from 2.1.27).
+  live?: boolean;
+  // When that channel dropped, while the backend waits for it to return.
+  live_lost_at?: string | null;
   // Offline reason engine
   offline_reason?: string | null;
   offline_confidence?: string | null;
@@ -366,6 +370,9 @@ export interface DeviceFleetOverview {
   active_agent_sha256: string | null;
   active_connector_versions?: Record<string, string>;
   active_agent_versions?: Record<string, string>;
+  // The next time a count changes by time alone (a heartbeat turning 6 or 25
+  // minutes old): the overview is refreshed then, not polled.
+  next_change_at?: string | null;
   loaded_at: string;
 }
 

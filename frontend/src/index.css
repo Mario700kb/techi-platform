@@ -5348,6 +5348,87 @@ a.th-list-row:hover {
   background: var(--th-status-stale);
 }
 
+/* ── Device presence (DeviceStatusChip): one status, worded and coloured the
+   same in every table, card and drawer. A live device's dot breathes; a
+   dropped live connection waiting to come back shows a hollow dot. ── */
+.th-devstatus-dot {
+  display: inline-block;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--chip-tone, var(--th-status-offline));
+}
+.th-devstatus-stacked .th-devstatus-dot {
+  width: 8px;
+  height: 8px;
+}
+.th-devstatus-dot[data-live] {
+  animation: th-devstatus-breathe 2.4s var(--th-ease) infinite;
+}
+.th-devstatus-dot[data-reconnecting] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--chip-tone);
+}
+@keyframes th-devstatus-breathe {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--chip-tone) 55%, transparent);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .th-devstatus-dot[data-live] {
+    animation: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--chip-tone) 22%, transparent);
+  }
+}
+.th-devstatus .th-devstatus-label {
+  color: var(--th-text-primary);
+  font-weight: 550;
+}
+.th-status-chip.th-devstatus {
+  gap: 5px;
+}
+.th-status-chip.th-devstatus .th-devstatus-sep {
+  color: var(--th-text-faint);
+}
+.th-devstatus .th-devstatus-detail {
+  color: var(--th-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.th-devstatus[data-presence-live] .th-devstatus-detail {
+  color: var(--chip-tone);
+  font-weight: 550;
+}
+.th-devstatus-stacked {
+  display: inline-flex;
+  flex-direction: column;
+  vertical-align: middle;
+}
+.th-devstatus-stacked .th-devstatus-main {
+  display: flex;
+  height: 18px;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.th-status-chip.th-mdev-presence {
+  height: 20px;
+  margin-right: 2px;
+  padding: 0 8px;
+  font-size: 11.5px;
+}
+.th-devstatus-stacked .th-devstatus-detail {
+  margin-top: 2px;
+  padding-left: 16px;
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
 .th-score {
   display: inline-flex;
   min-width: 34px;

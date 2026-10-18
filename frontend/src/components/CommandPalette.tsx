@@ -1,4 +1,5 @@
 import { ComponentType, KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { deviceFreshness } from "../utils/devicePresence";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import {
@@ -56,7 +57,7 @@ function score(query: string, title: string, extra = ""): number {
 }
 
 function freshnessTone(device: Device): string {
-  const state = device.freshness_state ?? device.status;
+  const state = deviceFreshness(device);
   if (state === "online") return "var(--th-status-online)";
   if (state === "stale") return "var(--th-status-stale)";
   return "var(--th-status-offline)";

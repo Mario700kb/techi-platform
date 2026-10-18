@@ -1,6 +1,6 @@
 from datetime import timedelta
 from enum import Enum
-from sqlalchemy import JSON, Boolean, Column, DateTime, Enum as SQLEnum, Float, ForeignKey, Integer, String, Text, and_, event, func, not_, or_, text
+from sqlalchemy import JSON, Boolean, Column, DateTime, Enum as SQLEnum, Float, ForeignKey, Integer, String, Text, and_, event, false, func, not_, or_, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm.base import NO_VALUE
 
@@ -180,8 +180,23 @@ class Device(Base):
         return self._own_location.country if self._own_location else None
 
     @property
+    def live(self) -> bool:
+        """The agent holds its command channel open right now."""
+        from app.websocket.agent_channel import agent_command_channel
+
+        return self.id is not None and agent_command_channel.is_connected(self.id)
+
+    @property
+    def live_lost_at(self):
+        """When the channel dropped, while the grace period that decides
+        whether the device is offline runs; None otherwise."""
+        from app.websocket.agent_channel import agent_command_channel
+
+        return agent_command_channel.lost_since(self.id) if self.id is not None else None
+
+    @property
     def freshness_state(self):
-        return freshness_for(self.last_seen, self.status, self.offline_reason)
+        return freshness_for(self.last_seen, self.status, self.offline_reason, live=self.live)
 
 
 @event.listens_for(Device.client_id, "set", active_history=True)
@@ -208,9 +223,16 @@ def _is_status(value, status) -> bool:
     return getattr(value, "value", value) == status.value
 
 
-def freshness_for(last_seen, status=None, offline_reason=None) -> str:
+def freshness_for(last_seen, status=None, offline_reason=None, live=False) -> str:
+    """online / stale / offline, the one rule every screen uses. The frontend
+    mirrors it (frontend/src/utils/devicePresence.ts, kept equal by
+    tests/test_status_realtime.py) to move rows on time between events."""
     if _is_status(status, DeviceStatus.OFFLINE) and offline_reason in EXPLICIT_OFFLINE_REASONS:
         return DeviceFreshnessState.OFFLINE.value
+    if live:
+        # An open channel is the agent running now, however late its
+        # heartbeat (reconciliation skips such devices for the same reason).
+        return DeviceFreshnessState.ONLINE.value
     if not last_seen:
         return DeviceFreshnessState.OFFLINE.value
     age = ensure_utc(utcnow()) - ensure_utc(last_seen)
@@ -221,18 +243,36 @@ def freshness_for(last_seen, status=None, offline_reason=None) -> str:
     return DeviceFreshnessState.OFFLINE.value
 
 
-def freshness_conditions(now):
+def next_freshness_change(oldest_online, oldest_stale):
+    """When a count next changes by time alone: the oldest heartbeat still
+    online turns ONLINE_WINDOW old, or the oldest stale one STALE_WINDOW.
+    None when no device moves by time."""
+    moments = []
+    if oldest_online is not None:
+        moments.append(ensure_utc(oldest_online) + ONLINE_WINDOW)
+    if oldest_stale is not None:
+        moments.append(ensure_utc(oldest_stale) + STALE_WINDOW)
+    return min(moments) if moments else None
+
+
+def freshness_conditions(now, live_ids=(), dialect_name: str = "postgresql"):
     """SQL conditions for online, stale and offline — the same rules as
     freshness_for, so lists, filters and counts never disagree with a
     device's own state. coalesce keeps a NULL offline_reason from turning
-    NOT(...) into NULL, which would drop the device from every bucket."""
+    NOT(...) into NULL, which would drop the device from every bucket.
+    live_ids are the devices with an open channel (online whatever their
+    last heartbeat); none, and the conditions are the time windows alone."""
+    from app.db.sql import id_in
+
     explicit = and_(
         Device.status == DeviceStatus.OFFLINE,
         func.coalesce(Device.offline_reason, "").in_(EXPLICIT_OFFLINE_REASONS),
     )
+    live_ids = list(live_ids or ())
+    live = id_in(Device.id, live_ids, dialect_name) if live_ids else false()
     online_cutoff = now - ONLINE_WINDOW
     stale_cutoff = now - STALE_WINDOW
-    online = and_(Device.last_seen >= online_cutoff, not_(explicit))
-    stale = and_(Device.last_seen >= stale_cutoff, Device.last_seen < online_cutoff, not_(explicit))
-    offline = or_(Device.last_seen.is_(None), Device.last_seen < stale_cutoff, explicit)
+    online = and_(or_(Device.last_seen >= online_cutoff, live), not_(explicit))
+    stale = and_(Device.last_seen >= stale_cutoff, Device.last_seen < online_cutoff, not_(live), not_(explicit))
+    offline = or_(and_(or_(Device.last_seen.is_(None), Device.last_seen < stale_cutoff), not_(live)), explicit)
     return online, stale, offline

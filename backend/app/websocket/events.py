@@ -62,6 +62,11 @@ def device_payload(device: Device) -> Dict[str, Any]:
         "device_type": device.device_type.value,
         "status": device.status.value,
         "freshness_state": device.freshness_state,
+        # Presence: the live channel now, when it dropped while the grace
+        # runs, and why a device is offline (shutdown, sleep, connection_lost).
+        "live": device.live,
+        "live_lost_at": _iso(device.live_lost_at),
+        "offline_reason": device.offline_reason,
         "registered_at": _iso(device.registered_at),
         "last_seen": _iso(device.last_seen),
         "client_id": device.client_id,
@@ -105,9 +110,17 @@ _ws_snapshot: OrderedDict[int, dict] = OrderedDict()
 _WS_SNAPSHOT_MAX_SIZE = 2000
 
 
+# Always in a delta: the id names the device, and client_id/group_id are what
+# the realtime scope filter (manager._event_in_scope) checks for operators
+# limited to some clients — without them a scoped operator never received a
+# heartbeat, so the device's last_seen never moved on their screen.
+_DELTA_ALWAYS = ("client_id", "group_id")
+
+
 def device_payload_delta(current: dict) -> dict:
-    """Return only changed fields vs the last broadcast, always including id.
-    First call per device returns the full payload (no previous snapshot).
+    """Return only changed fields vs the last broadcast, always including id
+    (and the scope fields). First call per device returns the full payload
+    (no previous snapshot).
     """
     device_id = current["id"]
     prev = _ws_snapshot.get(device_id)
@@ -118,6 +131,9 @@ def device_payload_delta(current: dict) -> dict:
     if prev is None:
         return current
     delta: dict = {"id": device_id}
+    for key in _DELTA_ALWAYS:
+        if key in current:
+            delta[key] = current[key]
     for key, val in current.items():
         if key != "id" and prev.get(key) != val:
             delta[key] = val

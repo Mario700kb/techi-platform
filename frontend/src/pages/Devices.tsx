@@ -545,23 +545,11 @@ export default function Devices() {
         return { nextItems: items, found: false };
       }
       const nextDevice = { ...items[index], ...eventDevice } as Device;
-      if (
-        items[index].last_seen === nextDevice.last_seen &&
-        items[index].status === nextDevice.status &&
-        items[index].freshness_state === nextDevice.freshness_state &&
-        items[index].rustdesk_sync_state === nextDevice.rustdesk_sync_state &&
-        items[index].rustdesk_status === nextDevice.rustdesk_status &&
-        items[index].client_id === nextDevice.client_id &&
-        items[index].group_id === nextDevice.group_id &&
-        items[index].client_name === nextDevice.client_name &&
-        items[index].group_name === nextDevice.group_name &&
-        items[index].resolved_client_id === nextDevice.resolved_client_id &&
-        items[index].resolved_client_name === nextDevice.resolved_client_name &&
-        items[index].resolved_group === nextDevice.resolved_group &&
-        items[index].resolved_assignment_source === nextDevice.resolved_assignment_source &&
-        items[index].resolved_device_category === nextDevice.resolved_device_category &&
-        items[index].is_archived === nextDevice.is_archived
-      ) {
+      // Unchanged when every field the event carries already has its value
+      // (live, live_lost_at and offline_reason included); heartbeat_id is the
+      // event's own.
+      const current = items[index] as unknown as Record<string, unknown>;
+      if (Object.entries(eventDevice).every(([key, value]) => key === "heartbeat_id" || current[key] === value)) {
         return { nextItems: items, found: true, nextDevice: items[index] };
       }
       const nextItems = [...items];
@@ -589,6 +577,30 @@ export default function Devices() {
       void refreshBothRef.current();
     }, 5000);
   }, []);
+
+  // Counts follow the overview, which is refetched when a device goes online
+  // or offline and when one crosses a status window by time (AppDataContext).
+  // When its figures change, the tab counts here are counted again, and a
+  // list filtered by status is fetched again: devices moved in or out of it.
+  const overviewFigures = fleetOverview
+    ? JSON.stringify([fleetOverview.stats, fleetOverview.tree_counts.by_client_status ?? {}])
+    : null;
+  const lastFiguresRef = useRef(overviewFigures);
+  const statusFiltered =
+    quickFilter === "online" ||
+    quickFilter === "stale" ||
+    quickFilter === "offline" ||
+    Boolean(filters.freshness_state);
+  useEffect(() => {
+    const previous = lastFiguresRef.current;
+    lastFiguresRef.current = overviewFigures;
+    if (!previous || !overviewFigures || previous === overviewFigures) return;
+    void loadQuickCounts();
+    if (statusFiltered) {
+      appCache.invalidatePrefix("devices-table");
+      void loadTableData();
+    }
+  }, [overviewFigures, loadQuickCounts, loadTableData, statusFiltered]);
 
   useEffect(() => {
     void loadOrgData();

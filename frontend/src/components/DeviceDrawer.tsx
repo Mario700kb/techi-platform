@@ -2,6 +2,8 @@ import { ApiError } from "../api/client";
 import React, { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useTabIndicator } from "../hooks/useTabIndicator";
 import { useNow } from "../hooks/useNow";
+import { deviceFreshness } from "../utils/devicePresence";
+import { DeviceStatusChip } from "./DeviceStatusChip";
 import {
   Activity,
   AlertTriangle,
@@ -437,6 +439,9 @@ export default function DeviceDrawer({
   const [rsToast, setRsToast] = useState<{ message: string; ok: boolean } | null>(null);
   const [maintFormOpen, setMaintFormOpen] = useState(false);
   const offline = isDeviceOffline(device);
+  // Now, by the shared clock: the header, the offline analysis and the
+  // archive hint follow the device as it ages, between events.
+  const freshness = deviceFreshness(device);
   const canConnectRs =
     !offline &&
     isValidRustDeskId(device.rustdesk_id) &&
@@ -741,7 +746,7 @@ export default function DeviceDrawer({
               ) : (
                 <Monitor className="h-5 w-5" />
               )}
-              <i style={{ background: freshnessTone(device.freshness_state) }} />
+              <i style={{ background: freshnessTone(freshness) }} />
             </span>
 
             <div className="min-w-0 flex-1">
@@ -852,14 +857,7 @@ export default function DeviceDrawer({
 
           {/* Status strip + primary action */}
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <span
-              className="th-status-chip"
-              style={{ "--chip-tone": freshnessTone(device.freshness_state) } as React.CSSProperties}
-            >
-              <i />
-              <span className="capitalize">{device.freshness_state ?? device.status}</span>
-              <span style={{ color: "var(--th-text-faint)" }}>· {timeAgo(device.last_seen)}</span>
-            </span>
+            <DeviceStatusChip device={device} />
             {healthScore != null && (
               <span
                 className="th-status-chip"
@@ -951,7 +949,7 @@ export default function DeviceDrawer({
           )}
           <div className={activeTab === "overview" ? "th-tab-panel" : "hidden"}>
             {/* Paralajmerim per pajisje te arkivuar por aktive */}
-            {device.is_archived && device.freshness_state !== "offline" && (
+            {device.is_archived && freshness !== "offline" && (
               <div
                 className="mb-4 flex items-start gap-3 rounded-lg px-4 py-3"
                 style={{
@@ -1042,7 +1040,7 @@ export default function DeviceDrawer({
                   </dd>
                 </dl>
 
-                {device.freshness_state !== "online" && offlineAnalysis && offlineAnalysis.reason && (
+                {freshness !== "online" && offlineAnalysis && offlineAnalysis.reason && (
                   <div className="th-drawer-callout mt-3" data-tone="warning">
                     <div className="flex flex-wrap items-center gap-2">
                       <AlertTriangle className="h-4 w-4 flex-none" />
@@ -1715,7 +1713,7 @@ export default function DeviceDrawer({
                   </div>
                 )}
                 {!device.is_archived &&
-                  device.freshness_state === "offline" &&
+                  freshness === "offline" &&
                   (() => {
                     // Check if a restart action completed within the last 5 minutes
                     const RESTART_TYPES = new Set(["restart_device", "restart_agent"]);
@@ -1744,7 +1742,7 @@ export default function DeviceDrawer({
                       </div>
                     );
                   })()}
-                {device.freshness_state === "online" && !device.is_archived && (
+                {freshness === "online" && !device.is_archived && (
                   <div className="th-drawer-callout mb-3 flex items-start gap-2 text-[13px]" data-tone="online">
                     <Wifi className="mt-0.5 h-4 w-4 flex-none" />
                     <span>

@@ -9,6 +9,7 @@ from app.core.scope import AllowedScope
 from app.core.swr_cache import SWRCache, scope_cache_key
 from app.core.time import utcnow
 from app.platform_core.flags import feature_enabled
+from app.models.device import next_freshness_change
 from app.repositories.device_repository import DeviceRepository
 from app.schemas.device import DeviceFleetOverview, DeviceStats, DeviceTreeCounts, TreeLocation, TreeLocationCounts
 from app.services.agent_package_service import AgentPackageService
@@ -17,7 +18,12 @@ from app.services.device_health_score_service import compute_device_health_score
 
 # Fresh for 30 seconds; after that the last overview is served at once while
 # one background thread recomputes it, so no dashboard waits on the ~1s build.
-_overview_cache: SWRCache[DeviceFleetOverview] = SWRCache("overview", ttl=30.0, max_age=300.0)
+# Recomputed (at most every 5 s) once a device changed status or a device
+# crossed a freshness window since it was computed, so the counts follow the
+# rows instead of lagging up to the 30 s TTL.
+_overview_cache: SWRCache[DeviceFleetOverview] = SWRCache(
+    "overview", ttl=30.0, max_age=300.0, min_age_after_change=5.0
+)
 
 
 @dataclass(frozen=True)
@@ -96,6 +102,16 @@ def _int(value) -> int:
         return 0
 
 
+def note_fleet_change() -> None:
+    """A device went online or offline, or its live channel opened or
+    dropped: the next overview read counts again (at most every 5 s)."""
+    _overview_cache.changed()
+
+
+def _overview_expired(overview: DeviceFleetOverview) -> bool:
+    return overview.next_change_at is not None and utcnow() >= overview.next_change_at
+
+
 def invalidate_overview_cache() -> None:
     _overview_cache.clear()
     _health_index_cache.clear()
@@ -113,7 +129,8 @@ class DeviceOverviewService:
 
     def get_overview(self, scope: Optional[AllowedScope] = None) -> DeviceFleetOverview:
         return _overview_cache.get(scope_cache_key(scope), self.db,
-                                   lambda session: DeviceOverviewService(session)._compute_overview(scope))
+                                   lambda session: DeviceOverviewService(session)._compute_overview(scope),
+                                   expired=_overview_expired)
 
     def _location_tree(self, scope: Optional[AllowedScope], visible_clients: set[int]):
         """Client sites for the Explorer. One cheap probe while no client has a
@@ -166,7 +183,12 @@ class DeviceOverviewService:
         by_category: dict[str, dict[str, int]] = {}
         by_client_status: dict[int, dict[str, int]] = {}
         unassigned = 0
-        for client_id, category, total, online, stale, offline in count_rows:
+        oldest_online = oldest_stale = None
+        for client_id, category, total, online, stale, offline, group_oldest_online, group_oldest_stale in count_rows:
+            if group_oldest_online is not None and (oldest_online is None or group_oldest_online < oldest_online):
+                oldest_online = group_oldest_online
+            if group_oldest_stale is not None and (oldest_stale is None or group_oldest_stale < oldest_stale):
+                oldest_stale = group_oldest_stale
             stats["total"] += total
             stats["online"] += online
             stats["stale"] += stale
@@ -224,6 +246,7 @@ class DeviceOverviewService:
             active_agent_sha256=active_agent_sha256,
             active_connector_versions=connector_versions,
             active_agent_versions=agent_versions,
+            next_change_at=next_freshness_change(oldest_online, oldest_stale),
             loaded_at=utcnow(),
         )
 
