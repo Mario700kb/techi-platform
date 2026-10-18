@@ -5,6 +5,37 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-18] HEALTH-MONITORING-2026-10-18 — disk activity, network quality, busy processes, disk health, critical events, services, security alerts (`11add15`, `b82df95`, `365d730`)
+
+**Backend + frontend deployed 23:55 (Tirana), migration `t8u9v0w1x2y3`;
+agent 2.1.33 packages active.**
+- Agent 2.1.33: per-minute disk busy/queue/read/write, gateway round trip and
+  loss (a gateway that never answers is unknown), platform connect time, top
+  processes in busy minutes; hourly health report (physical disks with SMART
+  and reliability counters, pending restart, critical System events);
+  service monitors (automatic-start services only). Volumes under 5 GB no
+  longer alert.
+- Platform: eight alert kinds (added first as role `techi`), report monitors
+  judged when a report arrives; Workstations policy v2 (11 monitors: security
+  < 70, disk health, critical events, restart pending > 7 days, disk busy,
+  gateway loss and latency), Servers v2 (service list). Monitoring tab:
+  availability strip, restart markers and alert bands on the charts, busiest
+  processes, Disk activity, Network quality, Disk health, System health, "Off"
+  for disabled monitors.
+- Packages from CI 39167935321 (Windows) and 39167935289 (Linux), active:
+  agent binary `3dadda04…` (`29b95e70…`), Endpoint MSI `77c9406c…`
+  (`40c436e1…`), Update Bridge `402589ae…` (`907f8af9…`), Linux amd64
+  `140ad79a…` (`8cff0a59…`); 2.1.32 / Linux 2.1.23 kept inactive. No device
+  was sent an update (the heartbeat never offers one).
+- CI: the two realtime channel tests that flaked since `f751281` fixed
+  (grace check cancelled on its own loop; file SQLite per thread).
+Dump `/opt/backups/techi/pre-health-monitoring-20261018-234406.sql.gz`
+(142 MB), rollback `techi-platform-{backend,frontend}:pre-health-monitoring-30cb291`
+(backend rollback needs `alembic downgrade s7t8u9v0w1x2` first: the old code
+rejects the new metrics). Guard, smoke passed, 0 errors. Pytest 1644, Vitest
+418, Playwright 237. Disk 1.2 GB free (95%) — resize before the fleet moves
+to 2.1.33.
+
 ## [2026-10-18] LIVE-OVERVIEW-2026-10-18 — Live cards never blank; an organised Overview; status column fits (`b7fe7dc`, `ec50a4f`)
 
 **Frontend deployed (Tirana, evening).** The drawer's Live cards open at once
