@@ -5,6 +5,21 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-19] BULK-AGENT-UPDATE-2026-10-19 — "Update agent" for the selected devices (`353bba3`)
+
+**Backend + frontend deployed 00:10 (Tirana), no migration.** Admins and
+owners get "Update agent" in the Devices bulk bar. The dialog shows the plan
+from POST /commands/bulk/self-update/preview before anything is queued: who
+updates from which version, who starts at once over the live channel, who is
+left out and why (already on the active build, an update or conflicting
+action open, no agent to update on that platform, archived). A bulk
+self_update of a selection skips those devices with their reasons instead of
+failing or duplicating; every queued update is announced in real time,
+audited and pushed over the live channel. Rollback
+`techi-platform-{backend,frontend}:pre-bulk-update-a9527d1`; guard and smoke
+passed, 0 errors. Pytest 1649, Vitest 421, Playwright 238. Disk 1.1 GB free
+(96%).
+
 ## [2026-10-18] HEALTH-MONITORING-2026-10-18 — disk activity, network quality, busy processes, disk health, critical events, services, security alerts (`11add15`, `b82df95`, `365d730`)
 
 **Backend + frontend deployed 23:55 (Tirana), migration `t8u9v0w1x2y3`;
