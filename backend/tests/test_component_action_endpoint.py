@@ -359,3 +359,26 @@ def test_remediate_endpoint_healthy_shape():
     assert body["device_id"] == 7 and body["component_id"] == "agent"
     assert body["acted"] is False
     assert body["reason"] in {"healthy", "dry_run", "no_executable_remediation"}
+
+
+def test_an_agent_update_goes_out_over_the_live_channel_at_once(monkeypatch):
+    """Mario-Lenovo, 18 Oct: an update from the component panel waited for the
+    next heartbeat while every other single-device action was pushed live."""
+    pushed = []
+    monkeypatch.setattr("app.services.action_push.push_action_if_connected",
+                        lambda device_id, action, svc: pushed.append((device_id, action.action_type)) or True)
+    client, _ = _client()
+    assert _post(client, "agent", "update").status_code == 200
+    assert pushed == [(7, "self_update")]
+
+
+def test_a_conflict_says_which_action_is_in_the_way(monkeypatch):
+    monkeypatch.setattr("app.services.action_push.push_action_if_connected", lambda *a: False)
+    client, db = _client()
+    first = _post(client, "agent", "update").json()["action"]
+    r = _post(client, "agent", "update")
+    assert r.status_code == 409
+    detail = r.json()["detail"]
+    assert detail["code"] == "action_conflict"
+    assert detail["action_id"] == first["id"] and detail["action_type"] == "self_update"
+    assert detail["status"] == "queued" and "already queued" in detail["detail"]

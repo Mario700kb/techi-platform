@@ -1,5 +1,5 @@
 import logging
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -101,7 +101,22 @@ def _self_update_target_sha(payload: dict) -> str:
     return (payload.get("target_sha256") or payload.get("sha256") or "").strip().lower()
 
 
-def _check_conflicts(existing_actions: List[RemoteAction], new_type: str) -> Optional[str]:
+class ActionConflictError(ValueError):
+    """A new action would clash with one still queued or running on the
+    device; carries that action so the console can offer to cancel it."""
+
+    def __init__(self, message: str, action: RemoteAction):
+        super().__init__(message)
+        self.action_id = action.id
+        self.action_type = action.action_type
+        self.status = getattr(action.status, "value", action.status)
+
+    def detail(self) -> dict:
+        return {"code": "action_conflict", "detail": str(self), "action_id": self.action_id,
+                "action_type": self.action_type, "status": self.status}
+
+
+def _check_conflicts(existing_actions: List[RemoteAction], new_type: str) -> Optional[Tuple[str, RemoteAction]]:
     """
     Return an error message if new_type conflicts with any active (non-terminal)
     action in existing_actions, otherwise None.
@@ -127,7 +142,8 @@ def _check_conflicts(existing_actions: List[RemoteAction], new_type: str) -> Opt
             return (
                 f"A '{new_type}' action is already queued or running "
                 f"(action #{action.id}, status={action.status.value}). "
-                "Cancel or wait for it to finish before queuing another."
+                "Cancel or wait for it to finish before queuing another.",
+                action,
             )
 
         try:
@@ -140,7 +156,8 @@ def _check_conflicts(existing_actions: List[RemoteAction], new_type: str) -> Opt
                 return (
                     f"Cannot queue '{new_type}': conflicts with active '{existing_type}' "
                     f"(action #{action.id}, status={action.status.value}). "
-                    "Cancel the conflicting action first."
+                    "Cancel the conflicting action first.",
+                    action,
                 )
 
     return None
@@ -160,9 +177,9 @@ class RemoteActionService:
 
         # Conflict / duplicate guard — check all recent actions for this device.
         recent = self.repo.get_recent_for_device(device_id, limit=50)
-        conflict_msg = _check_conflicts(recent, create_in.action_type.value)
-        if conflict_msg:
-            raise ValueError(conflict_msg)
+        conflict = _check_conflicts(recent, create_in.action_type.value)
+        if conflict:
+            raise ActionConflictError(*conflict)
 
         action = self.repo.create(
             device_id=device_id,

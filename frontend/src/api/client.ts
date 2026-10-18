@@ -61,6 +61,8 @@ export class ApiError extends Error {
     public readonly status: number,
     /** Machine-readable code from a structured error body, e.g. "mfa_enrollment_required". */
     public readonly code?: string,
+    /** The structured error body's fields (e.g. the action a conflict is with). */
+    public readonly data?: Record<string, unknown>,
   ) {
     super(message);
     this.name = "ApiError";
@@ -169,9 +171,12 @@ function withTimeout(signal: AbortSignal | null | undefined, timeoutMs: number) 
   };
 }
 
-async function errorDetails(response: Response): Promise<{ message: string; code?: string }> {
+async function errorDetails(
+  response: Response,
+): Promise<{ message: string; code?: string; data?: Record<string, unknown> }> {
   let message = `${response.status} ${response.statusText}`;
   let code: string | undefined;
+  let data: Record<string, unknown> | undefined;
   try {
     const body = await response.json();
     if (typeof body.detail === "string") {
@@ -181,11 +186,12 @@ async function errorDetails(response: Response): Promise<{ message: string; code
       // message under detail.detail alongside a machine-readable code.
       message = body.detail.detail;
       if (typeof body.detail.code === "string") code = body.detail.code;
+      data = body.detail as Record<string, unknown>;
     }
   } catch {
     // Keep the HTTP status message when the response is not JSON.
   }
-  return { message, code };
+  return { message, code, data };
 }
 
 /** One attempt across the base-URL candidates; returns the response whatever its status. */
@@ -243,14 +249,14 @@ export async function apiFetch(path: string, init: ApiRequestInit = {}): Promise
   }
 
   if (!response.ok) {
-    const { message, code } = await errorDetails(response);
+    const { message, code, data } = await errorDetails(response);
     if (response.status === 401 && sessionActive) {
       unauthorizedHandler?.();
     }
     if (response.status === 403 && code === "mfa_enrollment_required") {
       mfaEnrollmentHandler?.();
     }
-    throw new ApiError(message, response.status, code);
+    throw new ApiError(message, response.status, code, data);
   }
 
   return response;

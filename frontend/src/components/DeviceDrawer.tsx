@@ -1,3 +1,4 @@
+import { ApiError } from "../api/client";
 import React, { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useTabIndicator } from "../hooks/useTabIndicator";
 import { useNow } from "../hooks/useNow";
@@ -362,6 +363,25 @@ export default function DeviceDrawer({
   } = useCachedQuery(openedFor === device.id ? `page.device.${device.id}.actions` : null, () =>
     getDeviceActions(device.id),
   );
+  // Why the last action the operator asked for was not queued (shown in
+  // Maintenance); a conflict names the action in the way so it can be cancelled.
+  const [actionProblem, setActionProblem] = useState<{
+    message: string;
+    conflictId?: number;
+  } | null>(null);
+  const reportActionError = (requested: ActionType, err: unknown) => {
+    if (err instanceof ApiError && err.code === "action_conflict" && typeof err.data?.action_id === "number") {
+      const blocking = String(err.data.action_type ?? "");
+      setActionProblem({
+        message: `${actionTypeLabel(requested)} was not sent: ${actionTypeLabel(blocking)} (#${err.data.action_id}) is still ${String(err.data.status ?? "queued")}. It goes out as soon as the device is reachable — or cancel it and try again.`,
+        conflictId: err.data.action_id,
+      });
+      return;
+    }
+    setActionProblem({
+      message: `${actionTypeLabel(requested)} was not sent: ${err instanceof Error ? err.message : "the platform refused it"}.`,
+    });
+  };
   const actions = actionsData ?? [];
   const setActions = useCallback(
     (update: (prev: RemoteAction[]) => RemoteAction[]) => setActionsData((prev) => update(prev ?? [])),
@@ -1609,12 +1629,15 @@ export default function DeviceDrawer({
               onConfirm={async () => {
                 setRestartConfirmOpen(false);
                 setActionBusy(true);
+                setActionProblem(null);
                 try {
                   const created = await queueDeviceAction(device.id, {
                     action_type: selectedActionType,
                     created_by: user?.username ?? "operator",
                   });
                   setActions((prev) => addQueuedAction(prev, created));
+                } catch (err) {
+                  reportActionError(selectedActionType, err);
                 } finally {
                   setActionBusy(false);
                 }
@@ -1722,6 +1745,48 @@ export default function DeviceDrawer({
                   </div>
                 )}
 
+                {actionProblem && (
+                  <div
+                    className="th-drawer-callout mb-3 flex items-start gap-2 text-[13px]"
+                    data-tone="warning"
+                    role="alert"
+                  >
+                    <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
+                    <span className="min-w-0 flex-1">{actionProblem.message}</span>
+                    <span className="flex flex-none items-center gap-1.5">
+                      {actionProblem.conflictId !== undefined && (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={async () => {
+                            const id = actionProblem.conflictId!;
+                            try {
+                              await cancelAction(id);
+                              setActionProblem(null);
+                              void loadActions();
+                            } catch (err) {
+                              setActionProblem({
+                                message: `Could not cancel #${id}: ${err instanceof Error ? err.message : "try again"}.`,
+                              });
+                            }
+                          }}
+                        >
+                          Cancel #{actionProblem.conflictId}
+                        </Button>
+                      )}
+                      <button
+                        type="button"
+                        className="th-icon-btn th-icon-btn-ghost !min-h-7 !min-w-7"
+                        aria-label="Dismiss"
+                        onClick={() => setActionProblem(null)}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </span>
+                  </div>
+                )}
+
                 {canOperate ? (
                   (() => {
                     const runAction = async (type: ActionType) => {
@@ -1731,14 +1796,16 @@ export default function DeviceDrawer({
                         return;
                       }
                       setActionBusy(true);
+                      setActionProblem(null);
                       try {
                         const created = await queueDeviceAction(device.id, {
                           action_type: type,
                           created_by: user?.username ?? "operator",
                         });
                         setActions((prev) => addQueuedAction(prev, created));
-                      } catch {
-                        /* surfaced via WS */
+                      } catch (err) {
+                        // Nothing was queued, so nothing will arrive over the socket.
+                        reportActionError(type, err);
                       } finally {
                         setActionBusy(false);
                       }

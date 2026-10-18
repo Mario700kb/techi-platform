@@ -16,6 +16,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app.services.remote_action_service import ActionConflictError
 from app.core.auth import (
     get_current_operator,
     get_operator_permissions,
@@ -137,11 +138,19 @@ def queue_component_action(
         )
     except ComponentActionError as exc:
         _raise_component_error(exc)
+    except ActionConflictError as exc:
+        raise HTTPException(status_code=409, detail=exc.detail())
     except ValueError as exc:
         # Queue conflict / duplicate guard.
         raise HTTPException(status_code=409, detail=str(exc))
 
     action = result.action
+    # Delivered now when the agent holds its command channel open (an agent
+    # update waited up to a heartbeat before); otherwise the heartbeat does.
+    from app.services.action_push import push_action_if_connected
+    from app.services.remote_action_service import RemoteActionService
+
+    push_action_if_connected(device_id, action, RemoteActionService(db))
     audit_log(
         db,
         operator=operator,

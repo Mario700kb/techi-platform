@@ -3,6 +3,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app.services.remote_action_service import ActionConflictError
 from app.core.agent_auth import verify_callback_token
 from app.core.auth import get_current_operator, get_operator_permissions, get_operator_scope, require_min_role
 from app.core.scope import AllowedScope, device_in_scope
@@ -112,6 +113,8 @@ def queue_device_action(
         if not payload.created_by:
             payload.created_by = operator.username
         action = RemoteActionService(db).queue_action(device_id, payload)
+    except ActionConflictError as exc:
+        raise HTTPException(status_code=409, detail=exc.detail())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     audit_log(db, operator=operator, action=AuditAction.ACTION_QUEUED, entity_type="remote_action", entity_id=action.id, details={"device_id": device_id, "action_type": action.action_type})
