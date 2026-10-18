@@ -69,6 +69,7 @@ type HeartbeatPayload struct {
 	// Windows only, sent when it changed or every six hours (see
 	// security_posture.go); absent otherwise and the platform keeps its copy.
 	SecurityPosture *SecurityPosture `json:"security_posture,omitempty"`
+	DeviceHealth    *DeviceHealth    `json:"device_health,omitempty"`
 	AgentVersion    string           `json:"agent_version,omitempty"`
 	AgentSHA256     string           `json:"agent_sha256,omitempty"`
 }

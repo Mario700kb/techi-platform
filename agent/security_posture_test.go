@@ -145,6 +145,7 @@ func newPostureInventory(f *fakeInventory, fp *fakePosture) *backgroundInventory
 			c.CollectedAt = f.now.Format(time.RFC3339)
 			return &c
 		},
+		nil,
 	)
 }
 

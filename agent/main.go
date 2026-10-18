@@ -131,6 +131,7 @@ func runSingleHeartbeat(configPath string, enrollmentToken string) error {
 	payload := buildHeartbeatPayload(cfg, inventory, rustdesk, tel, heavy.Processes, heavy.Services, heavy.Software, heavy.Patch)
 	payload.RemoteSessionActive = currentRemoteSessionState()
 	payload.SecurityPosture = heavy.Security
+	payload.DeviceHealth = heavy.Health
 	hbResp, err := sendHeartbeat(cfg, payload)
 	if err != nil {
 		return err

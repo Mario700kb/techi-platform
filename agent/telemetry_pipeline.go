@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -53,6 +54,10 @@ type monitorRule struct {
 	DurationS int     `json:"duration_s"`
 	Severity  string  `json:"severity"`
 	Enabled   bool    `json:"enabled"`
+
+	// "service" monitors (2.1.33): the services to watch, comma-separated,
+	// a trailing * matching a prefix.
+	Target string `json:"target,omitempty"`
 }
 
 type telemetryPolicy struct {
@@ -114,7 +119,7 @@ func evaluateMonitors(rules []monitorRule, states map[string]*monitorState, samp
 			continue
 		}
 		seen[rule.Key] = true
-		value, target, ok := monitorValue(rule.Metric, sample)
+		value, target, ok := monitorValue(rule, sample)
 		if !ok {
 			continue
 		}
@@ -185,8 +190,12 @@ func clearLevel(op string, threshold float64) float64 {
 	return threshold * 0.95
 }
 
-func monitorValue(metric string, s *telemetrySample) (float64, string, bool) {
-	switch metric {
+// serviceProbe counts the watched services that are set to start
+// automatically and are stopped (services_watch_windows.go); tests replace it.
+var serviceProbe = stoppedWatchedServices
+
+func monitorValue(rule monitorRule, s *telemetrySample) (float64, string, bool) {
+	switch rule.Metric {
 	case "cpu":
 		if s.CPU != nil {
 			return *s.CPU, "", true
@@ -198,6 +207,9 @@ func monitorValue(metric string, s *telemetrySample) (float64, string, bool) {
 	case "disk":
 		best, target := -1.0, ""
 		for _, d := range s.Disks {
+			if d.TotalGB > 0 && d.TotalGB < smallVolumeGB {
+				continue // a recovery or EFI partition full is not a problem
+			}
 			if d.UsedPct > best {
 				best, target = d.UsedPct, d.Mount
 			}
@@ -213,6 +225,24 @@ func monitorValue(metric string, s *telemetrySample) (float64, string, bool) {
 		if s.NetTxBps != nil {
 			return *s.NetTxBps / 1e6, "", true
 		}
+	case "disk_busy":
+		if s.DiskBusy != nil {
+			return *s.DiskBusy, "", true
+		}
+	case "gw_ms":
+		if s.GwMs != nil {
+			return *s.GwMs, "", true
+		}
+	case "gw_loss":
+		if s.GwLoss != nil {
+			return *s.GwLoss, "", true
+		}
+	case "service":
+		stopped, watched := serviceProbe(rule.Target)
+		if !watched {
+			return 0, "", false // none of the services is here (or set to start automatically)
+		}
+		return float64(len(stopped)), strings.Join(stopped, ", "), true
 	}
 	return 0, "", false
 }
@@ -226,6 +256,12 @@ type telemetryCollector struct {
 	lastNetAt time.Time
 	disks     []string
 	disksAt   time.Time
+
+	// 2.1.33 (telemetry_extra.go)
+	procs      processSampler
+	diskIO     diskActivity
+	network    networkQuality
+	backendURL string
 }
 
 // collect reads one sample. CPU and network are averages since the previous
@@ -277,7 +313,24 @@ func (c *telemetryCollector) collect(at time.Time) *telemetrySample {
 			s.Disks = append(s.Disks, sampleDisk{Mount: d.Mount, UsedPct: d.UsedPercent, FreeGB: d.FreeGB, TotalGB: d.TotalGB})
 		}
 	}
+	c.collectExtra(s, at)
 	return s
+}
+
+// collectExtra adds disk activity, network quality and, in a busy minute,
+// the top processes.
+func (c *telemetryCollector) collectExtra(s *telemetrySample, at time.Time) {
+	if c.procs.cpus == 0 {
+		c.procs.cpus = runtime.NumCPU()
+	}
+	busyCPU := s.CPU != nil && *s.CPU >= topBusyCPU
+	busyMem := s.Mem != nil && *s.Mem >= topBusyMem
+	s.Top = c.procs.sample(at, busyCPU, busyMem)
+	s.DiskBusy, s.DiskQueue, s.DiskReadBps, s.DiskWriteBps = c.diskIO.sample(c.disks)
+	s.GwMs, s.GwLoss = c.network.sample(at)
+	if c.backendURL != "" {
+		s.WanMs = platformConnectMs(c.backendURL)
+	}
 }
 
 // ── pipeline ────────────────────────────────────────────────────────────────
@@ -429,6 +482,10 @@ func runTelemetryPipeline(ctx context.Context, configPath string) {
 	go runTelemetryUploader(ctx, configPath, buffer)
 
 	collector := &telemetryCollector{}
+	if cfg, err := loadConfig(configPath); err == nil {
+		applyEnvironment(cfg)
+		collector.backendURL = backendBaseURL(cfg.BackendURL)
+	}
 	states := map[string]*monitorState{}
 	// Prime the CPU and network counters so the first stored sample is an
 	// average like every other one.

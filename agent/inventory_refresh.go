@@ -120,9 +120,11 @@ type backgroundInventory struct {
 	services  inventorySection[[]ServiceInfo]
 	software  inventorySection[[]SoftwareInfo]
 	patch     inventorySection[*PatchStatus]
-	// security is collected only where a collector exists (Windows).
+	// security and health are collected only where a collector exists (Windows).
 	security        inventorySection[*SecurityPosture]
 	securityEnabled bool
+	health          inventorySection[*DeviceHealth]
+	healthEnabled   bool
 }
 
 func newBackgroundInventory(
@@ -132,6 +134,7 @@ func newBackgroundInventory(
 	software func() []SoftwareInfo,
 	patch func() *PatchStatus,
 	security func() *SecurityPosture,
+	health func() *DeviceHealth,
 ) *backgroundInventory {
 	return &backgroundInventory{
 		now:       now,
@@ -148,6 +151,15 @@ func newBackgroundInventory(
 			hashOf:  securityPostureHash,
 		},
 		securityEnabled: security != nil,
+		health: inventorySection[*DeviceHealth]{
+			every:   deviceHealthRefreshEvery,
+			resend:  deviceHealthResendEvery,
+			retry:   deviceHealthRetryEvery,
+			collect: health,
+			usable:  deviceHealthCollected,
+			hashOf:  deviceHealthHash,
+		},
+		healthEnabled: health != nil,
 	}
 }
 
@@ -158,6 +170,7 @@ var heavyInventory = newBackgroundInventory(
 	collectSoftwareInventory,
 	collectPatchStatus,
 	securityPostureCollector(),
+	deviceHealthCollector(),
 )
 
 // refresh starts one background pass over the parts that are due; it never
@@ -187,6 +200,7 @@ func (b *backgroundInventory) collectDue(cfg *Config) {
 	collectSection(b, &b.software, cfg.CollectSoftware)
 	collectSection(b, &b.patch, true)
 	collectSection(b, &b.security, b.securityEnabled)
+	collectSection(b, &b.health, b.healthEnabled)
 }
 
 // forceCollect refreshes every enabled part now, synchronously, so the next
@@ -201,6 +215,7 @@ func (b *backgroundInventory) forceCollect(cfg *Config) {
 	b.software.markDue()
 	b.patch.markDue()
 	b.security.markDue()
+	b.health.markDue()
 	b.mu.Unlock()
 	b.collectDue(cfg)
 }
@@ -230,6 +245,7 @@ type inventoryForHeartbeat struct {
 	Software  []SoftwareInfo
 	Patch     *PatchStatus
 	Security  *SecurityPosture
+	Health    *DeviceHealth
 	sent      func()
 }
 
@@ -273,6 +289,13 @@ func (b *backgroundInventory) forHeartbeat(cfg *Config) inventoryForHeartbeat {
 			marks = append(marks, func(at time.Time) { b.security.markSent(hash, at) })
 		}
 	}
+	if b.healthEnabled {
+		if v, ok := b.health.pending(now); ok {
+			out.Health = v
+			hash := b.health.hash
+			marks = append(marks, func(at time.Time) { b.health.markSent(hash, at) })
+		}
+	}
 
 	out.sent = func() {
 		b.mu.Lock()
@@ -283,8 +306,8 @@ func (b *backgroundInventory) forHeartbeat(cfg *Config) inventoryForHeartbeat {
 		}
 	}
 	if len(marks) > 0 {
-		log.Printf("inventory: sending %d processes, %d services, %d software entries, patch status %t, security posture %t",
-			len(out.Processes), len(out.Services), len(out.Software), out.Patch != nil, out.Security != nil)
+		log.Printf("inventory: sending %d processes, %d services, %d software entries, patch status %t, security posture %t, device health %t",
+			len(out.Processes), len(out.Services), len(out.Software), out.Patch != nil, out.Security != nil, out.Health != nil)
 	}
 	return out
 }

@@ -53,6 +53,17 @@ type telemetrySample struct {
 	NetTxBps  *float64     `json:"net_tx_bps,omitempty"`
 	UptimeS   *uint64      `json:"uptime_s,omitempty"`
 	Disks     []sampleDisk `json:"disks,omitempty"`
+
+	// 2.1.33: disk activity, network quality, and the top processes of a
+	// busy minute (see telemetry_extra.go).
+	DiskBusy     *float64     `json:"disk_busy,omitempty"`
+	DiskQueue    *float64     `json:"disk_queue,omitempty"`
+	DiskReadBps  *float64     `json:"disk_read_bps,omitempty"`
+	DiskWriteBps *float64     `json:"disk_write_bps,omitempty"`
+	GwMs         *float64     `json:"gw_ms,omitempty"`
+	GwLoss       *float64     `json:"gw_loss,omitempty"`
+	WanMs        *float64     `json:"wan_ms,omitempty"`
+	Top          []topProcess `json:"top,omitempty"`
 }
 
 type bufferState struct {
