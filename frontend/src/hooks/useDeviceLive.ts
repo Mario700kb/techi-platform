@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { buildDeviceLiveUrl, deviceRealtimeProtocols } from "../services/deviceRealtime";
+import { cachedLiveFrame, rememberLiveFrame } from "../store/liveCache";
 
 export interface LiveDisk {
   mount: string;
@@ -35,16 +36,26 @@ export interface LiveSnapshot {
  * connecting      — opening the page's live socket
  * waiting         — the agent is connected and asked to stream; no frame yet
  * live            — frames are arriving
+ * paused          — frames arrived and then stopped (none for 12 s, or the
+ *                   socket dropped and is reconnecting); the last ones stay
  * agent_offline   — the agent has no live channel (offline, or older than 2.1.27)
  * unavailable     — the socket could not be opened or was refused
  */
-export type LiveState = "connecting" | "waiting" | "live" | "agent_offline" | "unavailable";
+export type LiveState = "connecting" | "waiting" | "live" | "paused" | "agent_offline" | "unavailable";
 
 export interface DeviceLive {
   state: LiveState;
+  /**
+   * The latest values: this subscription's last frame, or, until the first
+   * one arrives, this session's last frame for the device (see
+   * store/liveCache). Never cleared while the same device is shown.
+   */
   snapshot: LiveSnapshot | null;
+  /** When `snapshot` was received (ms since the epoch). */
   receivedAt: number | null;
   intervalSeconds: number;
+  /** The socket is held open: enabled, and the browser tab is visible. */
+  active: boolean;
 }
 
 const RECONNECT_DELAYS = [2000, 5000, 10000, 30000];
@@ -56,20 +67,40 @@ function pageVisible(): boolean {
   return typeof document === "undefined" || document.visibilityState !== "hidden";
 }
 
+type LiveForDevice = DeviceLive & { deviceId: number | null | undefined };
+
+/** A device's starting point: this session's last frame for it, if any. */
+function seed(deviceId: number | null | undefined): LiveForDevice {
+  const cached = deviceId ? cachedLiveFrame(deviceId) : null;
+  return {
+    deviceId,
+    state: "connecting",
+    snapshot: cached?.snapshot ?? null,
+    receivedAt: cached?.receivedAt ?? null,
+    intervalSeconds: 3,
+    active: false,
+  };
+}
+
 /**
  * Streams a device's live snapshot while `enabled` and the browser tab is
  * visible. The backend asks the agent to stream only while at least one page
- * holds this socket open, so closing the drawer or hiding the tab stops the
- * device's sampling within seconds.
+ * holds this socket open (and renews that request itself), so closing the
+ * drawer or hiding the tab stops the device's sampling within seconds.
+ *
+ * The values never go blank: a device shown again starts from this
+ * session's last frame for it, and when the stream stops the last frame
+ * stays (state "paused", `active` false once the socket is released).
  */
 export function useDeviceLive(deviceId: number | null | undefined, enabled: boolean): DeviceLive {
   const [visible, setVisible] = useState(pageVisible);
-  const [live, setLive] = useState<DeviceLive>({
-    state: "connecting",
-    snapshot: null,
-    receivedAt: null,
-    intervalSeconds: 3,
-  });
+  const [live, setLive] = useState<LiveForDevice>(() => seed(deviceId));
+  // Another device: its own starting point, before this render paints.
+  let current = live;
+  if (live.deviceId !== deviceId) {
+    current = seed(deviceId);
+    setLive(current);
+  }
 
   useEffect(() => {
     const onChange = () => setVisible(pageVisible());
@@ -82,15 +113,19 @@ export function useDeviceLive(deviceId: number | null | undefined, enabled: bool
     let socket: WebSocket | null = null;
     let closed = false;
     let attempt = 0;
+    let gotFrame = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     let staleTimer: ReturnType<typeof setTimeout> | undefined;
+    // Only this device's state: a late callback never writes into another's.
+    const update = (next: (prev: LiveForDevice) => LiveForDevice) =>
+      setLive((prev) => (prev.deviceId === deviceId ? next(prev) : prev));
 
-    setLive({ state: "connecting", snapshot: null, receivedAt: null, intervalSeconds: 3 });
+    update((prev) => ({ ...prev, state: "connecting", active: true }));
 
     const markStaleLater = () => {
       if (staleTimer) clearTimeout(staleTimer);
       staleTimer = setTimeout(() => {
-        setLive((prev) => (prev.state === "live" ? { ...prev, state: "waiting" } : prev));
+        update((prev) => (prev.state === "live" ? { ...prev, state: "paused" } : prev));
       }, STALE_AFTER_MS);
     };
 
@@ -100,6 +135,7 @@ export function useDeviceLive(deviceId: number | null | undefined, enabled: bool
         attempt = 0;
       };
       socket.onmessage = (event) => {
+        if (closed) return;
         let message: { type?: string; agent_connected?: boolean; interval_seconds?: number; data?: LiveSnapshot };
         try {
           message = JSON.parse(String(event.data));
@@ -107,30 +143,40 @@ export function useDeviceLive(deviceId: number | null | undefined, enabled: bool
           return;
         }
         if (message.type === "live_status") {
-          setLive((prev) => ({
+          update((prev) => ({
             ...prev,
             intervalSeconds: message.interval_seconds ?? prev.intervalSeconds,
-            state: !message.agent_connected ? "agent_offline" : prev.state === "live" ? "live" : "waiting",
+            state: !message.agent_connected
+              ? "agent_offline"
+              : prev.state === "live"
+                ? "live"
+                : gotFrame
+                  ? "paused"
+                  : "waiting",
           }));
         } else if (message.type === "live" && message.data) {
           const data = message.data;
-          setLive((prev) => ({ ...prev, state: "live", snapshot: data, receivedAt: Date.now() }));
+          const receivedAt = Date.now();
+          gotFrame = true;
+          rememberLiveFrame(deviceId, data, receivedAt);
+          update((prev) => ({ ...prev, state: "live", snapshot: data, receivedAt }));
           markStaleLater();
         }
       };
       socket.onclose = (event) => {
         socket = null;
         if (closed) return;
+        if (staleTimer) clearTimeout(staleTimer);
         if (event.code === 4001) {
           // Refused: not signed in or not allowed to see this device.
-          setLive((prev) => ({ ...prev, state: "unavailable" }));
+          update((prev) => ({ ...prev, state: "unavailable" }));
           return;
         }
-        setLive((prev) => ({ ...prev, state: prev.snapshot ? "waiting" : "connecting" }));
+        update((prev) => ({ ...prev, state: gotFrame ? "paused" : "connecting" }));
         const delay = RECONNECT_DELAYS[Math.min(attempt, RECONNECT_DELAYS.length - 1)];
         attempt += 1;
         if (attempt > RECONNECT_DELAYS.length + 2) {
-          setLive((prev) => ({ ...prev, state: "unavailable" }));
+          update((prev) => ({ ...prev, state: "unavailable" }));
         }
         reconnectTimer = setTimeout(open, delay);
       };
@@ -142,8 +188,20 @@ export function useDeviceLive(deviceId: number | null | undefined, enabled: bool
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (staleTimer) clearTimeout(staleTimer);
       socket?.close();
+      // The values stay on screen, paused, until the device is shown again.
+      update((prev) => ({
+        ...prev,
+        active: false,
+        state: prev.state === "live" || (prev.snapshot && prev.state !== "unavailable") ? "paused" : prev.state,
+      }));
     };
   }, [deviceId, enabled, visible]);
 
-  return live;
+  return {
+    state: current.state,
+    snapshot: current.snapshot,
+    receivedAt: current.receivedAt,
+    intervalSeconds: current.intervalSeconds,
+    active: current.active,
+  };
 }

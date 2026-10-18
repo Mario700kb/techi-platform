@@ -7,7 +7,7 @@ import { TERMS } from "../utils/deviceStatus";
 import { deviceSite } from "../utils/location";
 import GroupPicker from "./GroupPicker";
 import LocationPicker from "./LocationPicker";
-import { Kv, SelectField } from "./ui";
+import { Kv, SectionHeader, SelectField } from "./ui";
 
 function assignmentSourceLabel(source?: string | null): string {
   const normalized = (source || "unassigned").toLowerCase();
@@ -61,21 +61,23 @@ export default function DeviceAssignmentCard({
 
   return (
     <section className="mb-3.5" aria-label="Client assignment">
-      <div className="mb-2 flex min-h-[26px] items-center justify-between gap-2">
-        <p className="premium-kicker">Client assignment</p>
-        {canEdit && (
-          <button
-            type="button"
-            className="th-link-btn th-link-btn-primary gap-1.5"
-            aria-expanded={editing}
-            aria-controls={editing ? editorId : undefined}
-            onClick={() => setEditingFor(editing ? null : device.id)}
-          >
-            {editing ? <Check className="h-3.5 w-3.5" /> : <Edit3 className="h-3.5 w-3.5" />}
-            {editing ? "Done" : "Edit assignment"}
-          </button>
-        )}
-      </div>
+      <SectionHeader
+        title="Client assignment"
+        action={
+          canEdit && (
+            <button
+              type="button"
+              className="th-link-btn th-link-btn-primary gap-1.5"
+              aria-expanded={editing}
+              aria-controls={editing ? editorId : undefined}
+              onClick={() => setEditingFor(editing ? null : device.id)}
+            >
+              {editing ? <Check className="h-3.5 w-3.5" /> : <Edit3 className="h-3.5 w-3.5" />}
+              {editing ? "Done" : "Edit assignment"}
+            </button>
+          )
+        }
+      />
       <div className="th-drawer-card">
         <dl className="th-kv">
           <Kv label="Client">{device.resolved_client_name || device.client_name || TERMS.noClient}</Kv>

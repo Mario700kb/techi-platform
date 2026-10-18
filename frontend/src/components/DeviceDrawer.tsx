@@ -91,7 +91,7 @@ import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import ConnectMenu from "./ConnectMenu";
 import DeviceInventoryPanel from "./DeviceInventoryPanel";
 import DeviceSecurityCard from "./DeviceSecurityCard";
-import { Button, ConnectButton, EmptyState, Kv } from "./ui";
+import { Button, ConnectButton, EmptyState, Kv, SectionHeader } from "./ui";
 import DeviceAssignmentCard from "./DeviceAssignmentCard";
 import DeviceIdentityCard from "./DeviceIdentityCard";
 import { Alert, ALERT_KIND_LABELS, ALERT_SEVERITY_TONE, AlertSeverity } from "../types/alert";
@@ -122,6 +122,9 @@ interface DeviceDrawerProps {
   isFavorite?: boolean;
   onToggleFavorite?: (deviceId: number) => void;
 }
+
+/** Recently resolved alerts shown before "Show N more". */
+const RESOLVED_SHOWN = 3;
 
 type DrawerTab =
   "overview" | "monitoring" | "remote_support" | "terminal" | "software" | "management" | "notes" | "timeline";
@@ -426,6 +429,7 @@ export default function DeviceDrawer({
     latestEvent,
   });
   const [showAllResolved, setShowAllResolved] = useState(false);
+  const maintenanceRef = useRef<HTMLElement>(null);
   useEffect(() => setShowAllResolved(false), [device.id]);
   const displayName = deviceDisplayName(device);
   const hostnameSubtitle = deviceHostnameSubtitle(device);
@@ -612,10 +616,11 @@ export default function DeviceDrawer({
     };
   }, [isOpen, activeTab, device.id]);
 
-  // Live view: the agent streams only while this drawer shows Overview, and
-  // only Windows and Linux agents have the channel it needs.
+  // Live view: the stream starts as the drawer opens (whatever the tab, so
+  // Overview has frames by the time it is shown) and stops when it closes or
+  // shows another device. Only Windows and Linux agents have the channel.
   const livePlatform = /^(windows|linux)/i.test(device.platform || "");
-  const live = useDeviceLive(device.id, isOpen && activeTab === "overview" && livePlatform && !device.is_archived);
+  const live = useDeviceLive(device.id, isOpen && livePlatform && !device.is_archived);
   const streaming = live.state === "live" && live.snapshot !== null;
   // One place for current values: the panel shows the stream, or else what
   // the last heartbeat said, labelled with its age.
@@ -627,6 +632,7 @@ export default function DeviceDrawer({
         uptime_seconds: snapshot.uptime_seconds,
         current_user: device.current_user,
         at: snapshot.created_at,
+        processes: inventory?.device_id === device.id ? inventory.processes : null,
       }
     : null;
 
@@ -932,13 +938,16 @@ export default function DeviceDrawer({
               </div>
             )}
 
-            {!device.is_archived && (
-              <DeviceLivePanel live={live} fallback={heartbeatValues} liveCapable={livePlatform} />
-            )}
-
             {/* Status */}
             <section className="mb-3.5" aria-label="Status">
-              <p className="premium-kicker mb-2">Status</p>
+              <SectionHeader
+                title="Status"
+                meta={
+                  healthReasons.length === 0
+                    ? "No issues"
+                    : `${healthReasons.length} issue${healthReasons.length === 1 ? "" : "s"}`
+                }
+              />
               <div className="th-drawer-card">
                 <dl className="th-kv">
                   <Kv label="Last seen">
@@ -950,10 +959,12 @@ export default function DeviceDrawer({
                         )}
                       </>
                     ) : device.last_seen ? (
+                      // Two lines like "Live now": the Live section below
+                      // does not move when the stream starts or stops.
                       <>
                         {formatLocalDateTime(device.last_seen)}
-                        <span className="th-kv-muted">
-                          · <HeartbeatFreshness lastSeen={device.last_seen} />
+                        <span className="th-kv-sub">
+                          <HeartbeatFreshness lastSeen={device.last_seen} />
                         </span>
                       </>
                     ) : (
@@ -1000,13 +1011,12 @@ export default function DeviceDrawer({
               </div>
             </section>
 
-            {isWindows && (
-              <DeviceSecurityCard
-                agentVersion={device.agent_version}
-                inventory={inventory ?? null}
-                loading={inventoryQuery.refreshing}
-                error={inventoryQuery.error}
-                onLoad={loadInventory}
+            {!device.is_archived && (
+              <DeviceLivePanel
+                key={`live-${device.id}`}
+                live={live}
+                fallback={heartbeatValues}
+                liveCapable={livePlatform}
               />
             )}
 
@@ -1017,9 +1027,74 @@ export default function DeviceDrawer({
               onOpenMonitoring={() => setActiveTab("monitoring")}
             />
 
+            {/* Sinjalizimet */}
+            <section className="mb-3.5" aria-label="Alerts">
+              <SectionHeader
+                title="Alerts"
+                meta={
+                  openAlerts.length > 0 ? (
+                    <span
+                      className="th-status-chip !h-6"
+                      style={{ "--chip-tone": TONE.critical } as React.CSSProperties}
+                    >
+                      <i />
+                      {openAlerts.length} active
+                    </span>
+                  ) : resolvedAlerts.length > 0 ? (
+                    `None active · ${resolvedAlerts.length} resolved`
+                  ) : (
+                    "None active"
+                  )
+                }
+              />
+              <div className="th-drawer-card">
+                {openAlerts.length === 0 && resolvedAlerts.length === 0 ? (
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-emerald-500" />
+                    <p className="text-xs font-medium text-slate-400">No alerts for this device</p>
+                  </div>
+                ) : (
+                  <>
+                    {openAlerts.length > 0 && (
+                      <div className="divide-y divide-[color:var(--th-border-drawer-section)]">
+                        {openAlerts.map((a) => (
+                          <AlertRow key={a.id} alert={a} />
+                        ))}
+                      </div>
+                    )}
+                    {resolvedAlerts.length > 0 && (
+                      <div
+                        className={`divide-y divide-[color:var(--th-border-drawer-section)] ${openAlerts.length > 0 ? "mt-2 border-t pt-2" : ""}`}
+                        style={{ borderColor: "var(--th-border-drawer-section)" }}
+                      >
+                        <p className="mb-1 text-[12px] font-medium" style={{ color: "var(--th-text-muted)" }}>
+                          Recently resolved
+                        </p>
+                        {(showAllResolved ? resolvedAlerts : resolvedAlerts.slice(0, RESOLVED_SHOWN)).map((a) => (
+                          <AlertRow key={a.id} alert={a} resolved />
+                        ))}
+                        {resolvedAlerts.length > RESOLVED_SHOWN && (
+                          <button
+                            type="button"
+                            className="th-link-btn -ml-2 mt-1"
+                            onClick={() => setShowAllResolved((v) => !v)}
+                            aria-expanded={showAllResolved}
+                          >
+                            {showAllResolved ? "Show fewer" : `Show ${resolvedAlerts.length - RESOLVED_SHOWN} more`}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </section>
             {/* Services */}
             <section className="mb-3.5" aria-label="Services">
-              <p className="premium-kicker mb-2">Services</p>
+              <SectionHeader
+                title="Services"
+                meta={`${TERMS.remoteSupport} ${remoteSupportStatus(device).label.toLowerCase()}`}
+              />
               <div className="th-svc-strip">
                 {(() => {
                   const rs = remoteSupportStatus(device);
@@ -1051,6 +1126,8 @@ export default function DeviceDrawer({
                       label: "Maintenance",
                       value: device.is_in_maintenance ? "Active" : "Off",
                       tone: device.is_in_maintenance ? TONE.maintenance : TONE.neutral,
+                      hint: "Details and controls at the end of Overview",
+                      onClick: () => maintenanceRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
                       sub:
                         device.is_in_maintenance && device.maintenance_ends_at
                           ? `until ${formatLocalDateTime(device.maintenance_ends_at)}`
@@ -1100,72 +1177,74 @@ export default function DeviceDrawer({
               </div>
             </section>
 
-            {/* Sinjalizimet */}
-            <section className="mb-3.5" aria-label="Alerts">
-              <div className="mb-2 flex items-center gap-2">
-                <p className="premium-kicker">Alerts</p>
-                {openAlerts.length > 0 && (
-                  <span className="rounded-full bg-red-500/20 px-1.5 py-0.5 text-[11px] font-semibold text-red-400">
-                    {openAlerts.length} active
-                  </span>
-                )}
-              </div>
-              <div className="th-drawer-card">
-                {openAlerts.length === 0 && resolvedAlerts.length === 0 ? (
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="h-4 w-4 text-emerald-500" />
-                    <p className="text-xs font-medium text-slate-400">No alerts for this device</p>
-                  </div>
-                ) : (
-                  <>
-                    {openAlerts.length > 0 && (
-                      <div className="divide-y divide-[color:var(--th-border-drawer-section)]">
-                        {openAlerts.map((a) => (
-                          <AlertRow key={a.id} alert={a} />
-                        ))}
-                      </div>
-                    )}
-                    {resolvedAlerts.length > 0 && (
-                      <div
-                        className={`divide-y divide-[color:var(--th-border-drawer-section)] ${openAlerts.length > 0 ? "mt-2 border-t pt-2" : ""}`}
-                        style={{ borderColor: "var(--th-border-drawer-section)" }}
-                      >
-                        <p className="mb-1 text-[12px] font-medium" style={{ color: "var(--th-text-muted)" }}>
-                          Recently resolved
-                        </p>
-                        {(showAllResolved ? resolvedAlerts : resolvedAlerts.slice(0, 5)).map((a) => (
-                          <AlertRow key={a.id} alert={a} resolved />
-                        ))}
-                        {resolvedAlerts.length > 5 && (
-                          <button
-                            type="button"
-                            className="th-link-btn -ml-2 mt-1"
-                            onClick={() => setShowAllResolved((v) => !v)}
-                            aria-expanded={showAllResolved}
-                          >
-                            {showAllResolved ? "Show fewer" : `Show ${resolvedAlerts.length - 5} more`}
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </>
-                )}
+            {isWindows && (
+              <DeviceSecurityCard
+                agentVersion={device.agent_version}
+                inventory={inventory ?? null}
+                loading={inventoryQuery.refreshing}
+                error={inventoryQuery.error}
+                onLoad={loadInventory}
+              />
+            )}
+
+            <DeviceIdentityCard
+              device={device}
+              liveUser={streaming ? live.snapshot?.current_user : null}
+              linux={platformFeatures.FEATURE_LINUX}
+            />
+
+            <DeviceAssignmentCard
+              device={device}
+              clients={clients}
+              groups={groups}
+              canAssignClient={canOperate}
+              canAssignLocation={hasPermission("manage_clients")}
+              canAssignGroup={canOperate}
+              active={activeTab === "overview"}
+              onDeviceUpdated={onDeviceUpdated}
+            />
+
+            {/* Rrjeti */}
+            <section className="mb-3.5" aria-label="Network">
+              <SectionHeader title="Network" meta={device.domain ? `Domain ${device.domain}` : undefined} />
+              <div className="th-drawer-card !py-2.5">
+                <dl className="th-kv">
+                  <Kv label="Local IP" mono>
+                    {device.local_ip}
+                  </Kv>
+                  <Kv label="Public IP" mono>
+                    {device.public_ip}
+                  </Kv>
+                </dl>
               </div>
             </section>
+
+            {/* Platform Components — Installed/Desired/Health + lifecycle metadata (read-only) */}
+            <ComponentStatesPanel
+              key={`components-${device.id}`}
+              deviceId={device.id}
+              actions={actionsData ?? undefined}
+              onActionChange={noteActionChange}
+              liveChannel={channelConnected}
+            />
             {/* Mirembajtja */}
-            <section className="mb-3.5" aria-label="Maintenance">
-              <div className="mb-2 flex items-center gap-2">
-                <p className="premium-kicker">Maintenance</p>
-                {device.is_in_maintenance && (
-                  <span
-                    className="th-status-chip !h-6"
-                    style={{ "--chip-tone": TONE.maintenance } as React.CSSProperties}
-                  >
-                    <i />
-                    Active
-                  </span>
-                )}
-              </div>
+            <section className="mb-3.5" aria-label="Maintenance" ref={maintenanceRef}>
+              <SectionHeader
+                title="Maintenance"
+                meta={
+                  device.is_in_maintenance ? (
+                    <span
+                      className="th-status-chip !h-6"
+                      style={{ "--chip-tone": TONE.maintenance } as React.CSSProperties}
+                    >
+                      <i />
+                      Active
+                    </span>
+                  ) : (
+                    "Off"
+                  )
+                }
+              />
               <div className="th-drawer-card">
                 {device.is_in_maintenance ? (
                   <div className="space-y-2.5">
@@ -1293,49 +1372,6 @@ export default function DeviceDrawer({
                 )}
               </div>
             </section>
-
-            <DeviceIdentityCard
-              device={device}
-              liveUser={streaming ? live.snapshot?.current_user : null}
-              linux={platformFeatures.FEATURE_LINUX}
-            />
-
-            <DeviceAssignmentCard
-              device={device}
-              clients={clients}
-              groups={groups}
-              canAssignClient={canOperate}
-              canAssignLocation={hasPermission("manage_clients")}
-              canAssignGroup={canOperate}
-              active={activeTab === "overview"}
-              onDeviceUpdated={onDeviceUpdated}
-            />
-
-            {/* Rrjeti */}
-            <section className="mb-3.5" aria-label="Network">
-              <p className="premium-kicker mb-2">Network</p>
-              <div className="th-drawer-card !py-2.5">
-                <dl className="th-kv">
-                  <Kv label="Local IP" mono>
-                    {device.local_ip}
-                  </Kv>
-                  <Kv label="Public IP" mono>
-                    {device.public_ip}
-                  </Kv>
-                </dl>
-              </div>
-            </section>
-
-            {/* Platform Components — Installed/Desired/Health + lifecycle metadata (read-only) */}
-            <div className="mb-3.5">
-              <ComponentStatesPanel
-                key={device.id}
-                deviceId={device.id}
-                actions={actionsData ?? undefined}
-                onActionChange={noteActionChange}
-                liveChannel={channelConnected}
-              />
-            </div>
           </div>
 
           <div className={activeTab === "monitoring" ? "th-tab-panel" : "hidden"}>

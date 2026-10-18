@@ -71,5 +71,5 @@ test("an agent without the live channel says so", async ({ page }, testInfo) => 
   await liveSocket(page, false);
   await page.goto("/devices");
   await page.locator("tr", { hasText: "NW-DOCTOR-02" }).getByText("NW-DOCTOR-02").first().click();
-  await expect(page.getByText("Not available — the agent is offline or older than 2.1.27")).toBeVisible();
+  await expect(page.getByText("Not available — the agent is offline or older than 2.1.27.")).toBeVisible();
 });

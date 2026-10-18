@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Boxes, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 import {
   ComponentLifecycle,
@@ -12,6 +12,7 @@ import {
 import { cancelAction, getDeviceActions, type RemoteAction } from "../api/actions";
 import { useDeviceRealtime } from "../hooks/useDeviceRealtime";
 import ConfirmationModal from "./ConfirmationModal";
+import { SectionHeader } from "./ui";
 import { AgentUpdateLive } from "./AgentUpdateProgress";
 import type { DeviceRealtimeEvent } from "../services/deviceRealtime";
 import {
@@ -22,6 +23,21 @@ import {
   pickAgentUpdate,
   updateTargetVersion,
 } from "../utils/agentUpdate";
+
+/** "2 managed · all current", "1 of 2 outdated", … */
+function componentsSummary(states: DeviceComponentState[]): string {
+  const notCurrent = states.filter((c) => c.health !== "current");
+  if (notCurrent.length === 0) return `${states.length} managed · all current`;
+  const outdated = notCurrent.filter((c) => c.health === "outdated").length;
+  const missing = notCurrent.filter((c) => c.health === "missing").length;
+  return [
+    outdated && `${outdated} outdated`,
+    missing && `${missing} missing`,
+    notCurrent.length - outdated - missing && `${notCurrent.length - outdated - missing} unknown`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
 
 // Live execution phase of a component action, derived from the realtime action
 // status (Operational M6). Pure + exported for direct unit testing.
@@ -402,18 +418,9 @@ export default function ComponentStatesPanel({
 
   return (
     <>
-      <section className="th-drawer-card">
-        <div className="mb-2 flex items-center gap-2">
-          <span
-            className="flex h-5 w-5 items-center justify-center rounded-md"
-            style={{ background: "var(--th-bg-shell)", color: "var(--th-text-muted)" }}
-          >
-            <Boxes className="h-3 w-3" />
-          </span>
-          <h3 className="premium-kicker">Components</h3>
-        </div>
-
-        <div className="space-y-2.5">
+      <section className="mb-3.5" aria-label="Components">
+        <SectionHeader title="Components" meta={componentsSummary(states)} />
+        <div className="th-drawer-card space-y-2.5">
           {states.map((state) => {
             const operations = lifecycles[state.component_id] ?? [];
             const componentBusy = busy?.startsWith(`${state.component_id}:`) ?? false;

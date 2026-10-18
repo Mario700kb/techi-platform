@@ -16,11 +16,13 @@ test("the drawer lists every kind of resolved alert, newest resolved first", asy
   await expect(section.getByText("High CPU")).toBeVisible();
   await expect(section.getByText("Low disk space")).toBeVisible();
   await expect(section.getByText("warning").first()).toBeVisible();
-  // Newest resolved first: the five shown end with the sync failure…
-  await expect(section.getByText("Remote Support sync failed")).toBeVisible();
+  // Newest resolved first: the three shown end with the first offline…
+  await expect(section.getByText("Device offline")).toHaveCount(1);
+  await expect(section.getByText("Remote Support sync failed")).toHaveCount(0);
   await expect(section.getByText("Repeated reconnects")).toHaveCount(0);
-  // …and the two older ones are one click away.
-  await section.getByRole("button", { name: "Show 2 more" }).click();
+  // …and the four older ones are one click away.
+  await section.getByRole("button", { name: "Show 4 more" }).click();
+  await expect(section.getByText("Remote Support sync failed")).toBeVisible();
   await expect(section.getByText("Repeated reconnects")).toBeVisible();
   await expect(section.getByText("Device offline")).toHaveCount(2);
 });

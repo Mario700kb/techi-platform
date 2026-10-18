@@ -4,7 +4,7 @@ import type { DeviceInventory, SecurityPosture } from "../api/inventory";
 import { TONE } from "../utils/deviceStatus";
 import { formatDateTime, timeAgo } from "../utils/time";
 import { compareVersions } from "../utils/version";
-import { Button } from "./ui";
+import { Button, SectionHeader } from "./ui";
 
 /** The first agent that reports the security posture. */
 const SECURITY_POSTURE_AGENT = "2.1.31";
@@ -201,14 +201,19 @@ export default function DeviceSecurityCard({
 
   return (
     <section className="mb-3.5" aria-label="Security">
-      <div className="mb-2 flex items-baseline justify-between gap-3">
-        <p className="premium-kicker">Security</p>
-        {posture && collectedAt && (
-          <span className="text-[12px]" style={{ color: "var(--th-text-muted)" }} title={formatDateTime(collectedAt)}>
-            Collected {timeAgo(collectedAt)}
-          </span>
-        )}
-      </div>
+      <SectionHeader
+        title="Security"
+        meta={
+          posture && collectedAt
+            ? `Collected ${timeAgo(collectedAt)}`
+            : agentTooOld
+              ? "Not on this agent"
+              : inventory
+                ? "Read every 6 hours"
+                : "Loads on request"
+        }
+        metaTitle={posture && collectedAt ? formatDateTime(collectedAt) : undefined}
+      />
       <div className="th-drawer-card">{body}</div>
     </section>
   );

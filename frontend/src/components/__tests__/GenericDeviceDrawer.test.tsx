@@ -81,9 +81,10 @@ describe("GenericDeviceDrawer", () => {
     const overview = await screen.findByRole("tab", { name: "Overview" });
     expect(overview).toHaveAttribute("aria-selected", "true");
     expect(screen.getByText("Stale")).toBeInTheDocument();
-    // Current values come from the last heartbeat, labelled as such, once.
+    // Until the first live frame, the tiles show the last heartbeat, labelled with its age.
     const now = screen.getByRole("region", { name: "Live" });
-    expect(within(now).getByText(/From the last heartbeat/)).toBeInTheDocument();
+    expect(now).toHaveAttribute("data-live-source", "heartbeat");
+    expect(within(now).getByTestId("live-status")).toHaveTextContent(/^From .+ ago/);
     expect(within(now).getByText("40%")).toBeInTheDocument();
     expect(within(now).getByText("88% used")).toBeInTheDocument();
     // History has its own section and no duplicate current bars.

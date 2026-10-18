@@ -4,7 +4,7 @@ import type { DeviceMonitoring, MonitorStatus } from "../api/monitoring";
 import { formatLocalDateTime } from "../utils/time";
 import { CoverageBar, pct, Skeleton, StateChip, TimeChart } from "./MetricCharts";
 import { monitorName, sourceLine, useDeviceMetrics, useDeviceMonitors } from "./DeviceMonitoringPanel";
-import { Button } from "./ui";
+import { Button, SectionHeader } from "./ui";
 
 const SHORT: Record<string, string> = {
   cpu: "CPU",
@@ -93,14 +93,16 @@ export default function DeviceLast24hCard({
 
   return (
     <section className="mb-3.5" aria-label="Last 24 hours">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <p className="premium-kicker">Last 24 hours</p>
-        {source && metrics?.source !== "none" && (
-          <span className="truncate text-[11px]" style={{ color: "var(--th-text-muted)" }}>
-            {metrics?.source === "agent" ? "1-minute data · nothing lost" : "5-minute heartbeat data"}
-          </span>
-        )}
-      </div>
+      <SectionHeader
+        title="Last 24 hours"
+        meta={
+          source && metrics?.source !== "none"
+            ? metrics?.source === "agent"
+              ? "1-minute data · nothing lost"
+              : "5-minute heartbeat data"
+            : undefined
+        }
+      />
       <div className="th-drawer-card">
         {metricsQuery.error && !metrics ? (
           <div className="flex items-center justify-between gap-3 text-[13px]">

@@ -1,7 +1,7 @@
 import type { Device } from "../api/devices";
 import { humanize } from "../utils/deviceStatus";
 import { cpuView, osView, storageView } from "../utils/system";
-import { Kv } from "./ui";
+import { Kv, SectionHeader } from "./ui";
 
 /** CPU, memory and storage as three equal mini-stats; storage with how full it is. */
 function HardwareStats({ device }: { device: Device }) {
@@ -76,7 +76,7 @@ export default function DeviceIdentityCard({
 
   return (
     <section className="mb-3.5" aria-label="Identity">
-      <p className="premium-kicker mb-2">Identity</p>
+      <SectionHeader title="Identity" meta={device.agent_version ? `Agent ${device.agent_version}` : undefined} />
       <div className="th-drawer-card">
         <dl className="th-kv">
           <Kv label="Current user" span>
