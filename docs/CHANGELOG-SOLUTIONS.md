@@ -5,6 +5,17 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-18] COMPACT-OVERVIEW-2026-10-18 — a compact device Overview (`9dcab7f`)
+
+**Frontend deployed 22:10 (Tirana).** The owner found the drawer's Overview
+tall and empty. Status, Services, Identity and Client assignment take 571 px
+instead of 1217 px at the 720 px drawer (47%), nothing removed: Last seen and
+Health side by side with issue chips; four service tiles in one row;
+compact identity rows with hardware as three mini-stats; client assignment
+read-only by default with "Edit assignment" opening the same pickers inline.
+Rollback `techi-platform-frontend:pre-compact-overview-5058996`; guard and
+smoke passed. Vitest 391, Playwright 224. Disk 1.6 GB free (94%).
+
 ## [2026-10-18] PACKAGES-2.1.32-2026-10-18 — agent, Endpoint MSI and Update Bridge at 2.1.32
 
 On the owner's word: the three Windows packages from CI run 39134536217
