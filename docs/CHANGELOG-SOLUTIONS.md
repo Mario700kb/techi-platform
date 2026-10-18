@@ -5,6 +5,32 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-18] REPORTS-2026-10-18 — alert noise, seven client reports, security posture (`0a0920a`, `a6ee924`, `9bedff9`, `389007b`)
+
+**Backend + frontend deployed 15:31 (Tirana), migrations `q5r6s7t8u9v0`,
+`r6s7t8u9v0w1`.** The owner asked to analyse the alerts, build every report
+proposed and deploy.
+
+- Alerts: the offline flood (8,365 on 10 Oct) predated the 13 Oct offline
+  policy. What remained: CPU/RAM alerts opened after 3 high samples but closed
+  on one low sample (LogiposSRV-Mensa: 70 alerts of 5 min in 3.5 days); now 4
+  samples open and 4 samples below 75% / 85% close — replayed on 3.5 days of
+  production telemetry: 392 CPU alerts → 118, at most 9 on one device. Disk
+  alerts close only below 82%.
+- Analytics: a disk already ≥ 90% counts as at risk (Techi-Server C: 96% read
+  0); attention cards without the coloured side bar.
+- Reports (preview, PDF, CSV, schedules): executive summary, patch
+  compliance, OS lifecycle & hardware, availability & outages, disk capacity,
+  access audit, security posture. Checked live on TECHI shpk: every preview
+  under 3 s; executive PDF generated.
+- Security posture: stored from agent 2.1.31 heartbeats (security_json),
+  Security card in the device drawer. Agent 2.1.31 built (CI 39070429774, the
+  real probe ran on Windows Server), not uploaded.
+
+Dump `/opt/backups/techi/pre-reports-20261018-152938.sql.gz`, rollback
+`techi-platform-{backend,frontend}:pre-reports-622a6a4`; guard, smoke passed,
+0 errors. Pytest 1561, Vitest 351, Playwright 206.
+
 ## [2026-10-17] DISK-CLEANUP-2026-10-17 — rollback tags before 18:00 removed
 
 On the owner's choice ("te paren"): the 7 rollback tags of the 17 Oct deploys
