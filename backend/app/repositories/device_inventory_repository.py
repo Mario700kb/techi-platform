@@ -36,6 +36,8 @@ class DeviceInventoryRepository:
         collected_at: datetime,
         security_json: Optional[str] = None,
         security_collected_at: Optional[datetime] = None,
+        health_json: Optional[str] = None,
+        health_collected_at: Optional[datetime] = None,
     ) -> DeviceInventory:
         obj = self.get_by_device(device_id)
         if obj is not None:
@@ -50,6 +52,9 @@ class DeviceInventoryRepository:
             if security_json is not None:
                 obj.security_json = security_json
                 obj.security_collected_at = security_collected_at
+            if health_json is not None:
+                obj.health_json = health_json
+                obj.health_collected_at = health_collected_at
             obj.collected_at = collected_at
         else:
             obj = DeviceInventory(
@@ -61,6 +66,8 @@ class DeviceInventoryRepository:
                 collected_at=collected_at,
                 security_json=security_json,
                 security_collected_at=security_collected_at if security_json is not None else None,
+                health_json=health_json,
+                health_collected_at=health_collected_at if health_json is not None else None,
             )
             self.db.add(obj)
         self.db.commit()

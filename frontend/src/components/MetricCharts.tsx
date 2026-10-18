@@ -1,4 +1,4 @@
-import React, { MouseEvent, useEffect, useState } from "react";
+import React, { MouseEvent, ReactNode, useEffect, useState } from "react";
 import type { CoverageSegment, MetricPoint, MetricsRange } from "../api/monitoring";
 import { formatLocalDateTime, parseUTC } from "../utils/time";
 
@@ -90,7 +90,21 @@ interface TimeChartProps {
   threshold?: { value: number; label: string } | null;
   /** Time the device was off, shaded. */
   off?: Array<{ start: string; end: string }>;
+  /** Moments marked with a vertical line (restarts). */
+  markers?: Array<{ t: string; label: string }>;
+  /** Stretches an alert was open, tinted behind the lines. */
+  bands?: ChartBand[];
+  /** More lines in the tooltip for the hovered point (e.g. its top processes). */
+  tipExtra?: (p: MetricPoint) => ReactNode;
   height?: number;
+}
+
+export interface ChartBand {
+  start: string;
+  /** Null while still open. */
+  end: string | null;
+  label: string;
+  tone: string;
 }
 
 const PAD = { top: 10, right: 6, bottom: 20, left: 48 };
@@ -109,6 +123,9 @@ export function TimeChart({
   axisFormat = format,
   threshold,
   off = [],
+  markers = [],
+  bands = [],
+  tipExtra,
   height = 120,
 }: TimeChartProps) {
   const { ref, width: W } = useWidth<HTMLDivElement>();
@@ -193,6 +210,24 @@ export function TimeChart({
             </g>
           );
         })}
+        {bands.map((band, i) => {
+          const a = Math.max(PAD.left, x(parseUTC(band.start).getTime()));
+          const b = Math.min(PAD.left + plotW, x(band.end ? parseUTC(band.end).getTime() : t1));
+          if (b - a < 0.5) return null;
+          return (
+            <rect
+              key={`band-${i}`}
+              data-testid="chart-alert-band"
+              x={a}
+              y={PAD.top}
+              width={Math.max(2, b - a)}
+              height={plotH}
+              fill={`color-mix(in srgb, ${band.tone} 13%, transparent)`}
+            >
+              <title>{band.label}</title>
+            </rect>
+          );
+        })}
         {[0, top / 2, top].map((tick) => (
           <g key={tick}>
             <line x1={PAD.left} x2={W - PAD.right} y1={y(tick)} y2={y(tick)} className="th-chart-grid" />
@@ -257,6 +292,25 @@ export function TimeChart({
             )}
           </g>
         ))}
+        {markers.map((m, i) => {
+          const at = x(parseUTC(m.t).getTime());
+          if (at < PAD.left || at > PAD.left + plotW) return null;
+          return (
+            <g key={`marker-${i}`} data-testid="chart-marker">
+              <line
+                x1={at}
+                x2={at}
+                y1={PAD.top}
+                y2={PAD.top + plotH}
+                stroke="var(--th-status-info)"
+                strokeOpacity={0.8}
+                strokeDasharray="3 3"
+              />
+              <circle cx={at} cy={PAD.top} r={2.5} fill="var(--th-status-info)" />
+              <title>{m.label}</title>
+            </g>
+          );
+        })}
         <text x={PAD.left} y={H - 4} className="th-chart-axis">
           {axisTime(start, range)}
         </text>
@@ -323,6 +377,25 @@ export function TimeChart({
               {hovered.samples} of {hovered.expected} samples
             </span>
           )}
+          {bands
+            .filter((band) => {
+              const t = times[hover];
+              return parseUTC(band.start).getTime() <= t && (!band.end || parseUTC(band.end).getTime() >= t);
+            })
+            .map((band, i) => (
+              <span key={`tip-band-${i}`} className="flex items-center gap-1.5" style={{ color: band.tone }}>
+                <i className="inline-block h-2 w-2 rounded-sm" style={{ background: band.tone }} aria-hidden="true" />
+                {band.label}
+              </span>
+            ))}
+          {markers
+            .filter((m) => Math.abs(parseUTC(m.t).getTime() - times[hover]) <= Math.max(gapMs, 120_000))
+            .map((m, i) => (
+              <span key={`tip-marker-${i}`} style={{ color: "var(--th-status-info)" }}>
+                {m.label}
+              </span>
+            ))}
+          {tipExtra?.(hovered)}
         </div>
       )}
     </div>
@@ -433,6 +506,7 @@ export const MONITOR_STATE: Record<string, { label: string; tone: string }> = {
   watch: { label: "Watch", tone: "var(--th-status-warning)" },
   firing: { label: "Firing", tone: "var(--th-status-critical)" },
   unknown: { label: "Unknown", tone: "var(--th-text-faint)" },
+  off: { label: "Off", tone: "var(--th-ring-track)" },
 };
 
 export function StateChip({ state }: { state: string }) {
@@ -444,3 +518,76 @@ export function StateChip({ state }: { state: string }) {
     </span>
   );
 }
+
+// ── Availability ────────────────────────────────────────────────────────────
+
+const AVAILABILITY_KINDS = [
+  { key: "on", label: "On", tone: "var(--th-status-online)" },
+  { key: "off", label: "Off", tone: "var(--th-ring-track)" },
+  { key: "missing", label: "No data", tone: "var(--th-status-warning)" },
+] as const;
+
+function availabilityKind(kind: CoverageSegment["kind"]): "on" | "off" | "missing" {
+  return kind === "received" || kind === "late" ? "on" : kind === "off" ? "off" : "missing";
+}
+
+/**
+ * When the device was on, off or silent over the range, aligned with the
+ * charts below (same left edge), with its restarts marked.
+ */
+export function AvailabilityStrip({
+  segments,
+  restarts,
+  start,
+  end,
+}: {
+  segments: CoverageSegment[];
+  restarts: string[];
+  start: string;
+  end: string;
+}) {
+  const t0 = parseUTC(start).getTime();
+  const span = Math.max(1, parseUTC(end).getTime() - t0);
+  const at = (iso: string) => Math.min(1, Math.max(0, (parseUTC(iso).getTime() - t0) / span));
+  return (
+    <div className="relative" style={{ paddingLeft: PAD.left, paddingRight: PAD.right }}>
+      <div
+        className="relative h-3 w-full overflow-hidden rounded-[4px]"
+        style={{ background: "var(--th-chip-bg)", boxShadow: "inset 0 0 0 1px var(--th-border-subtle)" }}
+        role="img"
+        aria-label="When the device was on, off or without data"
+        data-testid="availability-strip"
+      >
+        {segments.map((seg, i) => {
+          const a = at(seg.start);
+          const b = at(seg.end);
+          if (b <= a) return null;
+          const kind = AVAILABILITY_KINDS.find((k) => k.key === availabilityKind(seg.kind))!;
+          return (
+            <span
+              key={i}
+              data-kind={kind.key}
+              title={`${kind.label} · ${formatLocalDateTime(seg.start)} – ${formatLocalDateTime(seg.end)}`}
+              className="absolute inset-y-0"
+              style={{ left: `${a * 100}%`, width: `max(2px, ${(b - a) * 100}%)`, background: kind.tone }}
+            />
+          );
+        })}
+      </div>
+      {restarts.map((r) => (
+        <span
+          key={r}
+          className="absolute top-[-3px] h-[18px] w-[2px] rounded-full"
+          style={{
+            left: `calc(${PAD.left}px + (100% - ${PAD.left + PAD.right}px) * ${at(r)})`,
+            background: "var(--th-status-info)",
+          }}
+          title={`Restarted ${formatLocalDateTime(r)}`}
+          data-testid="availability-restart"
+        />
+      ))}
+    </div>
+  );
+}
+
+export { AVAILABILITY_KINDS, availabilityKind };

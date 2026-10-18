@@ -25,14 +25,82 @@ export const METRICS: MonitorMetric[] = [
   "cpu",
   "mem",
   "disk",
+  "disk_busy",
   "net_rx_mbps",
   "net_tx_mbps",
+  "gw_ms",
+  "gw_loss",
+  "service",
   "disk_forecast_days",
+  "disk_health",
+  "critical_events",
+  "reboot_pending_days",
+  "security_score",
   "no_data",
 ];
 
 /** Monitors the platform evaluates itself; the rest run on the device every sample. */
-export const SERVER_METRICS = new Set<MonitorMetric>(["disk_forecast_days", "no_data"]);
+export const SERVER_METRICS = new Set<MonitorMetric>([
+  "disk_forecast_days",
+  "no_data",
+  "disk_health",
+  "critical_events",
+  "reboot_pending_days",
+  "security_score",
+]);
+
+/** Monitors that need agent 2.1.33 on the device (the rest work from 2.1.29, security from 2.1.31). */
+export const NEEDS_AGENT: Partial<Record<MonitorMetric, string>> = {
+  disk_busy: "2.1.33",
+  gw_ms: "2.1.33",
+  gw_loss: "2.1.33",
+  service: "2.1.33",
+  disk_health: "2.1.33",
+  critical_events: "2.1.33",
+  reboot_pending_days: "2.1.33",
+  security_score: "2.1.31",
+};
+
+/**
+ * How a metric's condition is written: "op" (choose > or <, a value), "below"
+ * (always <), "above" (always >), "none" (no value: any problem / no data),
+ * "service" (the services to watch). `duration`: whether it must hold a while.
+ */
+export const METRIC_SHAPE: Record<
+  MonitorMetric,
+  { condition: "op" | "below" | "above" | "none" | "service"; duration: boolean; words?: string }
+> = {
+  cpu: { condition: "op", duration: true },
+  mem: { condition: "op", duration: true },
+  disk: { condition: "op", duration: true },
+  disk_busy: { condition: "op", duration: true },
+  net_rx_mbps: { condition: "op", duration: true },
+  net_tx_mbps: { condition: "op", duration: true },
+  gw_ms: { condition: "op", duration: true },
+  gw_loss: { condition: "op", duration: true },
+  service: { condition: "service", duration: true },
+  disk_forecast_days: { condition: "below", duration: false, words: "Full within" },
+  disk_health: { condition: "none", duration: false, words: "Any disk problem" },
+  critical_events: { condition: "above", duration: false, words: "More than, in 24 h" },
+  reboot_pending_days: { condition: "above", duration: false, words: "Pending longer than" },
+  security_score: { condition: "below", duration: false, words: "Score below" },
+  no_data: { condition: "none", duration: true, words: "No uploads" },
+};
+
+/** Service names as the backend accepts them; a trailing * matches a prefix. */
+export const SERVICE_NAME = /^[A-Za-z0-9_.$ -]{1,80}\*?$/;
+
+/** The services of a target, trimmed, empty ones and repeats dropped. */
+export function serviceNames(target: string): string[] {
+  return [
+    ...new Set(
+      target
+        .split(",")
+        .map((n) => n.trim())
+        .filter(Boolean),
+    ),
+  ];
+}
 
 export const SEVERITIES: MonitorSeverity[] = ["info", "warning", "critical"];
 export const SEVERITY_LABEL: Record<MonitorSeverity, string> = {
@@ -91,6 +159,14 @@ const BASE_KEY: Record<MonitorMetric, string> = {
   net_tx_mbps: "net_tx",
   disk_forecast_days: "disk_forecast",
   no_data: "no_data",
+  disk_busy: "disk_busy",
+  gw_ms: "gw_latency",
+  gw_loss: "gw_loss",
+  service: "services",
+  disk_health: "disk_health",
+  critical_events: "critical_events",
+  reboot_pending_days: "reboot_pending",
+  security_score: "security",
 };
 
 /** What a new row of this metric starts with. */
@@ -102,9 +178,20 @@ const METRIC_DEFAULTS: Record<MonitorMetric, Pick<Monitor, "op" | "threshold" | 
   net_tx_mbps: { op: ">", threshold: 800, duration_s: 300, severity: "info" },
   disk_forecast_days: { op: "<", threshold: 14, duration_s: 0, severity: "warning" },
   no_data: { op: ">", threshold: 0, duration_s: 600, severity: "critical" },
+  disk_busy: { op: ">", threshold: 90, duration_s: 1200, severity: "info" },
+  gw_ms: { op: ">", threshold: 150, duration_s: 600, severity: "info" },
+  gw_loss: { op: ">", threshold: 20, duration_s: 600, severity: "warning" },
+  service: { op: ">", threshold: 0, duration_s: 300, severity: "critical" },
+  disk_health: { op: ">", threshold: 0, duration_s: 0, severity: "critical" },
+  critical_events: { op: ">", threshold: 0, duration_s: 0, severity: "warning" },
+  reboot_pending_days: { op: ">", threshold: 7, duration_s: 0, severity: "info" },
+  security_score: { op: "<", threshold: 70, duration_s: 0, severity: "warning" },
 };
 
-const PERCENT_METRICS = new Set<MonitorMetric>(["cpu", "mem", "disk"]);
+/** A new service monitor's list: the usual server roles (services missing on a device are skipped). */
+export const DEFAULT_SERVICES = "MSSQL*, SQLAgent*, vmms, NTDS, DNS, DHCPServer, LanmanServer, W32Time";
+
+const PERCENT_METRICS = new Set<MonitorMetric>(["cpu", "mem", "disk", "disk_busy", "gw_loss"]);
 const KEY_PATTERN = /^[a-z0-9_]{1,32}$/;
 
 export interface MonitorDraft {
@@ -117,6 +204,8 @@ export interface MonitorDraft {
   durationMin: string;
   severity: MonitorSeverity;
   enabled: boolean;
+  /** Service monitors: the services to watch. */
+  target: string;
 }
 
 export interface PolicyDraft {
@@ -146,6 +235,7 @@ export function monitorToDraft(monitor: Monitor): MonitorDraft {
     durationMin: num(monitor.duration_s / 60),
     severity: monitor.severity,
     enabled: monitor.enabled,
+    target: monitor.target ?? "",
   };
 }
 
@@ -191,7 +281,13 @@ export function keyFor(metric: MonitorMetric, taken: string[]): string {
 }
 
 export function newMonitor(metric: MonitorMetric, taken: string[]): MonitorDraft {
-  return monitorToDraft({ key: keyFor(metric, taken), metric, enabled: true, ...METRIC_DEFAULTS[metric] });
+  return monitorToDraft({
+    key: keyFor(metric, taken),
+    metric,
+    enabled: true,
+    ...METRIC_DEFAULTS[metric],
+    target: metric === "service" ? DEFAULT_SERVICES : null,
+  });
 }
 
 /** A row switched to another metric takes that metric's defaults and, if it had one, its key. */
@@ -206,6 +302,7 @@ export function changeMetric(row: MonitorDraft, metric: MonitorMetric, taken: st
     op: defaults.op,
     threshold: num(defaults.threshold),
     durationMin: num(defaults.duration_s / 60),
+    target: metric === "service" ? row.target || DEFAULT_SERVICES : "",
   };
 }
 
@@ -224,19 +321,24 @@ export function toBody(draft: PolicyDraft): PolicyBody {
     upload_seconds: Math.round(toNumber(draft.uploadMin) * 60),
     buffer_mb: toNumber(draft.buffer),
     keep_days: toNumber(draft.keepDays),
-    monitors: draft.monitors.map((m) => ({
-      key: m.key.trim(),
-      metric: m.metric,
-      op: m.metric === "disk_forecast_days" ? "<" : m.op,
-      threshold: m.metric === "no_data" ? 0 : toNumber(m.threshold),
-      duration_s: m.metric === "disk_forecast_days" ? 0 : Math.round(toNumber(m.durationMin) * 60),
-      severity: m.severity,
-      enabled: m.enabled,
-    })),
+    monitors: draft.monitors.map((m) => {
+      const shape = METRIC_SHAPE[m.metric];
+      const monitor: Monitor = {
+        key: m.key.trim(),
+        metric: m.metric,
+        op: shape.condition === "below" ? "<" : shape.condition === "op" ? m.op : ">",
+        threshold: shape.condition === "none" || shape.condition === "service" ? 0 : toNumber(m.threshold),
+        duration_s: shape.duration ? Math.round(toNumber(m.durationMin) * 60) : 0,
+        severity: m.severity,
+        enabled: m.enabled,
+      };
+      if (m.metric === "service") monitor.target = serviceNames(m.target).join(", ");
+      return monitor;
+    }),
   };
 }
 
-export type MonitorField = "key" | "threshold" | "duration";
+export type MonitorField = "key" | "threshold" | "duration" | "target";
 
 export interface DraftProblems {
   name?: string;
@@ -252,10 +354,24 @@ export interface DraftProblems {
 }
 
 function thresholdProblem(metric: MonitorMetric, value: number): string | null {
-  if (metric === "no_data") return null;
+  const shape = METRIC_SHAPE[metric].condition;
+  if (shape === "none" || shape === "service") return null;
   if (PERCENT_METRICS.has(metric)) return between(value, 1, 100) ? null : "a threshold between 1 and 100%";
-  if (metric === "disk_forecast_days") return whole(value, 1, 365) ? null : "a whole number of days between 1 and 365";
+  if (metric === "disk_forecast_days" || metric === "reboot_pending_days")
+    return whole(value, 1, 365) ? null : "a whole number of days between 1 and 365";
+  if (metric === "critical_events") return whole(value, 0, 1000) ? null : "a whole number of events, 0 or more";
+  if (metric === "security_score") return whole(value, 1, 100) ? null : "a score between 1 and 100";
+  if (metric === "gw_ms") return between(value, 1, 60000) ? null : "a latency between 1 and 60,000 ms";
   return between(value, 1, 100000) ? null : "a threshold between 1 and 100,000 Mb/s";
+}
+
+function targetProblem(target: string): string | null {
+  const names = serviceNames(target);
+  if (!names.length) return "name at least one service";
+  const bad = names.find((n) => !SERVICE_NAME.test(n));
+  if (bad) return `"${bad}" is not a service name`;
+  if (names.join(", ").length > 512) return "the service list is too long";
+  return null;
 }
 
 export function validate(draft: PolicyDraft): DraftProblems {
@@ -292,8 +408,12 @@ export function validate(draft: PolicyDraft): DraftProblems {
     seen.add(key);
     const threshold = thresholdProblem(m.metric, toNumber(m.threshold));
     if (threshold) row.threshold = `${label}: ${threshold}.`;
-    if (m.metric !== "disk_forecast_days" && !between(toNumber(m.durationMin), 0, LIMITS.durationMin.max))
+    if (METRIC_SHAPE[m.metric].duration && !between(toNumber(m.durationMin), 0, LIMITS.durationMin.max))
       row.duration = `${label}: duration 0–${LIMITS.durationMin.max} minutes.`;
+    if (m.metric === "service") {
+      const target = targetProblem(m.target);
+      if (target) row.target = `${label}: ${target}.`;
+    }
     if (Object.keys(row).length) {
       problems.monitors[m.rowId] = row;
       problems.list.push(...(Object.values(row) as string[]));

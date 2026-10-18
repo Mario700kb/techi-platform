@@ -22,4 +22,9 @@ class DeviceInventory(Base):
     # app.schemas.security_posture.SecurityPosture, and when the agent read it.
     security_json = Column(Text, nullable=True)
     security_collected_at = Column(DateTime, nullable=True)
+    # Device health (agent >= 2.1.33): the normalised JSON of
+    # app.schemas.device_health.DeviceHealth — physical disks, pending restart,
+    # critical System events (merged, 7 days) — and when it was stored.
+    health_json = Column(Text, nullable=True)
+    health_collected_at = Column(DateTime, nullable=True)
     collected_at = Column(DateTime, nullable=False, default=utcnow)

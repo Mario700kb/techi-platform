@@ -39,7 +39,9 @@ _cache_lock = threading.Lock()
 _cache: Tuple[float, List[dict]] = (0.0, [])
 
 # Server-side monitors: the platform evaluates these, the agent skips them.
-SERVER_METRICS = {"disk_forecast_days", "no_data"}
+SERVER_METRICS = {
+    "disk_forecast_days", "no_data", "disk_health", "critical_events", "reboot_pending_days", "security_score",
+}
 
 FALLBACK = EffectivePolicy(
     version="0", sample_seconds=60, upload_seconds=900, buffer_mb=50, keep_days=7, monitors=[], policies=[],

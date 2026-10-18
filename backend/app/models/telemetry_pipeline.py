@@ -11,7 +11,7 @@ days, hourly points 13 months.
 On PostgreSQL telemetry_samples is partitioned by day (the migration creates
 it so); an expired day is dropped in one step instead of deleted row by row.
 """
-from sqlalchemy import JSON, BigInteger, Boolean, Column, DateTime, Float, ForeignKey, Index, Integer, SmallInteger, String, Text
+from sqlalchemy import JSON, REAL, BigInteger, Boolean, Column, DateTime, Float, ForeignKey, Index, Integer, SmallInteger, String, Text
 
 from app.core.time import utcnow_naive
 from app.db.base import Base
@@ -34,6 +34,19 @@ class TelemetrySample(Base):
     uptime_s = Column(BigInteger, nullable=True)
     disks = Column(JSON, nullable=True)  # [{"mount": "C:", "used_pct": 54.2, "free_gb": 108.5, "total_gb": 237.9}]
     source = Column(SmallInteger, nullable=False, default=SOURCE_AGENT)
+    # Agent 2.1.33: disk activity (busiest volume's busy %, its average queue,
+    # bytes/s read and written over all volumes), network quality (round trip
+    # and loss to the default gateway, TCP connect time to the platform) and,
+    # only in a busy minute (CPU >= 15% or memory >= 80%), the top processes
+    # [{"n": "sqlservr.exe", "c": 41.5, "m": 6120.0}]. REAL: 4 bytes is plenty.
+    disk_busy = Column(REAL, nullable=True)
+    disk_queue = Column(REAL, nullable=True)
+    disk_read_bps = Column(REAL, nullable=True)
+    disk_write_bps = Column(REAL, nullable=True)
+    gw_ms = Column(REAL, nullable=True)
+    gw_loss = Column(REAL, nullable=True)
+    wan_ms = Column(REAL, nullable=True)
+    top = Column(JSON, nullable=True)
 
 
 class _Rollup:
@@ -53,6 +66,21 @@ class _Rollup:
     net_tx_max = Column(Float, nullable=True)
     disk_max = Column(Float, nullable=True)  # fullest disk, used %
     disks = Column(JSON, nullable=True)  # per mount: last used %, free and total GB
+    disk_busy_avg = Column(REAL, nullable=True)
+    disk_busy_max = Column(REAL, nullable=True)
+    disk_queue_avg = Column(REAL, nullable=True)
+    disk_queue_max = Column(REAL, nullable=True)
+    disk_read_avg = Column(REAL, nullable=True)
+    disk_read_max = Column(REAL, nullable=True)
+    disk_write_avg = Column(REAL, nullable=True)
+    disk_write_max = Column(REAL, nullable=True)
+    gw_ms_avg = Column(REAL, nullable=True)
+    gw_ms_max = Column(REAL, nullable=True)
+    gw_loss_avg = Column(REAL, nullable=True)
+    gw_loss_max = Column(REAL, nullable=True)
+    wan_ms_avg = Column(REAL, nullable=True)
+    wan_ms_max = Column(REAL, nullable=True)
+    top = Column(JSON, nullable=True)  # the top processes of the bucket's busiest minute
 
 
 class TelemetryRollup5m(_Rollup, Base):

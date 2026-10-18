@@ -1,5 +1,10 @@
 import type { Page } from "@playwright/test";
-import { metricsFixture, monitoringFixture } from "../src/components/__tests__/monitoringFixtures";
+import {
+  metrics233Fixture,
+  metricsFixture,
+  monitoring233Fixture,
+  monitoringFixture,
+} from "../src/components/__tests__/monitoringFixtures";
 import { fakePowerShell, mockPowerShellSession, mockScripts } from "./fakePowerShell";
 import { DEVICES } from "./mockApi";
 import { expect, test } from "./test";
@@ -149,4 +154,31 @@ test("the drawer is wide enough for every tab on a laptop screen", async ({ page
   const last = await page.getByRole("tab", { name: "Timeline" }).boundingBox();
   expect((last?.x ?? 0) + (last?.width ?? 0)).toBeLessThanOrEqual((box?.x ?? 0) + (box?.width ?? 0));
   await panel.screenshot({ path: testInfo.outputPath("drawer-1440.png") });
+});
+
+test("an agent 2.1.33 device shows availability, disk activity, network quality, processes and health", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "the drawer is the desktop device view");
+  await mockDevice(page);
+  await page.route("**/api/v1/devices/1/metrics?**", (route) => route.fulfill({ json: metrics233Fixture() }));
+  await page.route("**/api/v1/devices/1/monitoring", (route) => route.fulfill({ json: monitoring233Fixture() }));
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openReception(page);
+  await page.getByRole("tab", { name: "Monitoring" }).click();
+
+  const panel = page.getByTestId("device-monitoring");
+  await expect(panel.getByRole("region", { name: "Availability" })).toBeVisible();
+  await expect(panel.getByRole("img", { name: "Disk busy time over time" })).toBeVisible();
+  await expect(panel.getByRole("img", { name: "Latency to the gateway and the platform over time" })).toBeVisible();
+  await expect(panel.getByTestId("top-processes")).toBeVisible();
+  await expect(panel.getByRole("region", { name: "Physical disk health" }).getByText("Failing")).toBeVisible();
+  await expect(panel.getByRole("region", { name: "System health" }).getByText("Restart pending")).toBeVisible();
+
+  // Nothing in the tab is wider than the drawer.
+  const drawer = page.locator(".th-drawer-panel");
+  expect(await drawer.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
+
+  await page.setViewportSize({ width: 1440, height: 4200 });
+  await panel.screenshot({ path: testInfo.outputPath("monitoring-233.png") });
 });

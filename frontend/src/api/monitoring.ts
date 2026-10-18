@@ -4,7 +4,24 @@
 import { fetchJson } from "./client";
 
 export type MetricsRange = "1h" | "24h" | "7d" | "30d" | "13mo";
-export type MonitorMetric = "cpu" | "mem" | "disk" | "net_rx_mbps" | "net_tx_mbps" | "disk_forecast_days" | "no_data";
+export type MonitorMetric =
+  | "cpu"
+  | "mem"
+  | "disk"
+  | "net_rx_mbps"
+  | "net_tx_mbps"
+  | "disk_forecast_days"
+  | "no_data"
+  // Agent 2.1.33, evaluated on the device every sample.
+  | "disk_busy"
+  | "gw_ms"
+  | "gw_loss"
+  | "service"
+  // Judged by the platform from the device's reports.
+  | "disk_health"
+  | "critical_events"
+  | "reboot_pending_days"
+  | "security_score";
 export type MonitorSeverity = "info" | "warning" | "critical";
 export type PolicyScope = "default" | "device_type" | "client" | "group";
 
@@ -16,6 +33,8 @@ export interface Monitor {
   duration_s: number;
   severity: MonitorSeverity;
   enabled: boolean;
+  /** Service monitors: the services to watch, comma-separated; a trailing * matches a prefix. */
+  target?: string | null;
 }
 
 export interface PolicyBody {
@@ -65,6 +84,43 @@ export interface MetricPoint {
   tx_avg: number | null;
   tx_max: number | null;
   disk_max: number | null;
+  // Agent 2.1.33 (null before).
+  disk_busy_avg?: number | null;
+  disk_busy_max?: number | null;
+  disk_queue_avg?: number | null;
+  disk_read_avg?: number | null;
+  disk_write_avg?: number | null;
+  gw_ms_avg?: number | null;
+  gw_ms_max?: number | null;
+  gw_loss_avg?: number | null;
+  gw_loss_max?: number | null;
+  wan_ms_avg?: number | null;
+  /** Busy minutes only: the top processes of the point's busiest minute. */
+  top?: TopProcess[] | null;
+}
+
+/** One of the busiest processes of a minute: name, CPU % of the machine, memory MB. */
+export interface TopProcess {
+  n: string;
+  c?: number | null;
+  m?: number | null;
+}
+
+export interface AlertSpan {
+  id: number;
+  kind: string;
+  severity: string;
+  message: string;
+  start: string;
+  end: string | null;
+}
+
+export interface ProcessPeak {
+  name: string;
+  minutes: number;
+  cpu_peak: number | null;
+  cpu_peak_at: string | null;
+  mem_peak_mb: number | null;
 }
 
 export interface DiskTrend {
@@ -76,6 +132,8 @@ export interface DiskTrend {
   days_to_90: number | null;
   days_to_full: number | null;
   history: number[];
+  /** False for a volume under 5 GB: shown, never alerted on. */
+  monitored?: boolean;
 }
 
 export interface CoverageSegment {
@@ -102,6 +160,14 @@ export interface MetricSummary {
   mem_peak: number | null;
   rx_peak: number | null;
   tx_peak: number | null;
+  disk_busy_avg?: number | null;
+  disk_busy_peak?: number | null;
+  disk_read_peak?: number | null;
+  disk_write_peak?: number | null;
+  gw_ms_avg?: number | null;
+  gw_ms_peak?: number | null;
+  gw_loss_avg?: number | null;
+  wan_ms_avg?: number | null;
 }
 
 export interface DeliveryState {
@@ -128,6 +194,12 @@ export interface DeviceMetrics {
   coverage: Coverage;
   delivery: DeliveryState | null;
   policy: EffectivePolicy;
+  /** Boots inside the range (up to 7 days back). */
+  restarts?: string[];
+  /** Monitor alerts open at some point in the range. */
+  alerts?: AlertSpan[];
+  /** Processes that were among the busiest in the range. */
+  processes?: ProcessPeak[];
 }
 
 export interface MonitorStatus {
@@ -136,15 +208,54 @@ export interface MonitorStatus {
   rule: string;
   severity: MonitorSeverity | string;
   enabled: boolean;
-  state: "ok" | "firing" | "watch" | "unknown";
+  state: "ok" | "firing" | "watch" | "unknown" | "off";
   now: string | null;
   alert_id: number | null;
+}
+
+export interface PhysicalDisk {
+  name: string;
+  media: string | null;
+  bus: string | null;
+  size_gb: number | null;
+  health: "healthy" | "warning" | "unhealthy" | "unknown" | string;
+  operational: string | null;
+  predict_failure: boolean | null;
+  temperature_c: number | null;
+  wear_pct: number | null;
+  power_on_hours: number | null;
+  read_errors: number | null;
+  write_errors: number | null;
+  /** Why it needs attention, or null. */
+  problem: string | null;
+}
+
+export interface HealthEvent {
+  at: string;
+  source: string;
+  event_id: number;
+  category: "crash" | "hardware" | "disk" | "service" | string;
+  level: "critical" | "error" | "warning" | string;
+  title: string;
+  message: string | null;
+}
+
+/** The last health report (agent 2.1.33). */
+export interface DeviceHealth {
+  collected_at: string | null;
+  disks: PhysicalDisk[];
+  reboot_pending: boolean | null;
+  reboot_reasons: string[];
+  reboot_pending_since: string | null;
+  events: HealthEvent[];
 }
 
 export interface DeviceMonitoring {
   policy: EffectivePolicy;
   monitors: MonitorStatus[];
   delivery: DeliveryState | null;
+  /** Null until the agent (2.1.33) sends its first health report. */
+  health?: DeviceHealth | null;
 }
 
 export interface HeatmapRow {
@@ -277,6 +388,14 @@ export const METRIC_LABEL: Record<MonitorMetric, string> = {
   net_tx_mbps: "Network send",
   disk_forecast_days: "Disk full forecast",
   no_data: "No data while on",
+  disk_busy: "Disk activity",
+  gw_ms: "Gateway latency",
+  gw_loss: "Packet loss",
+  service: "Services stopped",
+  disk_health: "Disk health",
+  critical_events: "Critical events",
+  reboot_pending_days: "Restart pending",
+  security_score: "Security score",
 };
 
 export const METRIC_UNIT: Record<MonitorMetric, string> = {
@@ -287,6 +406,14 @@ export const METRIC_UNIT: Record<MonitorMetric, string> = {
   net_tx_mbps: " Mb/s",
   disk_forecast_days: " days",
   no_data: "",
+  disk_busy: "%",
+  gw_ms: " ms",
+  gw_loss: "%",
+  service: "",
+  disk_health: "",
+  critical_events: "",
+  reboot_pending_days: " days",
+  security_score: "",
 };
 
 export function formatDuration(seconds: number): string {
@@ -295,6 +422,21 @@ export function formatDuration(seconds: number): string {
   if (seconds < 3600) return `${Math.round(seconds / 60)} min`;
   if (seconds < 86400) return `${+(seconds / 3600).toFixed(1)} h`;
   return `${+(seconds / 86400).toFixed(1)} d`;
+}
+
+/** Bytes per second as "12 MB/s". */
+export function formatBytesRate(bps: number | null | undefined): string {
+  if (bps == null) return "—";
+  if (bps >= 1e9) return `${(bps / 1e9).toFixed(1)} GB/s`;
+  if (bps >= 1e6) return `${(bps / 1e6).toFixed(1)} MB/s`;
+  if (bps >= 1e3) return `${Math.round(bps / 1e3)} kB/s`;
+  return `${Math.round(bps)} B/s`;
+}
+
+export function formatMs(ms: number | null | undefined): string {
+  if (ms == null) return "—";
+  if (ms < 1) return "<1 ms";
+  return ms < 10 ? `${ms.toFixed(1)} ms` : `${Math.round(ms)} ms`;
 }
 
 export function formatBits(bps: number | null | undefined): string {

@@ -36,6 +36,9 @@ logger = logging.getLogger(__name__)
 # tell "late" from "on time".
 SOURCE_AGENT_LATE = 3
 RAW_KEEP = timedelta(days=7)
+# A volume smaller than this (recovery, EFI, a small data partition) is kept
+# and shown, but never decides "the fullest disk" nor raises a disk alert.
+SMALL_VOLUME_GB = 5.0
 FUTURE_TOLERANCE = timedelta(minutes=10)
 CLOCK_CORRECT_ABOVE_MS = 2000
 
@@ -54,6 +57,24 @@ def _naive(ts: datetime) -> datetime:
 
 def _mean(values: List[float]) -> Optional[float]:
     return round(sum(values) / len(values), 2) if values else None
+
+
+def monitored_disks(disks) -> list:
+    """The volumes that count for disk monitoring: all but small ones (a
+    volume whose size is unknown counts)."""
+    return [d for d in (disks or []) if d.get("total_gb") is None or d.get("total_gb") >= SMALL_VOLUME_GB]
+
+
+# Sample column → rollup columns (average, peak).
+_EXTRA = {
+    "disk_busy": ("disk_busy_avg", "disk_busy_max"),
+    "disk_queue": ("disk_queue_avg", "disk_queue_max"),
+    "disk_read_bps": ("disk_read_avg", "disk_read_max"),
+    "disk_write_bps": ("disk_write_avg", "disk_write_max"),
+    "gw_ms": ("gw_ms_avg", "gw_ms_max"),
+    "gw_loss": ("gw_loss_avg", "gw_loss_max"),
+    "wan_ms": ("wan_ms_avg", "wan_ms_max"),
+}
 
 
 def ensure_partitions(db: Session, days_back: int = 7, days_ahead: int = 3) -> int:
@@ -109,6 +130,10 @@ class TelemetryIngestService:
                 "net_rx_bps": sample.net_rx_bps, "net_tx_bps": sample.net_tx_bps, "uptime_s": sample.uptime_s,
                 "disks": [d.model_dump() for d in sample.disks] or None,
                 "source": SOURCE_AGENT_LATE if now - ts > late_after else SOURCE_AGENT,
+                "disk_busy": sample.disk_busy, "disk_queue": sample.disk_queue,
+                "disk_read_bps": sample.disk_read_bps, "disk_write_bps": sample.disk_write_bps,
+                "gw_ms": sample.gw_ms, "gw_loss": sample.gw_loss, "wan_ms": sample.wan_ms,
+                "top": [t.model_dump(exclude_none=True) for t in sample.top] or None,
             })
 
         stored = self._insert(rows)
@@ -231,6 +256,11 @@ class TelemetryIngestService:
             "disk_max": peak("disk_max"),
             "disks": parts[-1].disks,
         }
+        for avg_col, max_col in _EXTRA.values():
+            values[avg_col] = weighted(avg_col)
+            values[max_col] = peak(max_col)
+        busiest = max((p for p in parts if p.top), key=lambda p: p.cpu_max or 0, default=None)
+        values["top"] = busiest.top if busiest else None
         self._upsert(TelemetryRollup1h, device_id, hour, values)
 
     @staticmethod
@@ -239,9 +269,18 @@ class TelemetryIngestService:
             return [getattr(s, attr) for s in samples if getattr(s, attr) is not None]
 
         cpu, mem, rx, tx = col("cpu"), col("mem"), col("net_rx_bps"), col("net_tx_bps")
-        disk_peaks = [max(d.get("used_pct", 0) for d in s.disks) for s in samples if s.disks]
+        disk_peaks = [max(d.get("used_pct", 0) for d in monitored_disks(s.disks)) for s in samples
+                      if monitored_disks(s.disks)]
         last_disks = next((s.disks for s in reversed(samples) if s.disks), None)
+        extra = {}
+        for column, (avg_col, max_col) in _EXTRA.items():
+            values = col(column)
+            extra[avg_col] = _mean(values)
+            extra[max_col] = max(values) if values else None
+        busiest = max((s for s in samples if s.top), key=lambda s: s.cpu or 0, default=None)
+        extra["top"] = busiest.top if busiest else None
         return {
+            **extra,
             "samples": len(samples),
             "late": sum(1 for s in samples if s.source == SOURCE_AGENT_LATE),
             "cpu_avg": _mean(cpu), "cpu_min": min(cpu) if cpu else None, "cpu_max": max(cpu) if cpu else None,

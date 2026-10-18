@@ -62,6 +62,8 @@ INVENTORY_COLUMNS = {
     "patch_json": "TEXT",
     "security_json": "TEXT",
     "security_collected_at": "DATETIME",
+    "health_json": "TEXT",
+    "health_collected_at": "DATETIME",
 }
 
 OPERATOR_COLUMNS = {

@@ -26,8 +26,10 @@ import {
   devicesWord,
   DraftProblems,
   LIMITS,
+  METRIC_SHAPE,
   METRICS,
   MonitorDraft,
+  NEEDS_AGENT,
   newMonitor,
   overriddenBy,
   PolicyDraft,
@@ -45,7 +47,9 @@ const tone = (value: string) => ({ "--onb-tone": value }) as CSSProperties;
 const METRIC_OPTIONS: SelectOption<MonitorMetric>[] = METRICS.map((m) => ({
   value: m,
   label: METRIC_LABEL[m],
-  hint: SERVER_METRICS.has(m) ? "Checked by the platform" : "Checked on the device",
+  hint: `${SERVER_METRICS.has(m) ? "Checked by the platform" : "Checked on the device"}${
+    NEEDS_AGENT[m] ? ` · agent ${NEEDS_AGENT[m]}+` : ""
+  }`,
 }));
 const OP_OPTIONS: SelectOption<">" | "<">[] = [
   { value: ">", label: ">", hint: "Above" },
@@ -177,12 +181,29 @@ function SectionHead({ title, hint, aside }: { title: string; hint?: string; asi
 
 /** The read-only words for a monitor's condition and duration. */
 function conditionText(m: MonitorDraft): string {
-  if (m.metric === "no_data") return "No uploads";
-  return `${m.metric === "disk_forecast_days" ? "<" : m.op} ${m.threshold}${METRIC_UNIT[m.metric]}`;
+  const shape = METRIC_SHAPE[m.metric];
+  if (shape.condition === "none") return shape.words ?? "—";
+  if (shape.condition === "service") return m.target || "—";
+  const op = shape.condition === "below" ? "<" : shape.condition === "above" ? ">" : m.op;
+  const suffix = m.metric === "critical_events" ? " in 24 h" : "";
+  return `${op} ${m.threshold}${METRIC_UNIT[m.metric]}${suffix}`;
 }
 function durationText(m: MonitorDraft): string {
-  if (m.metric === "disk_forecast_days") return "—";
+  if (!METRIC_SHAPE[m.metric].duration) return "—";
   return formatDuration(Math.round(Number(m.durationMin) * 60));
+}
+
+/** The fixed comparison of a metric whose direction cannot be chosen. */
+function FixedOp({ op, title }: { op: "<" | ">"; title?: string }) {
+  return (
+    <span
+      className="flex h-[34px] w-[58px] flex-none items-center justify-center rounded-lg border font-mono text-[13px]"
+      style={{ color: "var(--th-text-muted)", borderColor: "var(--th-border-subtle)" }}
+      title={title}
+    >
+      {op}
+    </span>
+  );
 }
 
 /**
@@ -279,6 +300,7 @@ function MonitorRow({
 }) {
   const n = index + 1;
   const name = METRIC_LABEL[row.metric];
+  const shape = METRIC_SHAPE[row.metric];
 
   if (!canManage) {
     return (
@@ -292,8 +314,9 @@ function MonitorRow({
         <td>
           <Cell>
             <span
-              className={`text-[13px] ${row.metric === "no_data" ? "" : "font-mono"}`}
+              className={`truncate text-[13px] ${METRIC_SHAPE[row.metric].condition === "none" ? "" : "font-mono"}`}
               style={{ color: "var(--th-text-secondary)" }}
+              title={conditionText(row)}
             >
               {conditionText(row)}
             </span>
@@ -345,21 +368,26 @@ function MonitorRow({
       </td>
       <td>
         <Cell>
-          {row.metric === "no_data" ? (
+          {shape.condition === "none" ? (
             <span className="text-[13px]" style={{ color: "var(--th-text-muted)" }}>
-              No uploads
+              {shape.words}
             </span>
+          ) : shape.condition === "service" ? (
+            <label className="th-policy-input !max-w-none w-full" data-invalid={problems?.target ? true : undefined}>
+              <input
+                type="text"
+                value={row.target}
+                spellCheck={false}
+                placeholder="MSSQL*, vmms, Spooler"
+                aria-label={`Monitor ${n} services`}
+                aria-invalid={problems?.target ? true : undefined}
+                title="Service names, comma-separated; a trailing * matches a prefix. Only services set to start automatically count."
+                onChange={(e) => onChange({ ...row, target: e.target.value })}
+              />
+            </label>
           ) : (
             <>
-              {row.metric === "disk_forecast_days" ? (
-                <span
-                  className="flex h-[34px] w-[58px] flex-none items-center justify-center rounded-lg border font-mono text-[13px]"
-                  style={{ color: "var(--th-text-muted)", borderColor: "var(--th-border-subtle)" }}
-                  title="Full within"
-                >
-                  &lt;
-                </span>
-              ) : (
+              {shape.condition === "op" ? (
                 <div className="w-[58px] flex-none">
                   <Select
                     value={row.op}
@@ -369,13 +397,15 @@ function MonitorRow({
                     onChange={(op) => onChange({ ...row, op })}
                   />
                 </div>
+              ) : (
+                <FixedOp op={shape.condition === "below" ? "<" : ">"} title={shape.words} />
               )}
               <UnitInput
                 value={row.threshold}
-                unit={METRIC_UNIT[row.metric]}
+                unit={row.metric === "critical_events" ? "/ 24 h" : METRIC_UNIT[row.metric]}
                 label={`Monitor ${n} threshold`}
                 invalid={!!problems?.threshold}
-                min={1}
+                min={row.metric === "critical_events" ? 0 : 1}
                 onChange={(threshold) => onChange({ ...row, threshold })}
               />
             </>
@@ -384,7 +414,7 @@ function MonitorRow({
       </td>
       <td>
         <Cell>
-          {row.metric === "disk_forecast_days" ? (
+          {!shape.duration ? (
             <span className="text-[13px]" style={{ color: "var(--th-text-faint)" }}>
               —
             </span>

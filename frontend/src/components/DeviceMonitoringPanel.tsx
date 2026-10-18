@@ -1,8 +1,21 @@
 import React, { useEffect, useState } from "react";
-import { Activity, AlertTriangle, Cpu, HardDrive, MemoryStick, Network, RotateCcw, Send } from "lucide-react";
+import {
+  Activity,
+  AlertTriangle,
+  Cpu,
+  Gauge,
+  HardDrive,
+  MemoryStick,
+  Network,
+  RotateCcw,
+  Send,
+  Waypoints,
+} from "lucide-react";
 import {
   formatBits,
+  formatBytesRate,
   formatDuration,
+  formatMs,
   getDeviceMetrics,
   getDeviceMonitoring,
   METRIC_LABEL,
@@ -10,6 +23,7 @@ import {
   type DeviceMetrics,
   type DeviceMonitoring,
   type DiskTrend,
+  type MetricPoint,
   type MetricsRange,
   type MonitorMetric,
   type MonitorStatus,
@@ -18,6 +32,7 @@ import { useCachedQuery } from "../hooks/useCachedQuery";
 import { metricTone } from "../utils/deviceStatus";
 import { formatLocalDateTime, timeAgo } from "../utils/time";
 import {
+  type ChartBand,
   COVERAGE_KINDS,
   CoverageBar,
   pct,
@@ -29,6 +44,14 @@ import {
   TimeChart,
 } from "./MetricCharts";
 import { Button } from "./ui";
+import {
+  AvailabilityPanel,
+  Caption,
+  DiskHealthPanel,
+  MonitoringPanel as Panel,
+  SystemHealthPanel,
+  TopProcessesPanel,
+} from "./monitoring/DeviceHealthPanels";
 
 const RANGES: MetricsRange[] = ["1h", "24h", "7d", "30d", "13mo"];
 const REFRESH_MS = 60_000;
@@ -84,50 +107,83 @@ function clockText(ms: number | null): string {
   return `${sign}${Math.abs(s) < 10 ? Math.abs(s).toFixed(1) : Math.round(Math.abs(s))} s`;
 }
 
-function Panel({
-  title,
-  icon: Icon,
-  aside,
-  children,
-  label,
-}: {
-  title: string;
-  icon?: typeof Cpu;
-  aside?: React.ReactNode;
-  children: React.ReactNode;
-  label?: string;
-}) {
+// Alert kinds drawn over each chart (backend AlertKind values).
+const CHART_ALERTS = {
+  cpu: ["high_cpu"],
+  mem: ["high_ram"],
+  diskIO: ["disk_busy"],
+  net: ["high_network"],
+  quality: ["network_latency", "packet_loss"],
+} as const;
+
+const SEVERITY_TONE: Record<string, string> = {
+  critical: "var(--th-status-critical)",
+  warning: "var(--th-status-warning)",
+  info: "var(--th-status-info)",
+};
+
+function bandsFor(metrics: DeviceMetrics, kinds: readonly string[]): ChartBand[] {
+  return (metrics.alerts ?? [])
+    .filter((a) => kinds.includes(a.kind))
+    .map((a) => ({
+      start: a.start,
+      end: a.end,
+      label: `Alert #${a.id}: ${a.message}`,
+      tone: SEVERITY_TONE[a.severity] ?? SEVERITY_TONE.warning,
+    }));
+}
+
+/** Coloured keys for a chart with more than one line. */
+function Legend({ items }: { items: Array<{ label: string; tone: string }> }) {
   return (
-    <section className="th-drawer-card mb-3" aria-label={label ?? title}>
-      <div className="mb-3 flex min-h-[20px] items-center justify-between gap-3">
-        <h3 className="flex items-center gap-1.5 text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
-          {Icon && <Icon className="h-3.5 w-3.5" style={{ color: "var(--th-text-muted)" }} aria-hidden="true" />}
-          {title}
-        </h3>
-        {aside && (
-          <div
-            className="min-w-0 truncate text-right text-[12px] tabular-nums"
-            style={{ color: "var(--th-text-muted)" }}
-          >
-            {aside}
-          </div>
-        )}
-      </div>
-      {children}
-    </section>
+    <span className="inline-flex items-center gap-3">
+      {items.map((item) => (
+        <span key={item.label} className="inline-flex items-center gap-1.5">
+          <i className="inline-block h-2 w-2 rounded-sm" style={{ background: item.tone }} aria-hidden="true" />
+          {item.label}
+        </span>
+      ))}
+    </span>
   );
 }
 
-function Caption({ children }: { children: React.ReactNode }) {
+function SubChart({ title, legend, children }: { title: string; legend?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <p className="mt-1.5 text-[11px]" style={{ color: "var(--th-text-faint)" }}>
+    <div className="mt-3">
+      <div
+        className="mb-1 flex items-center justify-between gap-3 text-[12px]"
+        style={{ color: "var(--th-text-muted)" }}
+      >
+        <span>{title}</span>
+        {legend}
+      </div>
       {children}
-    </p>
+    </div>
+  );
+}
+
+/** The busiest processes of the hovered minute, for the CPU and memory tooltips. */
+function topTip(p: MetricPoint) {
+  if (!p.top?.length) return null;
+  return (
+    <span className="mt-0.5 flex flex-col gap-0.5" data-testid="tip-top">
+      {p.top.slice(0, 3).map((proc) => (
+        <span key={proc.n} className="flex items-center justify-between gap-3">
+          <span className="truncate">{proc.n}</span>
+          <span className="tabular-nums" style={{ color: "var(--th-text-muted)" }}>
+            {proc.c != null ? `${Math.round(proc.c)}%` : ""}
+            {proc.m != null
+              ? ` · ${proc.m >= 1024 ? `${(proc.m / 1024).toFixed(1)} GB` : `${Math.round(proc.m)} MB`}`
+              : ""}
+          </span>
+        </span>
+      ))}
+    </span>
   );
 }
 
 function DiskRow({ disk }: { disk: DiskTrend }) {
-  const tone = metricTone("disk", disk.used_pct);
+  const tone = disk.monitored === false ? "var(--th-text-faint)" : metricTone("disk", disk.used_pct);
   const growth = disk.growth_gb_per_day;
   const forecast: string[] = [];
   if (disk.days_to_90 != null && disk.used_pct < 90) forecast.push(`90% in ${Math.round(disk.days_to_90)} days`);
@@ -163,7 +219,9 @@ function DiskRow({ disk }: { disk: DiskTrend }) {
           <i style={{ width: `${Math.min(100, disk.used_pct)}%`, "--meter-tone": tone } as React.CSSProperties} />
         </div>
         <p className="mt-1 truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-          {[growthText, ...forecast].filter(Boolean).join(" · ") || "Not enough history for a forecast yet"}
+          {disk.monitored === false
+            ? "Small volume (under 5 GB) · shown, not alerted on"
+            : [growthText, ...forecast].filter(Boolean).join(" · ") || "Not enough history for a forecast yet"}
         </p>
       </div>
       <div title="Used % per day, last days">
@@ -190,7 +248,6 @@ function MonitorRow({ m, onShowAlerts }: { m: MonitorStatus; onShowAlerts?: () =
         <p className="truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
           {m.rule}
           {m.severity ? ` · ${m.severity}` : ""}
-          {!m.enabled ? " · off" : ""}
         </p>
       </div>
       <div className="text-right text-[12px] tabular-nums" style={{ color: "var(--th-text-secondary)" }}>
@@ -303,6 +360,17 @@ export default function DeviceMonitoringPanel({
     const m = metrics?.policy.monitors.find((x) => x.metric === metric && x.enabled && x.op === ">");
     return m ? { value: m.threshold, label: `alert ${m.threshold}% · ${formatDuration(m.duration_s)}` } : null;
   };
+  const thresholdOf = (metric: string, unit: string) => {
+    const m = metrics?.policy.monitors.find((x) => x.metric === metric && x.enabled && x.op === ">");
+    return m ? { value: m.threshold, label: `alert ${m.threshold}${unit} · ${formatDuration(m.duration_s)}` } : null;
+  };
+  const restarts = (metrics?.restarts ?? []).map((t) => ({
+    t,
+    label: `Restarted ${formatLocalDateTime(t, { hour: "2-digit", minute: "2-digit" })}`,
+  }));
+  const hasDiskIO = metrics?.points.some((p) => p.disk_busy_avg != null) ?? false;
+  const hasQuality = metrics?.points.some((p) => p.gw_ms_avg != null || p.wan_ms_avg != null) ?? false;
+  const hasLoss = metrics?.points.some((p) => (p.gw_loss_max ?? 0) > 0) ?? false;
   const resWord = metrics ? (RESOLUTION_WORD[metrics.resolution] ?? metrics.resolution) : "";
   const hasPoints = (metrics?.points.length ?? 0) > 0;
   const policyNames = monitoring?.policy.policies ?? metrics?.policy.policies ?? [];
@@ -376,6 +444,14 @@ export default function DeviceMonitoringPanel({
         </div>
       ) : (
         <>
+          {cov && cov.segments.length > 0 && (
+            <AvailabilityPanel
+              segments={cov.segments}
+              restarts={metrics.restarts ?? []}
+              start={metrics.start}
+              end={metrics.end}
+            />
+          )}
           <Panel
             title="CPU"
             icon={Cpu}
@@ -400,6 +476,9 @@ export default function DeviceMonitoringPanel({
               format={(v) => `${Math.round(v)}%`}
               threshold={thresholdFor("cpu")}
               off={off}
+              markers={restarts}
+              bands={bandsFor(metrics, CHART_ALERTS.cpu)}
+              tipExtra={topTip}
               height={132}
               series={[
                 { key: "cpu", label: "CPU", tone: "var(--th-series-2)", avg: (p) => p.cpu_avg, max: (p) => p.cpu_max },
@@ -423,6 +502,9 @@ export default function DeviceMonitoringPanel({
               format={(v) => `${Math.round(v)}%`}
               threshold={thresholdFor("mem")}
               off={off}
+              markers={restarts}
+              bands={bandsFor(metrics, CHART_ALERTS.mem)}
+              tipExtra={topTip}
               height={108}
               series={[
                 {
@@ -435,6 +517,78 @@ export default function DeviceMonitoringPanel({
               ]}
             />
           </Panel>
+
+          {hasDiskIO && (
+            <Panel
+              title="Disk activity"
+              icon={Gauge}
+              aside={
+                s && (
+                  <>
+                    busy avg {pct(s.disk_busy_avg)} · peak {pct(s.disk_busy_peak)} · read peak{" "}
+                    {formatBytesRate(s.disk_read_peak)}
+                  </>
+                )
+              }
+            >
+              <TimeChart
+                label="Disk busy time over time"
+                points={metrics.points}
+                start={metrics.start}
+                end={metrics.end}
+                range={range}
+                resolution={metrics.resolution}
+                domainMax={100}
+                format={(v) => `${Math.round(v)}%`}
+                threshold={thresholdOf("disk_busy", "%")}
+                off={off}
+                markers={restarts}
+                bands={bandsFor(metrics, CHART_ALERTS.diskIO)}
+                height={108}
+                series={[
+                  {
+                    key: "busy",
+                    label: "Busy",
+                    tone: "var(--th-series-2)",
+                    avg: (p) => p.disk_busy_avg ?? null,
+                    max: (p) => p.disk_busy_max ?? null,
+                  },
+                ]}
+              />
+              <SubChart
+                title="Read and write"
+                legend={
+                  <Legend
+                    items={[
+                      { label: "Read", tone: "var(--th-series-2)" },
+                      { label: "Write", tone: "var(--th-series-1)" },
+                    ]}
+                  />
+                }
+              >
+                <TimeChart
+                  label="Disk read and write over time"
+                  points={metrics.points}
+                  start={metrics.start}
+                  end={metrics.end}
+                  range={range}
+                  resolution={metrics.resolution}
+                  format={formatBytesRate}
+                  axisFormat={(v) => (v === 0 ? "0" : formatBytesRate(v))}
+                  off={off}
+                  height={92}
+                  series={[
+                    { key: "read", label: "Read", tone: "var(--th-series-2)", avg: (p) => p.disk_read_avg ?? null },
+                    { key: "write", label: "Write", tone: "var(--th-series-1)", avg: (p) => p.disk_write_avg ?? null },
+                  ]}
+                />
+              </SubChart>
+              <Caption>
+                Busy: share of each minute the busiest volume had requests waiting — near 100% for long means the disk
+                is what makes the machine slow.
+              </Caption>
+            </Panel>
+          )}
 
           <Panel
             title="Network"
@@ -465,6 +619,8 @@ export default function DeviceMonitoringPanel({
                 format={formatBits}
                 axisFormat={(v) => (v === 0 ? "0" : formatBits(v))}
                 off={off}
+                markers={restarts}
+                bands={bandsFor(metrics, CHART_ALERTS.net)}
                 height={108}
                 series={[
                   { key: "rx", label: "↓ Receive", tone: "var(--th-series-2)", avg: (p) => p.rx_avg },
@@ -479,6 +635,84 @@ export default function DeviceMonitoringPanel({
               </p>
             )}
           </Panel>
+
+          {hasQuality && (
+            <Panel
+              title="Network quality"
+              icon={Waypoints}
+              aside={
+                s && (
+                  <span className="inline-flex items-center gap-3">
+                    <Legend
+                      items={[
+                        { label: `Gateway ${formatMs(s.gw_ms_avg)}`, tone: "var(--th-series-2)" },
+                        { label: `Platform ${formatMs(s.wan_ms_avg)}`, tone: "var(--th-series-1)" },
+                      ]}
+                    />
+                    <span>loss {s.gw_loss_avg != null ? `${+s.gw_loss_avg.toFixed(1)}%` : "—"}</span>
+                  </span>
+                )
+              }
+            >
+              <TimeChart
+                label="Latency to the gateway and the platform over time"
+                points={metrics.points}
+                start={metrics.start}
+                end={metrics.end}
+                range={range}
+                resolution={metrics.resolution}
+                format={formatMs}
+                axisFormat={(v) => (v === 0 ? "0" : formatMs(v))}
+                threshold={thresholdOf("gw_ms", " ms")}
+                off={off}
+                markers={restarts}
+                bands={bandsFor(metrics, CHART_ALERTS.quality)}
+                height={108}
+                series={[
+                  {
+                    key: "gw",
+                    label: "Gateway",
+                    tone: "var(--th-series-2)",
+                    avg: (p) => p.gw_ms_avg ?? null,
+                    max: (p) => p.gw_ms_max ?? null,
+                  },
+                  { key: "wan", label: "Platform", tone: "var(--th-series-1)", avg: (p) => p.wan_ms_avg ?? null },
+                ]}
+              />
+              {hasLoss ? (
+                <SubChart title="Packet loss to the gateway">
+                  <TimeChart
+                    label="Packet loss to the gateway over time"
+                    points={metrics.points}
+                    start={metrics.start}
+                    end={metrics.end}
+                    range={range}
+                    resolution={metrics.resolution}
+                    domainMax={100}
+                    format={(v) => `${Math.round(v)}%`}
+                    threshold={thresholdOf("gw_loss", "%")}
+                    off={off}
+                    height={80}
+                    series={[
+                      {
+                        key: "loss",
+                        label: "Loss",
+                        tone: "var(--th-status-critical)",
+                        avg: (p) => p.gw_loss_avg ?? null,
+                        max: (p) => p.gw_loss_max ?? null,
+                      },
+                    ]}
+                  />
+                </SubChart>
+              ) : (
+                <Caption>No packet lost to the gateway in this range.</Caption>
+              )}
+            </Panel>
+          )}
+
+          {metrics.source === "agent" && (hasDiskIO || (metrics.processes?.length ?? 0) > 0) && (
+            <TopProcessesPanel processes={metrics.processes ?? []} range={range} />
+          )}
         </>
       )}
 
@@ -501,6 +735,9 @@ export default function DeviceMonitoringPanel({
           )}
         </Panel>
       )}
+
+      {(monitoring || metrics) && <DiskHealthPanel health={monitoring?.health} />}
+      {(monitoring || metrics) && <SystemHealthPanel health={monitoring?.health} />}
 
       {metrics && cov && (
         <Panel

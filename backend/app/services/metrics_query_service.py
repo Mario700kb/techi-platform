@@ -29,6 +29,7 @@ from app.models.telemetry_pipeline import (
     TelemetrySample,
 )
 from app.schemas.telemetry_pipeline import (
+    AlertSpan,
     AttentionItem,
     ClientDeviceRow,
     ClientMonitoring,
@@ -38,16 +39,26 @@ from app.schemas.telemetry_pipeline import (
     DeviceMetrics,
     DeviceMonitoring,
     DiskTrend,
+    HealthEventView,
+    HealthView,
     HeatmapRow,
     MetricPoint,
     MetricSummary,
     MonitorStatus,
+    PhysicalDiskView,
     PipelineHealth,
+    ProcessPeak,
     StorageTier,
     TrendPoint,
 )
-from app.services.monitor_alert_service import METRIC_KIND, describe
+from app.schemas.device_health import REBOOT_REASONS
+from app.services.agent_command_service import _parse_agent_version
+from app.services.device_health import alerting_events, disks_with_problems, reboot_pending_days
+from app.services.device_inventory_service import DeviceInventoryService
+from app.services.monitor_alert_service import AGENT_METRICS_SINCE, METRIC_KIND, describe
 from app.services.monitoring_policy_service import effective_policy
+from app.services.security_posture import posture_score
+from app.services.telemetry_ingest_service import SMALL_VOLUME_GB, monitored_disks
 
 LOCAL_TZ = ZoneInfo("Europe/Tirane")
 RANGES = {
@@ -55,6 +66,28 @@ RANGES = {
     "30d": timedelta(days=30), "13mo": timedelta(days=395),
 }
 SOURCE_LATE = 3
+# A boot is a new one when the uptime puts it this far from the last.
+BOOT_JITTER = timedelta(minutes=3)
+MAX_ALERT_SPANS = 60
+MAX_PROCESSES = 8
+# Average and peak columns a point carries from the 2.1.33 samples.
+_EXTRA_POINT = {
+    "disk_busy": ("disk_busy_avg", "disk_busy_max"),
+    "disk_queue": ("disk_queue_avg", None),
+    "disk_read_bps": ("disk_read_avg", None),
+    "disk_write_bps": ("disk_write_avg", None),
+    "gw_ms": ("gw_ms_avg", "gw_ms_max"),
+    "gw_loss": ("gw_loss_avg", "gw_loss_max"),
+    "wan_ms": ("wan_ms_avg", None),
+}
+# Point field → rollup column, where the names differ.
+_ROLLUP_COLUMN = {
+    "disk_busy_avg": "disk_busy_avg", "disk_busy_max": "disk_busy_max", "disk_queue_avg": "disk_queue_avg",
+    "disk_read_avg": "disk_read_avg", "disk_write_avg": "disk_write_avg", "gw_ms_avg": "gw_ms_avg",
+    "gw_ms_max": "gw_ms_max", "gw_loss_avg": "gw_loss_avg", "gw_loss_max": "gw_loss_max", "wan_ms_avg": "wan_ms_avg",
+}
+_AVG_FIELDS = ("disk_busy_avg", "disk_queue_avg", "disk_read_avg", "disk_write_avg", "gw_ms_avg", "gw_loss_avg", "wan_ms_avg")
+_MAX_FIELDS = ("disk_busy_max", "gw_ms_max", "gw_loss_max")
 
 
 def _pct(values: Sequence[float], q: float) -> Optional[float]:
@@ -121,6 +154,7 @@ def disk_trends(db: Session, device_id: int, days: int = 30) -> List[DiskTrend]:
             mount=mount, used_pct=round(used, 1), free_gb=disk.get("free_gb"), total_gb=total,
             growth_gb_per_day=round(growth_pct * total / 100, 2) if growth_pct is not None and total else None,
             days_to_90=days_to_90, days_to_full=days_to_full, history=history,
+            monitored=total is None or total >= SMALL_VOLUME_GB,
         ))
     return out
 
@@ -175,6 +209,56 @@ def _coverage_from_samples(samples: List[Tuple[datetime, Optional[int], int]], s
     )
 
 
+def _restarts(samples: List[Tuple[datetime, Optional[int], int]], start: datetime) -> List[datetime]:
+    """Boot times inside the range, read from each sample's uptime."""
+    boots: List[datetime] = []
+    for ts, uptime, _ in samples:
+        if uptime is None:
+            continue
+        boot = (ts - timedelta(seconds=uptime)).replace(microsecond=0)
+        if boots and abs(boot - boots[-1]) <= BOOT_JITTER:
+            continue
+        if any(abs(boot - b) <= BOOT_JITTER for b in boots):
+            continue
+        boots.append(boot)
+    return [b for b in boots if b >= start]
+
+
+def _process_peaks(points: List[MetricPoint]) -> List[ProcessPeak]:
+    """The processes that were among the busiest, most often first."""
+    seen: Dict[str, dict] = {}
+    for point in points:
+        for proc in point.top or []:
+            entry = seen.setdefault(proc.n.lower(), {"name": proc.n, "minutes": 0, "cpu": None, "at": None, "mem": None})
+            entry["minutes"] += max(1, point.samples)
+            if proc.c is not None and (entry["cpu"] is None or proc.c > entry["cpu"]):
+                entry["cpu"], entry["at"] = proc.c, point.t
+            if proc.m is not None and (entry["mem"] is None or proc.m > entry["mem"]):
+                entry["mem"] = proc.m
+    ranked = sorted(seen.values(), key=lambda e: (-(e["cpu"] or 0) * e["minutes"], -(e["mem"] or 0)))
+    return [ProcessPeak(name=e["name"], minutes=e["minutes"], cpu_peak=round(e["cpu"], 1) if e["cpu"] is not None else None,
+                        cpu_peak_at=e["at"], mem_peak_mb=round(e["mem"]) if e["mem"] is not None else None)
+            for e in ranked[:MAX_PROCESSES]]
+
+
+def _health_view(health) -> HealthView:
+    return HealthView(
+        collected_at=health.collected_at,
+        disks=[PhysicalDiskView(**d.model_dump(), problem=d.problem) for d in health.disks],
+        reboot_pending=health.reboot_pending,
+        reboot_reasons=[REBOOT_REASONS.get(r, r) for r in health.reboot_reasons],
+        reboot_pending_since=health.reboot_pending_since,
+        events=[HealthEventView(at=e.at, source=e.source, event_id=e.event_id, category=e.category or "other",
+                                level=e.level or "error", title=e.title or f"{e.source} {e.event_id}", message=e.message)
+                for e in health.events],
+    )
+
+
+def _agent_at_least(device: Device, version: Tuple[int, ...]) -> bool:
+    parsed = _parse_agent_version(device.agent_version)
+    return parsed is not None and parsed[: len(version)] >= version
+
+
 class MetricsQueryService:
     def __init__(self, db: Session):
         self.db = db
@@ -197,6 +281,7 @@ class MetricsQueryService:
             source = "heartbeat" if points else "none"
 
         coverage = Coverage(received=0, late=0, missing_minutes=0, off_minutes=0, pct=None)
+        restarts: List[datetime] = []
         if has_agent and range_key in ("1h", "24h", "7d"):
             raw = (
                 self.db.query(TelemetrySample.ts, TelemetrySample.uptime_s, TelemetrySample.source)
@@ -204,7 +289,9 @@ class MetricsQueryService:
                 .order_by(TelemetrySample.ts)
                 .all()
             )
-            coverage = _coverage_from_samples([(r[0], r[1], r[2]) for r in raw], start, now, step)
+            samples = [(r[0], r[1], r[2]) for r in raw]
+            coverage = _coverage_from_samples(samples, start, now, step)
+            restarts = _restarts(samples, start)
         elif points:
             received = sum(p.samples for p in points)
             expected = sum(p.expected for p in points)
@@ -220,6 +307,13 @@ class MetricsQueryService:
             total = sum(w for _, w in pairs)
             return round(sum(v * w for v, w in pairs) / total, 1) if total else None
 
+        def peak_of(attr: str) -> Optional[float]:
+            values = [getattr(p, attr) for p in points if getattr(p, attr) is not None]
+            return round(max(values), 1) if values else None
+
+        def avg_of(attr: str) -> Optional[float]:
+            return weighted([(getattr(p, attr), p.samples) for p in points if getattr(p, attr) is not None])
+
         summary = MetricSummary(
             cpu_avg=weighted(weights), cpu_p95=_pct(cpu_values, 0.95),
             cpu_peak=round(peak.cpu_max, 1) if peak else None, cpu_peak_at=peak.t if peak else None,
@@ -227,12 +321,38 @@ class MetricsQueryService:
             mem_peak=max((p.mem_max for p in points if p.mem_max is not None), default=None),
             rx_peak=max((p.rx_max for p in points if p.rx_max is not None), default=None),
             tx_peak=max((p.tx_max for p in points if p.tx_max is not None), default=None),
+            disk_busy_avg=avg_of("disk_busy_avg"), disk_busy_peak=peak_of("disk_busy_max"),
+            disk_read_peak=peak_of("disk_read_avg"), disk_write_peak=peak_of("disk_write_avg"),
+            gw_ms_avg=avg_of("gw_ms_avg"), gw_ms_peak=peak_of("gw_ms_max"),
+            gw_loss_avg=avg_of("gw_loss_avg"), wan_ms_avg=avg_of("wan_ms_avg"),
         )
         return DeviceMetrics(
             range=range_key, resolution=resolution, source=source, start=start, end=now, points=points,
             summary=summary, disks=disk_trends(self.db, device.id) if has_agent else [],
             coverage=coverage, delivery=_delivery(self.db, device, policy.version), policy=policy,
+            restarts=restarts, alerts=self._alert_spans(device.id, start, now),
+            processes=_process_peaks(points),
         )
+
+    def _alert_spans(self, device_id: int, start: datetime, end: datetime) -> List[AlertSpan]:
+        """Monitor alerts open at any time in the range, for the charts."""
+        kinds = [k.value for k in set(METRIC_KIND.values())]
+        rows = (
+            self.db.query(DeviceAlert)
+            .filter(
+                DeviceAlert.device_id == device_id, DeviceAlert.kind.in_(kinds), DeviceAlert.created_at < end,
+                (DeviceAlert.resolved_at.is_(None)) | (DeviceAlert.resolved_at >= start),
+            )
+            .order_by(DeviceAlert.created_at.desc())
+            .limit(MAX_ALERT_SPANS)
+            .all()
+        )
+        return [AlertSpan(
+            id=a.id, kind=a.kind.value if hasattr(a.kind, "value") else str(a.kind),
+            severity=a.severity.value if hasattr(a.severity, "value") else str(a.severity),
+            message=a.message, start=max(a.created_at.replace(tzinfo=None), start),
+            end=a.resolved_at.replace(tzinfo=None) if a.resolved_at else None,
+        ) for a in reversed(rows)]
 
     def _agent_points(self, device_id: int, range_key: str, start: datetime) -> Tuple[List[MetricPoint], str]:
         if range_key in ("1h", "24h"):
@@ -241,17 +361,28 @@ class MetricsQueryService:
                 .filter(TelemetrySample.device_id == device_id, TelemetrySample.ts >= start)
                 .order_by(TelemetrySample.ts).all()
             )
-            return [MetricPoint(
-                t=r.ts, samples=1, expected=1, cpu_avg=r.cpu, cpu_max=r.cpu, mem_avg=r.mem, mem_max=r.mem,
-                rx_avg=r.net_rx_bps, rx_max=r.net_rx_bps, tx_avg=r.net_tx_bps, tx_max=r.net_tx_bps,
-                disk_max=max((d.get("used_pct", 0) for d in r.disks), default=None) if r.disks else None,
-            ) for r in rows], "1m"
+            points = []
+            for r in rows:
+                extra = {}
+                for column, (avg_field, max_field) in _EXTRA_POINT.items():
+                    value = getattr(r, column)
+                    extra[avg_field] = value
+                    if max_field:
+                        extra[max_field] = value
+                points.append(MetricPoint(
+                    t=r.ts, samples=1, expected=1, cpu_avg=r.cpu, cpu_max=r.cpu, mem_avg=r.mem, mem_max=r.mem,
+                    rx_avg=r.net_rx_bps, rx_max=r.net_rx_bps, tx_avg=r.net_tx_bps, tx_max=r.net_tx_bps,
+                    disk_max=max((d.get("used_pct", 0) for d in monitored_disks(r.disks)), default=None) if r.disks else None,
+                    top=r.top or None, **extra,
+                ))
+            return points, "1m"
         model = TelemetryRollup5m if range_key == "7d" else TelemetryRollup1h
         rows = self.db.query(model).filter(model.device_id == device_id, model.bucket >= start).order_by(model.bucket).all()
         points = [MetricPoint(
             t=r.bucket, samples=r.samples, expected=r.expected, cpu_avg=r.cpu_avg, cpu_max=r.cpu_max,
             mem_avg=r.mem_avg, mem_max=r.mem_max, rx_avg=r.net_rx_avg, rx_max=r.net_rx_max,
-            tx_avg=r.net_tx_avg, tx_max=r.net_tx_max, disk_max=r.disk_max,
+            tx_avg=r.net_tx_avg, tx_max=r.net_tx_max, disk_max=r.disk_max, top=r.top or None,
+            **{field: getattr(r, column) for field, column in _ROLLUP_COLUMN.items()},
         ) for r in rows]
         if range_key == "13mo":
             return self._fold_days(points), "1d"
@@ -275,10 +406,13 @@ class MetricsQueryService:
                 vals = [getattr(i, attr) for i in items if getattr(i, attr) is not None]
                 return max(vals) if vals else None
 
+            busiest = max((i for i in items if i.top), key=lambda i: i.cpu_max or 0, default=None)
             out.append(MetricPoint(
                 t=datetime(day.year, day.month, day.day), samples=samples, expected=sum(i.expected for i in items),
                 cpu_avg=w("cpu_avg"), cpu_max=mx("cpu_max"), mem_avg=w("mem_avg"), mem_max=mx("mem_max"),
                 rx_avg=w("rx_avg"), rx_max=mx("rx_max"), tx_avg=w("tx_avg"), tx_max=mx("tx_max"), disk_max=mx("disk_max"),
+                top=busiest.top if busiest else None,
+                **{f: w(f) for f in _AVG_FIELDS}, **{f: mx(f) for f in _MAX_FIELDS},
             ))
         return out
 
@@ -298,6 +432,7 @@ class MetricsQueryService:
 
     def device_monitoring(self, device: Device) -> DeviceMonitoring:
         policy = effective_policy(self.db, device)
+        now_ts = utcnow_naive()
         open_alerts = {
             a.kind.value if hasattr(a.kind, "value") else a.kind: a
             for a in self.db.query(DeviceAlert).filter(DeviceAlert.device_id == device.id, DeviceAlert.state == AlertState.OPEN).all()
@@ -307,47 +442,101 @@ class MetricsQueryService:
             .order_by(TelemetrySample.ts.desc()).first()
         )
         disks = disk_trends(self.db, device.id) if latest else []
+        inventory = DeviceInventoryService(self.db)
+        health = inventory.get_health(device.id)
+        posture = inventory.get_security_posture(device.id)
+        new_agent = _agent_at_least(device, AGENT_METRICS_SINCE)
+
         statuses = []
         for monitor in policy.monitors:
             kind = METRIC_KIND.get(monitor.metric)
             alert = open_alerts.get(kind.value) if kind else None
-            value: Optional[float] = None
-            now_text: Optional[str] = None
-            if latest is not None:
-                if monitor.metric == "cpu":
-                    value = latest.cpu
-                elif monitor.metric == "mem":
-                    value = latest.mem
-                elif monitor.metric == "disk" and latest.disks:
-                    value = max(d.get("used_pct", 0) for d in latest.disks)
-                elif monitor.metric == "net_rx_mbps" and latest.net_rx_bps is not None:
-                    value = latest.net_rx_bps / 1e6
-                elif monitor.metric == "net_tx_mbps" and latest.net_tx_bps is not None:
-                    value = latest.net_tx_bps / 1e6
-                elif monitor.metric == "disk_forecast_days":
-                    days = [d.days_to_full for d in disks if d.days_to_full is not None]
-                    value = min(days) if days else None
-                    now_text = f"{value:.0f} days" if value is not None else "stable"
-                elif monitor.metric == "no_data":
-                    now_text = "arriving"
-            if now_text is None and value is not None:
-                unit = "%" if monitor.metric in ("cpu", "mem", "disk") else " Mb/s"
-                now_text = f"now {value:.0f}{unit}"
-            if alert is not None:
+            value, now_text, known = self._monitor_now(monitor, latest, disks, health, posture, new_agent, now_ts)
+            if not monitor.enabled:
+                state = "off"
+            elif alert is not None:
                 state = "firing"
-            elif value is not None and monitor.metric not in ("disk_forecast_days",):
+            elif not known:
+                state = "unknown"
+            elif value is not None and monitor.metric in ("cpu", "mem", "disk", "net_rx_mbps", "net_tx_mbps",
+                                                         "disk_busy", "gw_ms", "gw_loss"):
                 near = monitor.threshold * (0.95 if monitor.op == ">" else 1.05)
                 state = "watch" if (monitor.op == ">" and value >= near) or (monitor.op == "<" and value <= near) else "ok"
-            elif latest is None:
-                state = "unknown"
             else:
                 state = "ok"
             statuses.append(MonitorStatus(
                 key=monitor.key, metric=monitor.metric, rule=describe(monitor), severity=monitor.severity,
-                enabled=monitor.enabled, state=state if monitor.enabled else "unknown", now=now_text,
-                alert_id=alert.id if alert else None,
+                enabled=monitor.enabled, state=state, now=now_text, alert_id=alert.id if alert else None,
             ))
-        return DeviceMonitoring(policy=policy, monitors=statuses, delivery=_delivery(self.db, device, policy.version))
+        return DeviceMonitoring(
+            policy=policy, monitors=statuses, delivery=_delivery(self.db, device, policy.version),
+            health=_health_view(health) if health is not None else None,
+        )
+
+    @staticmethod
+    def _monitor_now(monitor, latest, disks, health, posture, new_agent: bool, now_ts: datetime):
+        """(value, words for "now", whether the platform knows) for one monitor."""
+        metric = monitor.metric
+        needs = "needs agent 2.1.33"
+        if metric in ("cpu", "mem", "disk", "net_rx_mbps", "net_tx_mbps", "disk_busy", "gw_ms", "gw_loss"):
+            if latest is None:
+                return None, None, False
+            value = None
+            if metric == "cpu":
+                value = latest.cpu
+            elif metric == "mem":
+                value = latest.mem
+            elif metric == "disk":
+                counted = monitored_disks(latest.disks)
+                value = max((d.get("used_pct", 0) for d in counted), default=None)
+            elif metric == "net_rx_mbps" and latest.net_rx_bps is not None:
+                value = latest.net_rx_bps / 1e6
+            elif metric == "net_tx_mbps" and latest.net_tx_bps is not None:
+                value = latest.net_tx_bps / 1e6
+            elif metric in ("disk_busy", "gw_ms", "gw_loss"):
+                value = getattr(latest, metric)
+                if value is None:
+                    return None, needs if not new_agent else "no reading yet", False
+            if value is None:
+                return None, None, True
+            unit = {"gw_ms": " ms", "net_rx_mbps": " Mb/s", "net_tx_mbps": " Mb/s"}.get(metric, "%")
+            return value, f"now {value:.0f}{unit}", True
+        if metric == "disk_forecast_days":
+            if latest is None:
+                return None, None, False
+            days = [d.days_to_full for d in disks if d.days_to_full is not None and d.monitored]
+            value = min(days) if days else None
+            return value, f"{value:.0f} days" if value is not None else "stable", True
+        if metric == "no_data":
+            return None, "arriving" if latest is not None else None, latest is not None
+        if metric == "service":
+            count = len(monitor.target.split(",")) if monitor.target else 0
+            if not new_agent:
+                return None, needs, False
+            return None, f"watching {count} service{'s' if count != 1 else ''}", True
+        if metric == "security_score":
+            if posture is None:
+                return None, "needs agent 2.1.31", False
+            score = posture_score(posture)
+            return float(score), f"score {score}", True
+        if health is None:
+            return None, needs if not new_agent else "no report yet", False
+        if metric == "disk_health":
+            problems = disks_with_problems(health)
+            if problems:
+                first = problems[0]
+                return float(len(problems)), f"{first.name}: {first.problem}", True
+            n = len(health.disks)
+            return 0.0, f"{n} disk{'s' if n != 1 else ''} healthy" if n else "no disks reported", True
+        if metric == "critical_events":
+            events = alerting_events(health, now_ts.replace(tzinfo=None))
+            return float(len(events)), f"{len(events)} in 24 h" if events else "none in 24 h", True
+        if metric == "reboot_pending_days":
+            days = reboot_pending_days(health, now_ts)
+            if days is None:
+                return 0.0, "none pending", True
+            return days, f"pending {days:.0f} day{'s' if round(days) != 1 else ''}" if days >= 1 else "pending today", True
+        return None, None, False
 
     # ── a client ────────────────────────────────────────────────────────────
 
@@ -445,6 +634,7 @@ class MetricsQueryService:
             series = hourly.get(device.id, {})
             name = device.display_name or device.hostname or f"#{device.id}"
             trends = disk_trends(self.db, device.id) if device.id in agent_ids else []
+            trends = [d for d in trends if d.monitored]
             worst_disk = max(trends, key=lambda d: d.used_pct, default=None)
             for disk in trends:
                 if disk.used_pct >= 90:

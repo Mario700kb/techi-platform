@@ -15,6 +15,7 @@ from app.platform_core.classification import classify_platform
 from app.repositories.device_repository import DeviceRepository
 from app.repositories.device_heartbeat_repository import DeviceHeartbeatRepository
 from app.schemas.agent import AgentHeartbeatPayload, DeviceHeartbeatCreate
+from app.schemas.device_health import parse_device_health
 from app.schemas.security_posture import parse_security_posture
 from app.services.remote_session_service import RemoteSessionService
 from app.schemas.device import DeviceCreate, DeviceUpdate
@@ -817,12 +818,19 @@ class DeviceHeartbeatService:
                 posture = parse_security_posture(payload.security_posture, device_id=device.id)
             else:
                 logger.info("device %d: security_posture from an unverified heartbeat ignored", device.id)
+        health = None
+        if payload.device_health is not None:
+            if verified:
+                health = parse_device_health(payload.device_health, device_id=device.id)
+            else:
+                logger.info("device %d: device_health from an unverified heartbeat ignored", device.id)
         if (
             payload.processes is None
             and payload.services is None
             and payload.software is None
             and payload.patch_status is None
             and posture is None
+            and health is None
         ):
             return
         try:
@@ -833,7 +841,14 @@ class DeviceHeartbeatService:
                 software=payload.software,
                 patch_status=payload.patch_status,
                 security_posture=posture,
+                device_health=health,
             )
+            if posture is not None or health is not None:
+                # Security score, disk health, critical events and a pending
+                # restart are judged by the platform when a report arrives.
+                from app.services.monitor_alert_service import MonitorAlertService
+
+                MonitorAlertService(self.db).evaluate_reports(device)
             if classify_platform(device.platform) == "mikrotik":
                 DeviceActivityEventService(self.db).record(
                     device_id=device.id,

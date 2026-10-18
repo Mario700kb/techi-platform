@@ -3,7 +3,9 @@ collect, and what the pages read back."""
 from datetime import datetime
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+import re
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # ── agent → platform ────────────────────────────────────────────────────────
 
@@ -19,6 +21,17 @@ class UploadDisk(BaseModel):
     total_gb: Optional[float] = Field(default=None, ge=0)
 
 
+class TopProcess(BaseModel):
+    """One of the busiest processes in a minute (agent 2.1.33): name, CPU %
+    of the whole machine over the minute, memory in MB."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    n: str = Field(min_length=1, max_length=64)
+    c: Optional[float] = Field(default=None, ge=0, le=100)
+    m: Optional[float] = Field(default=None, ge=0)
+
+
 class UploadSample(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -31,6 +44,15 @@ class UploadSample(BaseModel):
     net_tx_bps: Optional[float] = Field(default=None, ge=0)
     uptime_s: Optional[int] = Field(default=None, ge=0)
     disks: List[UploadDisk] = Field(default_factory=list, max_length=26)
+    # Agent 2.1.33.
+    disk_busy: Optional[float] = Field(default=None, ge=0, le=100)
+    disk_queue: Optional[float] = Field(default=None, ge=0, le=10000)
+    disk_read_bps: Optional[float] = Field(default=None, ge=0)
+    disk_write_bps: Optional[float] = Field(default=None, ge=0)
+    gw_ms: Optional[float] = Field(default=None, ge=0, le=60000)
+    gw_loss: Optional[float] = Field(default=None, ge=0, le=100)
+    wan_ms: Optional[float] = Field(default=None, ge=0, le=60000)
+    top: List[TopProcess] = Field(default_factory=list, max_length=5)
 
 
 class MonitorEvent(BaseModel):
@@ -81,7 +103,13 @@ class TelemetryAck(BaseModel):
 
 # ── policies ────────────────────────────────────────────────────────────────
 
-Metric = Literal["cpu", "mem", "disk", "net_rx_mbps", "net_tx_mbps", "disk_forecast_days", "no_data"]
+Metric = Literal[
+    "cpu", "mem", "disk", "net_rx_mbps", "net_tx_mbps", "disk_forecast_days", "no_data",
+    # Agent 2.1.33: evaluated on the device every sample.
+    "disk_busy", "gw_ms", "gw_loss", "service",
+    # Judged by the platform from the device's reports.
+    "disk_health", "critical_events", "reboot_pending_days", "security_score",
+]
 Severity = Literal["info", "warning", "critical"]
 
 
@@ -95,6 +123,27 @@ class Monitor(BaseModel):
     duration_s: int = Field(default=0, ge=0, le=86400)
     severity: Severity = "warning"
     enabled: bool = True
+    # "service" monitors: the services to watch, comma-separated; a trailing *
+    # matches a prefix (MSSQL$*). Only services set to start automatically count.
+    target: Optional[str] = Field(default=None, max_length=512)
+
+    @field_validator("target", mode="before")
+    @classmethod
+    def _target(cls, value):
+        if value is None:
+            return None
+        names = [n.strip() for n in str(value).split(",")]
+        names = [n for n in names if n]
+        for name in names:
+            if len(name) > 80 or not re.fullmatch(r"[A-Za-z0-9_.$ -]+\*?", name):
+                raise ValueError(f"Not a service name: {name}")
+        return ", ".join(dict.fromkeys(names)) or None
+
+    @model_validator(mode="after")
+    def _service_needs_names(self):
+        if self.metric == "service" and not self.target:
+            raise ValueError("A service monitor needs at least one service name")
+        return self
 
 
 class PolicyBody(BaseModel):
@@ -153,6 +202,19 @@ class MetricPoint(BaseModel):
     tx_avg: Optional[float] = None
     tx_max: Optional[float] = None
     disk_max: Optional[float] = None
+    # Agent 2.1.33 (null before).
+    disk_busy_avg: Optional[float] = None
+    disk_busy_max: Optional[float] = None
+    disk_queue_avg: Optional[float] = None
+    disk_read_avg: Optional[float] = None
+    disk_write_avg: Optional[float] = None
+    gw_ms_avg: Optional[float] = None
+    gw_ms_max: Optional[float] = None
+    gw_loss_avg: Optional[float] = None
+    gw_loss_max: Optional[float] = None
+    wan_ms_avg: Optional[float] = None
+    # Busy minutes only: the top processes of the point's busiest minute.
+    top: Optional[List[TopProcess]] = None
 
 
 class DiskTrend(BaseModel):
@@ -164,6 +226,9 @@ class DiskTrend(BaseModel):
     days_to_90: Optional[float] = None
     days_to_full: Optional[float] = None
     history: List[float] = Field(default_factory=list)  # daily used %, oldest first
+    # A volume under 5 GB (recovery, EFI, a small data partition) is shown but
+    # raises no disk alert: a 1 GB partition at 90% is not a problem.
+    monitored: bool = True
 
 
 class CoverageSegment(BaseModel):
@@ -190,6 +255,35 @@ class MetricSummary(BaseModel):
     mem_peak: Optional[float] = None
     rx_peak: Optional[float] = None
     tx_peak: Optional[float] = None
+    disk_busy_avg: Optional[float] = None
+    disk_busy_peak: Optional[float] = None
+    disk_read_peak: Optional[float] = None
+    disk_write_peak: Optional[float] = None
+    gw_ms_avg: Optional[float] = None
+    gw_ms_peak: Optional[float] = None
+    gw_loss_avg: Optional[float] = None
+    wan_ms_avg: Optional[float] = None
+
+
+class AlertSpan(BaseModel):
+    """An alert that was open during the range, drawn over its chart."""
+
+    id: int
+    kind: str
+    severity: str
+    message: str
+    start: datetime
+    end: Optional[datetime] = None  # still open
+
+
+class ProcessPeak(BaseModel):
+    """A process that was among the busiest in the range."""
+
+    name: str
+    minutes: int  # minutes (or points) it was among the top
+    cpu_peak: Optional[float] = None
+    cpu_peak_at: Optional[datetime] = None
+    mem_peak_mb: Optional[float] = None
 
 
 class DeliveryState(BaseModel):
@@ -216,6 +310,36 @@ class DeviceMetrics(BaseModel):
     coverage: Coverage
     delivery: Optional[DeliveryState] = None
     policy: EffectivePolicy
+    # Boots inside the range (from the samples' uptime; up to 7 days back).
+    restarts: List[datetime] = Field(default_factory=list)
+    alerts: List[AlertSpan] = Field(default_factory=list)
+    processes: List[ProcessPeak] = Field(default_factory=list)
+
+
+class PhysicalDiskView(BaseModel):
+    name: str
+    media: Optional[str] = None
+    bus: Optional[str] = None
+    size_gb: Optional[float] = None
+    health: str
+    operational: Optional[str] = None
+    predict_failure: Optional[bool] = None
+    temperature_c: Optional[int] = None
+    wear_pct: Optional[int] = None
+    power_on_hours: Optional[int] = None
+    read_errors: Optional[int] = None
+    write_errors: Optional[int] = None
+    problem: Optional[str] = None
+
+
+class HealthEventView(BaseModel):
+    at: datetime
+    source: str
+    event_id: int
+    category: str
+    level: str
+    title: str
+    message: Optional[str] = None
 
 
 class MonitorStatus(BaseModel):
@@ -224,15 +348,29 @@ class MonitorStatus(BaseModel):
     rule: str
     severity: str
     enabled: bool
-    state: Literal["ok", "firing", "watch", "unknown"]
+    # off: the monitor is switched off in the policy.
+    state: Literal["ok", "firing", "watch", "unknown", "off"]
     now: Optional[str] = None
     alert_id: Optional[int] = None
+
+
+class HealthView(BaseModel):
+    """The device's last health report (agent 2.1.33), ready to show."""
+
+    collected_at: Optional[datetime] = None
+    disks: List[PhysicalDiskView] = Field(default_factory=list)
+    reboot_pending: Optional[bool] = None
+    reboot_reasons: List[str] = Field(default_factory=list)  # in words
+    reboot_pending_since: Optional[datetime] = None
+    events: List[HealthEventView] = Field(default_factory=list)
 
 
 class DeviceMonitoring(BaseModel):
     policy: EffectivePolicy
     monitors: List[MonitorStatus]
     delivery: Optional[DeliveryState] = None
+    # None until the agent (2.1.33) sends its first health report.
+    health: Optional[HealthView] = None
 
 
 class HeatmapRow(BaseModel):

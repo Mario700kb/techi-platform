@@ -14,7 +14,9 @@ from app.schemas.device_inventory import (
     ServiceSnapshot,
     SoftwareSnapshot,
 )
+from app.schemas.device_health import DeviceHealth
 from app.schemas.security_posture import SecurityPosture
+from app.services.device_health import health_from_json, merge_health
 from app.services.security_posture import posture_from_json
 
 logger = logging.getLogger(__name__)
@@ -32,8 +34,16 @@ class DeviceInventoryService:
         software: Optional[List[Dict[str, Any]]] = None,
         patch_status: Optional[Dict[str, Any]] = None,
         security_posture: Optional[SecurityPosture] = None,
+        device_health: Optional[DeviceHealth] = None,
     ) -> None:
-        if not processes and not services and not software and not patch_status and security_posture is None:
+        if (
+            not processes
+            and not services
+            and not software
+            and not patch_status
+            and security_posture is None
+            and device_health is None
+        ):
             return
         now = utcnow()
         security_json = None
@@ -41,6 +51,11 @@ class DeviceInventoryService:
         if security_posture is not None:
             security_json = security_posture.model_dump_json()
             security_collected_at = _posture_time(security_posture.collected_at, now)
+        health_json = None
+        if device_health is not None:
+            existing = self.repo.get_by_device(device_id)
+            previous = health_from_json(existing.health_json) if existing is not None else None
+            health_json = merge_health(previous, device_health, now).model_dump_json()
         self.repo.upsert(
             device_id=device_id,
             processes_json=json.dumps(processes) if processes else None,
@@ -50,7 +65,17 @@ class DeviceInventoryService:
             collected_at=now,
             security_json=security_json,
             security_collected_at=security_collected_at,
+            health_json=health_json,
+            health_collected_at=now if health_json is not None else None,
         )
+
+    def get_health(self, device_id: int) -> Optional[DeviceHealth]:
+        obj = self.repo.get_by_device(device_id)
+        return health_from_json(obj.health_json) if obj is not None else None
+
+    def get_security_posture(self, device_id: int) -> Optional[SecurityPosture]:
+        obj = self.repo.get_by_device(device_id)
+        return posture_from_json(obj.security_json) if obj is not None else None
 
     def get_inventory(self, device_id: int) -> DeviceInventoryResponse:
         obj = self.repo.get_by_device(device_id)

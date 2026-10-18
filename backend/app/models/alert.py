@@ -30,6 +30,15 @@ class AlertKind(str, Enum):
     ARCHIVED_CHECKIN = "archived_checkin"
     DISK_FORECAST = "disk_forecast"
     HIGH_NETWORK = "high_network"
+    # Agent 2.1.33 and server-side health monitors.
+    DISK_BUSY = "disk_busy"
+    NETWORK_LATENCY = "network_latency"
+    PACKET_LOSS = "packet_loss"
+    SERVICE_STOPPED = "service_stopped"
+    DISK_HEALTH = "disk_health"
+    CRITICAL_EVENTS = "critical_events"
+    REBOOT_PENDING = "reboot_pending"
+    SECURITY_POSTURE = "security_posture"
 
 
 class DeviceAlert(Base):

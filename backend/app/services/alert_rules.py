@@ -23,6 +23,16 @@ ALERT_RULES: dict[AlertKind, AlertRule] = {
     AlertKind.ARCHIVED_CHECKIN: AlertRule(severity=AlertSeverity.WARNING, cooldown_seconds=3600),
     AlertKind.DISK_FORECAST: AlertRule(severity=AlertSeverity.WARNING, cooldown_seconds=86400),
     AlertKind.HIGH_NETWORK: AlertRule(severity=AlertSeverity.INFO, cooldown_seconds=600),
+    AlertKind.DISK_BUSY: AlertRule(severity=AlertSeverity.WARNING, cooldown_seconds=1800),
+    AlertKind.NETWORK_LATENCY: AlertRule(severity=AlertSeverity.INFO, cooldown_seconds=1800),
+    AlertKind.PACKET_LOSS: AlertRule(severity=AlertSeverity.WARNING, cooldown_seconds=1800),
+    AlertKind.SERVICE_STOPPED: AlertRule(severity=AlertSeverity.CRITICAL, cooldown_seconds=300),
+    # Health reports arrive hourly: a disk or an event log does not change
+    # minute to minute, so a closed alert does not reopen within the day.
+    AlertKind.DISK_HEALTH: AlertRule(severity=AlertSeverity.CRITICAL, cooldown_seconds=86400),
+    AlertKind.CRITICAL_EVENTS: AlertRule(severity=AlertSeverity.WARNING, cooldown_seconds=3600),
+    AlertKind.REBOOT_PENDING: AlertRule(severity=AlertSeverity.INFO, cooldown_seconds=86400),
+    AlertKind.SECURITY_POSTURE: AlertRule(severity=AlertSeverity.WARNING, cooldown_seconds=21600),
 }
 
 # CPU and memory alert only on sustained load. A single sample above the line
@@ -65,4 +75,7 @@ STALE_WHEN_OFFLINE = (
     AlertKind.REPEATED_RECONNECTS,
     AlertKind.HEARTBEAT_STALE,
     AlertKind.TELEMETRY_MISSING,
+    AlertKind.DISK_BUSY,
+    AlertKind.NETWORK_LATENCY,
+    AlertKind.PACKET_LOSS,
 )

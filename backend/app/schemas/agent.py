@@ -64,10 +64,14 @@ class AgentHeartbeatPayload(BaseModel):
     # anything that is not an object is dropped here so it never fails the
     # heartbeat.
     security_posture: Optional[Dict[str, Any]] = None
+    # Device health (agents >= 2.1.33): physical disks, pending restart and
+    # critical System events, hourly, sent when changed or every six hours.
+    # Validated by app.schemas.device_health when stored.
+    device_health: Optional[Dict[str, Any]] = None
     agent_version: Optional[str] = None
     agent_sha256: Optional[str] = None
 
-    @field_validator("security_posture", mode="before")
+    @field_validator("security_posture", "device_health", mode="before")
     @classmethod
     def _posture_object_only(cls, value: Any) -> Any:
         return value if isinstance(value, dict) else None
