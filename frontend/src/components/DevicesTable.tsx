@@ -732,7 +732,8 @@ const DevicesTable = memo(function DevicesTable({
         target: "devices",
         device_ids: ids,
         payload: {},
-        timeout_seconds: 900,
+        // The API takes 10–600 s; for self_update it raises the window to 900 s itself.
+        timeout_seconds: 600,
       });
       const skipped = (result.skipped?.length ?? 0) + (updatePlan.data?.skipped.length ?? 0);
       const parts = [BULK_ACTIONS.update_agent.done(devicesPhrase(result.device_count))];

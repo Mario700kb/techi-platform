@@ -99,7 +99,7 @@ describe("DevicesTable · Update agent in the bulk bar", () => {
         target: "devices",
         device_ids: [1, 3],
         payload: {},
-        timeout_seconds: 900,
+        timeout_seconds: 600,
       }),
     );
     expect(await screen.findByText("Agent update started on 2 devices · 1 at once · 1 left out")).toBeInTheDocument();

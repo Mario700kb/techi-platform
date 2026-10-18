@@ -146,3 +146,19 @@ def test_the_preview_is_for_admins_and_owners(db):
     assert response.status_code == 200, response.text
     assert response.json()["update"][0]["to_version"] == "2.1.33"
     assert client.post("/api/v1/commands/bulk/self-update/preview", json={"device_ids": []}).status_code == 422
+
+
+def test_the_devices_page_request_is_accepted_and_runs_for_15_minutes(db, monkeypatch):
+    """The exact body the bulk bar sends (DevicesTable runAgentUpdate)."""
+    monkeypatch.setattr(action_push, "push_action_if_connected", lambda *a: False)
+    app = FastAPI()
+    app.include_router(endpoint.router, prefix="/api/v1")
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_current_operator] = lambda: SimpleNamespace(
+        id=1, username="denis", role="owner", is_active=True)
+    body = {"command_type": "self_update", "target": "devices", "device_ids": [1, 3], "payload": {}, "timeout_seconds": 600}
+    response = TestClient(app).post("/api/v1/commands/bulk", json=body)
+    assert response.status_code == 201, response.text
+    assert response.json()["device_count"] == 2
+    actions = db.query(RemoteAction).filter(RemoteAction.action_type == "self_update").all()
+    assert {a.execution_timeout_seconds for a in actions} == {900}

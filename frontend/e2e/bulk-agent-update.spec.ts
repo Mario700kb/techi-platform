@@ -54,5 +54,5 @@ test("Update agent from the bulk bar shows the plan and updates the rest", async
 
   await dialog.getByRole("button", { name: /^Update \d+ devices?$/ }).click();
   await expect(page.getByText(/^Agent update started on/)).toBeVisible();
-  expect(sent).toMatchObject({ command_type: "self_update", target: "devices", timeout_seconds: 900 });
+  expect(sent).toMatchObject({ command_type: "self_update", target: "devices", timeout_seconds: 600 });
 });
