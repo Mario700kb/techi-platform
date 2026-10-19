@@ -462,7 +462,6 @@ function SiteBranch({
   onToggle: (key: string) => void;
   onSelect: (key: string) => void;
 }) {
-  const severalCountries = new Set(cities.map((c) => c.country)).size > 1;
   const unlocated = counts?.get(0);
 
   const categoryRows = (siteKey: string, siteCounts: TreeLocationCounts | undefined) => {
@@ -550,7 +549,9 @@ function SiteBranch({
   return (
     <>
       {cities.map((city) => {
-        const flag = severalCountries ? `${city.country} ` : "";
+        // The country prefixes every site and city row, also for a client whose
+        // sites are all in one country (it showed only with several).
+        const flag = `${city.country} `;
         if (city.sites.length === 1) {
           const site = city.sites[0];
           return (
