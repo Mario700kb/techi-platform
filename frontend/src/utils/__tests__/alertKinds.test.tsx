@@ -35,7 +35,7 @@ describe("monitor alert kinds", () => {
   it("lift the measured value out of the monitor message", () => {
     expect(
       describeAlert(alert({ kind: "disk_forecast", message: "Disk C: full within 14 days on SRV-01 (now 9 days)" })),
-    ).toEqual({ summary: "Disk forecast to fill up", value: "9 days" });
+    ).toMatchObject({ summary: "Disk forecast to fill up", value: "9 days" });
     expect(
       describeAlert(
         alert({
@@ -44,8 +44,10 @@ describe("monitor alert kinds", () => {
           message: "Network receive above 800 Mb/s for 5 min on SRV-01 (now 912 Mb/s)",
         }),
       ),
-    ).toEqual({ summary: "Network receive high", value: "912 Mb/s" });
-    expect(describeAlert(alert({ kind: "high_network", message: "Network send above 500 Mb/s on SRV-01" }))).toEqual({
+    ).toMatchObject({ summary: "Network receive high", value: "912 Mb/s" });
+    expect(
+      describeAlert(alert({ kind: "high_network", message: "Network send above 500 Mb/s on SRV-01" })),
+    ).toMatchObject({
       summary: "Network send high",
       value: null,
     });

@@ -265,7 +265,8 @@ def test_the_devices_own_agent_stores_its_health_and_the_monitors_judge_it(db):
     assert disk_alert.message == "Disk health: ST1000DM003 — SMART predicts failure on Mario-Lenovo"
     assert disk_alert.severity.value == "critical"
     (events_alert,) = _open(db, AlertKind.CRITICAL_EVENTS)
-    assert events_alert.message == "1 critical event in 24 h on Mario-Lenovo: Blue screen (stop error)"
+    assert events_alert.message == "Blue screen: 1 time in 24 h on Mario-Lenovo"
+    assert events_alert.fingerprint == "evt:bsod" and events_alert.severity.value == "warning"
 
     # a forged heartbeat cannot clear it
     _beat(db, agent_id="someone-else", device_id=924, device_health=_health())
@@ -276,24 +277,36 @@ def test_the_devices_own_agent_stores_its_health_and_the_monitors_judge_it(db):
     assert len(_open(db, AlertKind.CRITICAL_EVENTS)) == 1  # the blue screen is still within 24 h
 
 
-def test_a_restart_pending_over_a_week_raises_an_alert(db):
-    device = db.get(Device, 924)
+def test_a_restart_pending_over_a_week_alerts_on_a_server_only(db):
     stored = _health(reboot_pending=True, reboot_reasons=["cbs"],
                      reboot_pending_since=(datetime.now(timezone.utc) - timedelta(days=9)).isoformat())
-    db.add(DeviceInventory(device_id=924, health_json=json.dumps(stored), collected_at=utcnow_naive()))
+    for device_id in (924, 781):
+        db.add(DeviceInventory(device_id=device_id, health_json=json.dumps(stored), collected_at=utcnow_naive()))
     db.commit()
-    MonitorAlertService(db).evaluate_reports(device)
+    for device_id in (924, 781):
+        MonitorAlertService(db).evaluate_reports(db.get(Device, device_id))
     (alert,) = _open(db, AlertKind.REBOOT_PENDING)
-    assert alert.message == "Restart pending for 9 days on Mario-Lenovo"
+    assert alert.device_id == 781  # on a PC it is a finding, not an alert
+    assert alert.message == "Restart pending for 9 days on HV-PROD-01"
     assert "Component servicing" in alert.detail
 
 
-def test_a_low_security_score_raises_an_alert_with_the_findings(db):
-    posture = {"defender": {"present": True, "antivirus_enabled": False}, "firewall": {"domain": True, "private": False, "public": True}}
-    _beat(db, agent_id=AGENT, security_posture=posture)
-    (alert,) = _open(db, AlertKind.SECURITY_POSTURE)
-    assert alert.message == "Security score below 70 on Mario-Lenovo (now 50)"
-    assert "No active antivirus" in alert.detail and "Firewall off: private" in alert.detail
+def test_a_low_security_score_is_a_finding_and_a_protection_switched_off_alerts(db):
+    weak = {"defender": {"present": True, "antivirus_enabled": False}, "firewall": {"domain": True, "private": False, "public": True}}
+    _beat(db, agent_id=AGENT, security_posture=weak)
+    assert _open(db, AlertKind.SECURITY_POSTURE) == []  # the Security view lists it
+
+    good = {"defender": {"present": True, "antivirus_enabled": True}, "firewall": {"domain": True, "private": True, "public": True}}
+    _beat(db, agent_id=AGENT, security_posture=good)
+    _beat(db, agent_id=AGENT, security_posture=weak)
+    alerts = sorted(_open(db, AlertKind.SECURITY_POSTURE), key=lambda a: a.fingerprint)
+    assert [a.fingerprint for a in alerts] == ["regress:firewall_off", "regress:no_antivirus"]
+    assert alerts[1].message == "Protection turned off on Mario-Lenovo: No active antivirus"
+
+    _beat(db, agent_id=AGENT, security_posture=weak)  # still off: stays open
+    assert len(_open(db, AlertKind.SECURITY_POSTURE)) == 2
+    _beat(db, agent_id=AGENT, security_posture=good)
+    assert _open(db, AlertKind.SECURITY_POSTURE) == []
 
 
 # ── services ────────────────────────────────────────────────────────────────
@@ -314,14 +327,20 @@ def test_a_service_monitor_needs_valid_names_and_reaches_the_agent_with_them(db)
     assert describe(Monitor.model_validate(SERVICES)) == "stopped for 5 min · MSSQL*, vmms"
 
 
-def test_a_stopped_service_opens_one_alert_naming_it(db):
+def test_each_stopped_service_opens_its_own_alert(db):
     server = db.get(Device, 781)
     service = MonitorAlertService(db)
     policy = effective_policy(db, server)
     service.apply(server, MonitorEvent(key="services", state="firing", value=1, target="MSSQL$SAGE"), policy)
     service.apply(server, MonitorEvent(key="services", state="firing", value=2, target="MSSQL$SAGE, vmms"), policy)
-    (alert,) = db.query(DeviceAlert).filter(DeviceAlert.kind == AlertKind.SERVICE_STOPPED).all()
-    assert alert.message == "Service stopped for 5 min on HV-PROD-01: MSSQL$SAGE"
+    alerts = sorted(_open(db, AlertKind.SERVICE_STOPPED), key=lambda a: a.fingerprint)
+    assert [a.message for a in alerts] == [
+        "Service stopped for 5 min on HV-PROD-01: MSSQL$SAGE",
+        "Service stopped for 5 min on HV-PROD-01: vmms",
+    ]
+    assert alerts[0].priority == 1  # critical on a server
+    service.apply(server, MonitorEvent(key="services", state="firing", value=1, target="vmms"), policy)
+    assert [a.fingerprint for a in _open(db, AlertKind.SERVICE_STOPPED)] == ["svc:vmms"]
     service.apply(server, MonitorEvent(key="services", state="ok"), policy)
     assert _open(db, AlertKind.SERVICE_STOPPED) == []
 

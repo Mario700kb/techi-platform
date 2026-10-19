@@ -135,6 +135,19 @@ class RustDeskIdentityService:
         old_install_path: Optional[str],
         old_sync_state: Optional[str],
     ) -> Device:
+        from app.services.remote_support_presence import RemoteSupportPresence, normalize_id
+
+        if normalize_id(effective_id) != device.rustdesk_id and RemoteSupportPresence.client_is_authority(device, now):
+            # Remote Support itself reported another ID within the trust window:
+            # the agent read a stale config. Keep the client's ID; the agent's
+            # stays in agent_rustdesk_id for the device page.
+            device.rustdesk_last_seen_at = now
+            device.rustdesk_sync_message = f"Agent reads {normalize_id(effective_id)}; Remote Support reports {device.rustdesk_id} (used)"[:255]
+            self.db.add(device)
+            self.db.commit()
+            self._maybe_publish_status_change(device, previous_status)
+            return device
+
         verification = self.verify(effective_id, exclude_device_id=device.id, own_id=device.rustdesk_id)
 
         if not verification.valid:

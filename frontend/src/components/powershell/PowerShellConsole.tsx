@@ -47,6 +47,8 @@ export interface PowerShellConsoleProps {
   onNewSession: () => void;
   /** The session ended by itself (device, idle or time limit). */
   onClosed?: () => void;
+  /** A command brought from an alert: typed into the command bar, not run. */
+  initialCommand?: string | null;
 }
 
 /**
@@ -66,6 +68,7 @@ export default function PowerShellConsole({
   onEnd,
   onNewSession,
   onClosed,
+  initialCommand,
 }: PowerShellConsoleProps) {
   const { user } = useSessionStore();
   const compact = layout === "drawer";
@@ -302,7 +305,14 @@ export default function PowerShellConsole({
           </button>
         </div>
       ) : (
-        <CommandBar history={history} disabled={!open} onRun={run} onInterrupt={interrupt} compact={compact} />
+        <CommandBar
+          history={history}
+          disabled={!open}
+          onRun={run}
+          onInterrupt={interrupt}
+          compact={compact}
+          initialValue={initialCommand ?? ""}
+        />
       )}
     </div>
   );

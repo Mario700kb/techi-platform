@@ -11,11 +11,15 @@ import {
   Monitor,
   RefreshCw,
   ShieldAlert,
+  Sparkles,
 } from "lucide-react";
 import AlertKindIcon from "../components/AlertKindIcon";
+import AlertDrawer from "../components/alerts/AlertDrawer";
+import { PriorityChip } from "../components/alerts/AlertControls";
 import { useAppData } from "../contexts/AppDataContext";
 import { resolveAlert } from "../api/alerts";
-import { Alert, ALERT_KIND_LABELS, ALERT_SEVERITY_TONE } from "../types/alert";
+import { Alert, ALERT_SEVERITY_TONE } from "../types/alert";
+import { describeAlert } from "../utils/alertText";
 import { parseUTC } from "../utils/time";
 import { Snackbar } from "../components/mobile/Snackbar";
 import { Button, EmptyState, PageHeader } from "../components/ui";
@@ -67,8 +71,17 @@ interface DeviceLabel {
   client: string | null;
 }
 
-function AlertItem({ alert, onDismiss }: { alert: Alert; onDismiss: (id: number) => void }) {
+function AlertItem({
+  alert,
+  onDismiss,
+  onOpen,
+}: {
+  alert: Alert;
+  onDismiss: (id: number) => void;
+  onOpen: (id: number) => void;
+}) {
   const color = ALERT_SEVERITY_TONE[alert.severity] ?? ALERT_SEVERITY_TONE.info;
+  const { title, summary } = describeAlert(alert);
   return (
     <div className="th-malert">
       <span className="th-onb-icon !h-8 !w-8 flex-none" style={{ "--onb-tone": color } as CSSProperties}>
@@ -76,17 +89,25 @@ function AlertItem({ alert, onDismiss }: { alert: Alert; onDismiss: (id: number)
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
+          {alert.priority != null && <PriorityChip priority={alert.priority} />}
           <span className="min-w-0 truncate text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
-            {ALERT_KIND_LABELS[alert.kind] ?? alert.kind}
+            {title}
+            {(alert.occurrences ?? 1) > 1 && <span className="th-ac-times">×{alert.occurrences}</span>}
           </span>
           <time className="ml-auto flex-none text-[12px] tabular-nums" style={{ color: "var(--th-text-muted)" }}>
             {timeAgo(alert.created_at)}
           </time>
         </div>
         <p className="mt-0.5 text-[13px] leading-snug" style={{ color: "var(--th-text-secondary)" }}>
-          {alert.message}
+          {alert.summary ? summary : alert.message}
         </p>
-        <div className="mt-2 flex justify-end">
+        <div className="mt-2 flex justify-end gap-2">
+          {alert.id > 0 && (
+            <button type="button" onClick={() => onOpen(alert.id)} className="th-malert-dismiss">
+              <Sparkles className="h-3.5 w-3.5" />
+              Details
+            </button>
+          )}
           <button type="button" onClick={() => onDismiss(alert.id)} className="th-malert-dismiss">
             <Check className="h-3.5 w-3.5" />
             Dismiss
@@ -104,6 +125,7 @@ function AlertGroup({
   onDismiss,
   onDismissAll,
   onOpenDevice,
+  onOpenAlert,
 }: {
   deviceId: number | null;
   label: DeviceLabel;
@@ -111,6 +133,7 @@ function AlertGroup({
   onDismiss: (id: number) => void;
   onDismissAll: (ids: number[]) => void;
   onOpenDevice: (deviceId: number) => void;
+  onOpenAlert: (id: number) => void;
 }) {
   const worst = alerts.some((a) => a.severity === "critical")
     ? "critical"
@@ -147,7 +170,7 @@ function AlertGroup({
         </button>
       </div>
       {alerts.map((a) => (
-        <AlertItem key={a.id} alert={a} onDismiss={onDismiss} />
+        <AlertItem key={a.id} alert={a} onDismiss={onDismiss} onOpen={onOpenAlert} />
       ))}
       {alerts.length > 1 && (
         <button type="button" onClick={() => onDismissAll(alerts.map((a) => a.id))} className="th-malert-all">
@@ -162,6 +185,7 @@ function AlertGroup({
 export default function AlertsMobile() {
   const navigate = useNavigate();
   const { alerts, reloadAlerts } = useAppData();
+  const [openAlertId, setOpenAlertId] = useState<number | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterId>("all");
   const [hiddenIds, setHiddenIds] = useState<Set<number>>(new Set());
   const [snackMessage, setSnackMessage] = useState<string | null>(null);
@@ -363,6 +387,7 @@ export default function AlertsMobile() {
             onDismiss={(id) => dismissIds([id])}
             onDismissAll={dismissIds}
             onOpenDevice={(id) => navigate(`/devices/${id}`)}
+            onOpenAlert={setOpenAlertId}
           />
         ))
       )}
@@ -377,6 +402,8 @@ export default function AlertsMobile() {
           <ChevronRight className="h-4 w-4" />
         </Button>
       )}
+
+      <AlertDrawer alertId={openAlertId} onClose={() => setOpenAlertId(null)} onChanged={reloadAlerts} />
 
       <Snackbar
         open={snackMessage !== null}

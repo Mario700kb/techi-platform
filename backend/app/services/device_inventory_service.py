@@ -35,7 +35,9 @@ class DeviceInventoryService:
         patch_status: Optional[Dict[str, Any]] = None,
         security_posture: Optional[SecurityPosture] = None,
         device_health: Optional[DeviceHealth] = None,
-    ) -> None:
+    ) -> Optional[SecurityPosture]:
+        """Stores the snapshot. Returns the security posture stored before
+        this one (when a new one came), so a change for the worse can be told."""
         if (
             not processes
             and not services
@@ -44,8 +46,10 @@ class DeviceInventoryService:
             and security_posture is None
             and device_health is None
         ):
-            return
+            return None
         now = utcnow()
+        existing = self.repo.get_by_device(device_id) if (security_posture is not None or device_health is not None) else None
+        previous_posture = posture_from_json(existing.security_json) if (existing is not None and security_posture is not None) else None
         security_json = None
         security_collected_at = None
         if security_posture is not None:
@@ -53,7 +57,6 @@ class DeviceInventoryService:
             security_collected_at = _posture_time(security_posture.collected_at, now)
         health_json = None
         if device_health is not None:
-            existing = self.repo.get_by_device(device_id)
             previous = health_from_json(existing.health_json) if existing is not None else None
             health_json = merge_health(previous, device_health, now).model_dump_json()
         self.repo.upsert(
@@ -68,6 +71,7 @@ class DeviceInventoryService:
             health_json=health_json,
             health_collected_at=now if health_json is not None else None,
         )
+        return previous_posture
 
     def get_health(self, device_id: int) -> Optional[DeviceHealth]:
         obj = self.repo.get_by_device(device_id)

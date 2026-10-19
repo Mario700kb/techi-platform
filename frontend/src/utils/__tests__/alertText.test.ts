@@ -12,16 +12,16 @@ describe("describeAlert", () => {
     const ram = describeAlert(
       alert({ kind: "high_ram", severity: "warning", message: "RAM elevated on DESKTOP-098OMH1: 81.0%" }),
     );
-    expect(ram).toEqual({ summary: "Memory usage elevated", value: "81.0%" });
+    expect(ram).toMatchObject({ summary: "Memory usage elevated", value: "81.0%" });
 
     const disk = describeAlert(
       alert({ kind: "low_disk", severity: "critical", message: "Disk critical on srv: 97.2% used" }),
     );
-    expect(disk).toEqual({ summary: "Disk usage critical", value: "97.2%" });
+    expect(disk).toMatchObject({ summary: "Disk usage critical", value: "97.2%" });
   });
 
   it("describes offline and reconnect alerts without the device name", () => {
-    expect(describeAlert(alert({ message: "pos2-qtu went offline" }))).toEqual({
+    expect(describeAlert(alert({ message: "pos2-qtu went offline" }))).toMatchObject({
       summary: "Stopped sending heartbeats",
       value: null,
     });
@@ -33,7 +33,7 @@ describe("describeAlert", () => {
           message: "ws-01 reconnected 4× in the last 10 minutes",
         }),
       ),
-    ).toEqual({ summary: "Connection keeps dropping", value: "4×" });
+    ).toMatchObject({ summary: "Connection keeps dropping", value: "4×" });
   });
 
   it("prefers the stored detail for Remote Support sync and unknown kinds", () => {
@@ -48,9 +48,36 @@ describe("describeAlert", () => {
   });
 
   it("keeps a metric alert readable when its message carries no number", () => {
-    expect(describeAlert(alert({ kind: "high_cpu", severity: "critical", message: "CPU critical" }))).toEqual({
+    expect(describeAlert(alert({ kind: "high_cpu", severity: "critical", message: "CPU critical" }))).toMatchObject({
       summary: "CPU usage critical",
       value: null,
     });
+  });
+});
+
+describe("describeAlert with the server's wording", () => {
+  it("uses the title, summary and value the server sends", () => {
+    const shutdown = describeAlert(
+      alert({
+        kind: "critical_events",
+        severity: "warning",
+        message: "Unexpected shutdown: 2 times in 7 days on X",
+        title: "Unexpected shutdown",
+        summary: "2× in 7 days · last 19 Oct 18:59 UTC",
+        value: "2×",
+      }),
+    );
+    expect(shutdown).toEqual({
+      title: "Unexpected shutdown",
+      summary: "2× in 7 days · last 19 Oct 18:59 UTC",
+      value: "2×",
+    });
+  });
+
+  it("shows the measured CPU, not the monitor's threshold", () => {
+    const cpu = describeAlert(
+      alert({ kind: "high_cpu", severity: "critical", message: "CPU above 95% for 15 min on ARCH-03 (now 98%)" }),
+    );
+    expect(cpu.value).toBe("98%");
   });
 });

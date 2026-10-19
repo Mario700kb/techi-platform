@@ -242,6 +242,7 @@ def test_the_alert_closes_when_the_device_returns_and_a_new_episode_can_alert(db
     # Stamp it as it would have been in real time: opened half an hour into
     # the episode, its cooldown long over by the next one.
     first.created_at = (lost + timedelta(hours=2)).replace(tzinfo=None)
+    first.last_seen_at = first.created_at
     first.cooldown_until = None
     db.commit()
 
@@ -252,7 +253,10 @@ def test_the_alert_closes_when_the_device_returns_and_a_new_episode_can_alert(db
     db.commit()
     _sweep(db, lost_again + timedelta(hours=2))
 
-    assert sorted(a.state.value for a in _alerts(db, pc)) == ["open", "resolved"]
+    # Gone again the same day: the same alert reopens, counted twice.
+    [again] = _alerts(db, pc)
+    assert again.state == AlertState.OPEN
+    assert again.occurrences == 2
 
 
 def test_a_closed_working_hours_warning_does_not_hide_the_long_absence_one(db):
@@ -261,8 +265,12 @@ def test_a_closed_working_hours_warning_does_not_hide_the_long_absence_one(db):
     _sweep(db, lost + timedelta(hours=2))
     [first] = _alerts(db, pc)
     first.created_at = (lost + timedelta(hours=2)).replace(tzinfo=None)
+    first.last_seen_at = first.created_at
     db.commit()
     AlertEngine(db).repo.resolve(first.id, cooldown_seconds=0)
+    # Dismissed that same morning, days before the long-absence one.
+    first.resolved_at = first.created_at + timedelta(minutes=5)
+    db.commit()
 
     _sweep(db, tirana(5, 12))  # 3 days: nothing new
     assert len(_alerts(db, pc)) == 1

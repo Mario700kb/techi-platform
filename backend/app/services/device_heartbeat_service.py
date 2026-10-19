@@ -34,6 +34,7 @@ from app.services.device_telemetry_service import DeviceTelemetryService
 from app.services.device_activity_event_service import DeviceActivityEventService
 from app.services.platform_adapters import get_adapter
 from app.services.platform_adapters.windows import classify_windows_device_type
+from app.services.remote_support_presence import RemoteSupportPresence, normalize_guid
 from app.services.rustdesk_service import RustDeskIdentityService
 from app.websocket.events import RealtimeEventType, build_event, device_payload, device_payload_delta
 from app.websocket.publisher import realtime_publisher
@@ -265,10 +266,24 @@ class DeviceHeartbeatService:
                 update_data.pop(field, None)
             # Capabilities are normalized + persisted in side effects only
             update_data.pop("capabilities", None)
-            if verified and has_valid_rustdesk_id and normalized_rustdesk_id != device.rustdesk_id:
+            if (
+                verified
+                and has_valid_rustdesk_id
+                and normalized_rustdesk_id != device.rustdesk_id
+                # Remote Support's own recent report decides; the agent's
+                # reading of config files gives way to it.
+                and not RemoteSupportPresence.client_is_authority(device, now)
+            ):
                 conflict = self.device_repo.get_conflicting_rustdesk_id(normalized_rustdesk_id, exclude_device_id=device.id)
                 if conflict is None:
                     update_data["rustdesk_id"] = normalized_rustdesk_id
+            if verified:
+                guid = normalize_guid(payload.machine_guid)
+                if guid and device.machine_guid != guid:
+                    device.machine_guid = guid
+                agent_id_report = normalized_rustdesk_id if has_valid_rustdesk_id else None
+                if device.agent_rustdesk_id != agent_id_report:
+                    device.agent_rustdesk_id = agent_id_report
             manual_locked = DeviceAssignmentService.is_manual_locked(device.assignment_source)
             if manual_locked or not verified:
                 for field in ("client_id", "group_id", "assignment_source", "auto_assigned"):
@@ -861,7 +876,7 @@ class DeviceHeartbeatService:
         ):
             return
         try:
-            DeviceInventoryService(self.db).save_snapshot(
+            previous_posture = DeviceInventoryService(self.db).save_snapshot(
                 device_id=device.id,
                 processes=payload.processes,
                 services=payload.services,
@@ -875,7 +890,7 @@ class DeviceHeartbeatService:
                 # restart are judged by the platform when a report arrives.
                 from app.services.monitor_alert_service import MonitorAlertService
 
-                MonitorAlertService(self.db).evaluate_reports(device)
+                MonitorAlertService(self.db).evaluate_reports(device, previous_posture=previous_posture)
             if classify_platform(device.platform) == "mikrotik":
                 DeviceActivityEventService(self.db).record(
                     device_id=device.id,

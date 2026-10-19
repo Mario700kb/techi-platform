@@ -234,7 +234,7 @@ def resolve_stale_alerts(db: Session) -> int:
     engine = AlertEngine(db)
     resolved = 0
     for alert, reason in find_stale_alerts(db):
-        if engine._resolve(alert.device_id, alert.kind, reason=reason) is not None:
+        if engine.resolve_alert(alert, reason=reason) is not None:
             resolved += 1
     logger.info(f"Cleanup: resolved {resolved} stale open alerts")
     return resolved

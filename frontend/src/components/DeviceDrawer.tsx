@@ -105,6 +105,7 @@ import DeviceLivePanel, { HeartbeatValues } from "./DeviceLivePanel";
 import DeviceLast24hCard from "./DeviceLast24hCard";
 import DeviceMonitoringPanel from "./DeviceMonitoringPanel";
 import DevicePowerShellPanel from "./DevicePowerShellPanel";
+import RemoteSupportIdOrigin from "./RemoteSupportIdOrigin";
 import { addQueuedAction } from "../utils/remoteActions";
 import { isActiveUpdate, upsertAction, updateTargetVersion } from "../utils/agentUpdate";
 import { AgentUpdateCompact } from "./AgentUpdateProgress";
@@ -2008,6 +2009,7 @@ export default function DeviceDrawer({
                       </button>
                     )}
                   </div>
+                  <RemoteSupportIdOrigin device={device} />
                 </div>
 
                 {/* Per-device Remote Support password — owner/admin only */}

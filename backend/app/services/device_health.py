@@ -8,8 +8,9 @@ cannot tell how long Windows has been waiting.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from app.schemas.device_health import (
     ALERTING_CATEGORIES,
@@ -21,6 +22,13 @@ from app.schemas.device_health import (
 )
 
 EVENT_KEEP = timedelta(days=7)
+
+# NTFS 98 is written at every mount, at Information level: "Volume C: is
+# healthy. No action is needed." Only the variant that asks for a repair
+# matters, and its text names the commands, in every Windows language.
+_REPAIR_WORDS = ("chkdsk", "repair-volume")
+# Information (4), Verbose (5) and "LogAlways" (0) are never a problem.
+_QUIET_LEVELS = (0, 4, 5)
 
 
 def _aware(value: datetime) -> datetime:
@@ -63,7 +71,10 @@ def alerting_events(health: Optional[DeviceHealth], now: datetime, window: timed
     if health is None:
         return []
     now = _aware(now)
-    return [e for e in health.events if e.category in ALERTING_CATEGORIES and now - _aware(e.at) <= window]
+    return [
+        e for e in health.events
+        if e.category in ALERTING_CATEGORIES and now - _aware(e.at) <= window and is_actionable(e)
+    ]
 
 
 def reboot_pending_days(health: Optional[DeviceHealth], now: datetime) -> Optional[float]:
@@ -74,3 +85,93 @@ def reboot_pending_days(health: Optional[DeviceHealth], now: datetime) -> Option
     if health.reboot_reasons and not any(r in ALERTING_REBOOT_REASONS for r in health.reboot_reasons):
         return None
     return max(0.0, (_aware(now) - _aware(health.reboot_pending_since)).total_seconds() / 86400)
+
+
+def is_actionable(event: HealthEvent) -> bool:
+    """Whether an event from the report can be a problem at all."""
+    if event.win_level is not None and event.win_level in _QUIET_LEVELS:
+        return False
+    if event.event_id == 98 and event.source.lower() in ("ntfs", "microsoft-windows-ntfs"):
+        text = (event.message or "").lower()
+        return any(word in text for word in _REPAIR_WORDS)
+    return True
+
+
+@dataclass
+class FiringGroup:
+    """One group of System events that meets its rule: what the critical
+    events monitor opens an alert for."""
+
+    key: str
+    title: str
+    severity: str
+    count: int
+    window_h: int
+    events: List[HealthEvent] = field(default_factory=list)
+
+    @property
+    def fingerprint(self) -> str:
+        return f"evt:{self.key}"
+
+
+def _incidents(group: str, events: List[HealthEvent]) -> List[List[HealthEvent]]:
+    """Events of one group, oldest first, as incidents: a Kernel-Power 41 and
+    the EventLog 6008 of the same boot are one shutdown."""
+    from app.services.alert_rules import SAME_INCIDENT_SECONDS
+
+    ordered = sorted(events, key=lambda e: _aware(e.at))
+    if group != "shutdown":
+        return [[e] for e in ordered]
+    out: List[List[HealthEvent]] = []
+    for event in ordered:
+        if out and (_aware(event.at) - _aware(out[-1][-1].at)).total_seconds() <= SAME_INCIDENT_SECONDS:
+            out[-1].append(event)
+        else:
+            out.append([event])
+    return out
+
+
+def firing_event_groups(
+    health: Optional[DeviceHealth], now: datetime, *, is_server: bool, base_severity: str = "warning"
+) -> List[FiringGroup]:
+    """The event groups whose rule fires now (EVENT_GROUPS), most severe first."""
+    from app.services.alert_rules import EVENT_GROUP_OF, EVENT_GROUPS
+
+    if health is None:
+        return []
+    now = _aware(now)
+    by_group: Dict[str, List[HealthEvent]] = {}
+    for event in health.events:
+        group = EVENT_GROUP_OF.get((event.source.lower(), event.event_id))
+        if group is None or not is_actionable(event):
+            continue
+        by_group.setdefault(group, []).append(event)
+    firing: List[FiringGroup] = []
+    for key, events in by_group.items():
+        rule = EVENT_GROUPS[key]
+        window_h, min_count = rule.window_h, rule.min_count
+        if not is_server and rule.pc_window_h:
+            window_h, min_count = rule.pc_window_h, rule.pc_min_count or min_count
+        recent = [e for e in events if now - _aware(e.at) <= timedelta(hours=window_h)]
+        incidents = _incidents(key, recent)
+        if len(incidents) < min_count:
+            continue
+        # The alert lasts a day after the last incident, whatever the window.
+        last = max(_aware(e.at) for e in recent)
+        if now - last > timedelta(hours=24):
+            continue
+        severity = rule.severity.value if rule.severity else base_severity
+        if rule.critical_from is not None:
+            in_week = _incidents(key, [e for e in events if now - _aware(e.at) <= timedelta(days=7)])
+            if is_server or len(in_week) >= rule.critical_from:
+                severity = "critical"
+        firing.append(FiringGroup(
+            key=key,
+            title=rule.title,
+            severity=severity,
+            count=len(incidents),
+            window_h=window_h,
+            events=sorted(recent, key=lambda e: _aware(e.at), reverse=True),
+        ))
+    rank = {"critical": 0, "warning": 1, "info": 2}
+    return sorted(firing, key=lambda g: (rank.get(g.severity, 3), g.key))

@@ -1,6 +1,8 @@
-import type { Alert } from "../types/alert";
+import { ALERT_KIND_LABELS, type Alert } from "../types/alert";
 
 export interface AlertDescription {
+  /** The problem's name ("Unexpected shutdown"). */
+  title: string;
   /** One line that says what is wrong, without the device name. */
   summary: string;
   /** The measured value when the alert carries one ("83.3%", "3×"). */
@@ -23,12 +25,25 @@ const METRIC_NAME: Partial<Record<Alert["kind"], string>> = {
 // the device is renamed. The table shows the device in its own column, so the
 // alert itself is described without it, and its value gets a column of its own.
 export function describeAlert(alert: Alert): AlertDescription {
+  const fallback = describeFromMessage(alert);
+  // The server words alerts itself (app/services/alert_presenter.py); older
+  // payloads (realtime events, synthetic alerts) are worded here.
+  return {
+    title: alert.title?.trim() || ALERT_KIND_LABELS[alert.kind] || alert.kind,
+    summary: alert.summary?.trim() || fallback.summary,
+    value: alert.value ?? fallback.value,
+  };
+}
+
+function describeFromMessage(alert: Alert): Omit<AlertDescription, "title"> {
   const metric = METRIC_NAME[alert.kind];
   if (metric) {
+    // "(now 98%)" is the measurement; the first % of a monitor message is its threshold.
+    const now = NOW_VALUE.exec(alert.message);
     const match = PERCENT.exec(alert.message);
     return {
       summary: `${metric} ${alert.severity === "critical" ? "critical" : "elevated"}`,
-      value: match ? `${match[1]}%` : null,
+      value: now ? now[1] : match ? `${match[1]}%` : null,
     };
   }
   switch (alert.kind) {

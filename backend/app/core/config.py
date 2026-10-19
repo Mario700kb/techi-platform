@@ -91,6 +91,16 @@ class Settings(BaseSettings):
     WORK_DAYS: Annotated[List[int], NoDecode] = [1, 2, 3, 4, 5]
     WORK_START: str = "08:00"
     WORK_END: str = "17:00"
+    # Alert analysis with Claude (Anthropic API). Off until a key is set in
+    # the server's .env; the key never goes in code. Redacted technical data
+    # only (no client, user, host names or IPs). The language is the
+    # default; an operator can ask for the other one.
+    ANTHROPIC_API_KEY: str = ""
+    AI_ANALYSIS_ENABLED: bool = True
+    AI_MODEL: str = "claude-opus-5-5"
+    AI_LANGUAGE: str = "sq"
+    AI_DAILY_LIMIT: int = 100
+    AI_TIMEOUT_SECONDS: int = 120
     AGENT_PACKAGE_STORAGE_DIR: str = "agent_packages"
     RUSTDESK_SERVER_HOST: str = "139.162.158.208"
     RUSTDESK_RELAY_HOST: str = "139.162.158.208"

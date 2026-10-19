@@ -1,6 +1,7 @@
 from enum import Enum
 
-from sqlalchemy import Column, DateTime, Enum as SQLEnum, ForeignKey, Index, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, Enum as SQLEnum, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import false as sa_false
 from sqlalchemy.orm import relationship
 
 from app.db.base import Base
@@ -62,5 +63,88 @@ class DeviceAlert(Base):
     resolved_at = Column(DateTime, nullable=True, index=True)
     acknowledged_at = Column(DateTime, nullable=True)
     cooldown_until = Column(DateTime, nullable=True)
+    # One open alert per (device, kind, fingerprint): the fingerprint names
+    # what inside the device is affected ("svc:spooler", "vol:D:",
+    # "evt:shutdown"), "" when the kind alone says it.
+    fingerprint = Column(String(128), nullable=False, default="", server_default="")
+    # A problem that comes back within a day reopens the same row: how many
+    # times it has opened, and when it was last seen.
+    occurrences = Column(Integer, nullable=False, default=1, server_default="1")
+    last_seen_at = Column(DateTime, nullable=True)
+    # 1 (act now) … 4 (whenever): severity weighed by the device's role.
+    priority = Column(Integer, nullable=True, index=True)
+    assigned_to_id = Column(Integer, ForeignKey("operators.id", ondelete="SET NULL"), nullable=True, index=True)
+    snoozed_until = Column(DateTime, nullable=True)
+    # Snoozed "until it gets worse": a higher severity wakes it.
+    snooze_until_worse = Column(Boolean, nullable=False, default=False, server_default=sa_false())
+    # auto | fixed | false_positive | expected | duplicate | muted
+    resolution = Column(String(32), nullable=True)
+    resolved_by = Column(String(128), nullable=True)
+    # When an unowned P1 was last escalated (reminder notification).
+    escalated_at = Column(DateTime, nullable=True)
 
     device = relationship("Device")
+    assigned_to = relationship("Operator", lazy="joined")
+
+
+class AlertResolution(str, Enum):
+    AUTO = "auto"
+    FIXED = "fixed"
+    FALSE_POSITIVE = "false_positive"
+    EXPECTED = "expected"
+    DUPLICATE = "duplicate"
+    MUTED = "muted"
+
+
+class AlertActivity(Base):
+    """The timeline of one alert: opened, reopened, taken, snoozed, notes,
+    resolved, analysed."""
+
+    __tablename__ = "alert_activity"
+
+    id = Column(Integer, primary_key=True)
+    alert_id = Column(Integer, ForeignKey("device_alerts.id", ondelete="CASCADE"), nullable=False, index=True)
+    at = Column(DateTime, default=utcnow_naive, nullable=False)
+    actor = Column(String(128), nullable=True)  # operator username, or None for the platform
+    action = Column(String(32), nullable=False)
+    detail = Column(String(1000), nullable=True)
+
+
+class AlertMute(Base):
+    """A rule that keeps matching alerts from opening, until it expires."""
+
+    __tablename__ = "alert_mutes"
+
+    id = Column(Integer, primary_key=True)
+    device_id = Column(Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=True, index=True)
+    kind = Column(String(64), nullable=True)
+    fingerprint = Column(String(128), nullable=True)
+    until = Column(DateTime, nullable=True)  # None: until removed
+    reason = Column(String(500), nullable=False)
+    created_by = Column(String(128), nullable=True)
+    created_at = Column(DateTime, default=utcnow_naive, nullable=False)
+    removed_at = Column(DateTime, nullable=True)
+    removed_by = Column(String(128), nullable=True)
+
+
+class AlertAnalysis(Base):
+    """An AI analysis of one alert (or of a group of the same alerts)."""
+
+    __tablename__ = "alert_analyses"
+
+    id = Column(Integer, primary_key=True)
+    alert_id = Column(Integer, ForeignKey("device_alerts.id", ondelete="CASCADE"), nullable=True, index=True)
+    group_key = Column(String(200), nullable=True, index=True)
+    language = Column(String(8), nullable=False, default="sq")
+    model = Column(String(64), nullable=False)
+    result_json = Column(Text, nullable=True)
+    error = Column(String(500), nullable=True)
+    input_tokens = Column(Integer, nullable=True)
+    output_tokens = Column(Integer, nullable=True)
+    cost_usd = Column(Float, nullable=True)
+    occurrences = Column(Integer, nullable=True)  # the alert's count when analysed
+    created_by = Column(String(128), nullable=True)
+    created_at = Column(DateTime, default=utcnow_naive, nullable=False, index=True)
+    rating = Column(Integer, nullable=True)  # 1 useful, -1 not useful
+    rated_by = Column(String(128), nullable=True)

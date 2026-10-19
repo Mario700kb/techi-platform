@@ -616,3 +616,108 @@ def repair_remote_support_config(
     # next heartbeat picks it up exactly as before.
     push_action_if_connected(device_id, action, RemoteActionService(db))
     return RemoteActionResponse.model_validate(action)
+
+
+# ── Remote Support identity: what each client reports about itself ─────────
+
+class RemoteSupportClientOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    rustdesk_id: str
+    machine_guid: Optional[str] = None
+    hostname: Optional[str] = None
+    username: Optional[str] = None
+    os: Optional[str] = None
+    version: Optional[str] = None
+    source_ip: Optional[str] = None
+    device_id: Optional[int] = None
+    device_name: Optional[str] = None
+    device_rustdesk_id: Optional[str] = None
+    bound_by: Optional[str] = None
+    first_seen_at: datetime
+    last_seen_at: datetime
+    note: Optional[str] = None
+
+
+class RemoteSupportIdentitySummary(BaseModel):
+    devices_with_id: int
+    confirmed_24h: int
+    unbound_clients_24h: int
+    attention_24h: int
+    agent_disagrees: int
+
+
+class RemoteSupportBindBody(BaseModel):
+    device_id: int
+
+
+@router.get("/identity/summary", response_model=RemoteSupportIdentitySummary)
+def remote_support_identity_summary(
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+):
+    """How many devices' Remote Support IDs the clients themselves confirm."""
+    from app.services.remote_support_presence import presence_summary
+
+    return presence_summary(db)
+
+
+@router.get("/identity/clients", response_model=List[RemoteSupportClientOut])
+def remote_support_identity_clients(
+    state: str = Query(default="attention", pattern="^(attention|unbound|all)$"),
+    db: Session = Depends(get_db),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+    _: Operator = Depends(get_current_operator),
+):
+    """Clients that report to the platform: those not matched to a device
+    ("unbound"), those whose ID is not applied ("attention": a clone, a
+    conflict, a pinned ID) or all of them, seen in the last 7 days."""
+    from datetime import timedelta
+
+    from app.core.time import utcnow_naive
+    from app.models.remote_support_peer import RemoteSupportPeer
+
+    query = db.query(RemoteSupportPeer, Device).outerjoin(Device, Device.id == RemoteSupportPeer.device_id)
+    query = query.filter(RemoteSupportPeer.last_seen_at >= utcnow_naive() - timedelta(days=7))
+    if state == "unbound":
+        query = query.filter(RemoteSupportPeer.device_id.is_(None))
+    elif state == "attention":
+        query = query.filter((RemoteSupportPeer.device_id.is_(None)) | (RemoteSupportPeer.note.isnot(None)))
+    out = []
+    for peer, device in query.order_by(RemoteSupportPeer.last_seen_at.desc()).limit(500).all():
+        if scope is not None and (device is None or not device_in_scope(device.client_id, device.group_id, device.id, scope)):
+            continue  # unmatched clients are visible to unrestricted operators only
+        row = RemoteSupportClientOut.model_validate(peer)
+        if device is not None:
+            row.device_name = (device.display_name or "").strip() or device.hostname
+            row.device_rustdesk_id = device.rustdesk_id
+        out.append(row)
+    return out
+
+
+@router.post("/identity/clients/{client_row_id}/bind", response_model=RemoteSupportClientOut)
+def bind_remote_support_client(
+    client_row_id: int,
+    body: RemoteSupportBindBody,
+    db: Session = Depends(get_db),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+    operator: Operator = Depends(require_min_role(OperatorRole.OPERATOR.value)),
+    _perm: None = Depends(require_team_permission(REMOTE_SUPPORT_MANAGE)),
+):
+    """An operator says which device a reporting client is: its ID becomes
+    the device's (unless pinned, a clone, or held by another live device)."""
+    from app.models.remote_support_peer import RemoteSupportPeer
+    from app.services.remote_support_presence import RemoteSupportPresence
+
+    peer = db.get(RemoteSupportPeer, client_row_id)
+    if peer is None:
+        raise HTTPException(status_code=404, detail="Remote Support client not found")
+    device = _get_device(body.device_id, db, scope)
+    RemoteSupportPresence(db).bind_manually(peer, device, operator.username)
+    audit_log(db, operator=operator, action="remote_support_client_bound", entity_type="device", entity_id=device.id,
+              details={"client_row_id": peer.id, "rustdesk_id": peer.rustdesk_id, "applied": device.rustdesk_id == peer.rustdesk_id})
+    row = RemoteSupportClientOut.model_validate(peer)
+    row.device_name = (device.display_name or "").strip() or device.hostname
+    row.device_rustdesk_id = device.rustdesk_id
+    return row

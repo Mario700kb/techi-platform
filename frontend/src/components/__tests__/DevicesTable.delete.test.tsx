@@ -50,7 +50,9 @@ describe("DevicesTable · delete to the trash", () => {
     expect(confirm).toBeEnabled();
     fireEvent.click(confirm);
 
-    await waitFor(() => expect(onDeviceDelete).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }), "duplicate of 978", "123456"));
+    await waitFor(() =>
+      expect(onDeviceDelete).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }), "duplicate of 978", "123456"),
+    );
   });
 
   it("shows a wrong code in the dialog and keeps it open", async () => {

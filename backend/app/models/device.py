@@ -93,6 +93,15 @@ class Device(Base):
     rustdesk_conflict_detected = Column(Boolean, default=False, nullable=False)
     rustdesk_last_repair_at = Column(DateTime, nullable=True)
     rustdesk_repair_count = Column(Integer, default=0, nullable=False)
+    # Where rustdesk_id came from: "remote_support" (the client itself told
+    # the platform), "agent" (read by the agent), "manual" (an operator).
+    rustdesk_id_source = Column(String(16), nullable=True)
+    # Last time Remote Support itself reported in (its heartbeat, every 15 s).
+    rustdesk_presence_at = Column(DateTime, nullable=True)
+    # The ID the agent last reported, kept when it disagrees with the client.
+    agent_rustdesk_id = Column(String(32), nullable=True)
+    # Windows MachineGuid (agents >= 2.1.34): what Remote Support's uuid encodes.
+    machine_guid = Column(String(64), nullable=True, index=True)
 
     duplicate_candidate = Column(Boolean, default=False, nullable=False)
     duplicate_of_device_id = Column(Integer, nullable=True)

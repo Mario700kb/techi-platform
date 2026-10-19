@@ -79,3 +79,85 @@ STALE_WHEN_OFFLINE = (
     AlertKind.NETWORK_LATENCY,
     AlertKind.PACKET_LOSS,
 )
+
+
+# ── Priority ────────────────────────────────────────────────────────────────
+# Severity weighed by what the device is: a critical alert on a server is the
+# one to act on now; the same on a user's PC can wait for the morning.
+SERVER_CATEGORIES = ("servers", "hypervisors", "storage", "network")
+
+_PRIORITY = {
+    (AlertSeverity.CRITICAL, True): 1,
+    (AlertSeverity.CRITICAL, False): 2,
+    (AlertSeverity.WARNING, True): 2,
+    (AlertSeverity.WARNING, False): 3,
+    (AlertSeverity.INFO, True): 4,
+    (AlertSeverity.INFO, False): 4,
+}
+# A problem that came back this many times climbs one priority.
+RECURRING_OCCURRENCES = 3
+# Within this long a problem that comes back reopens its own row.
+REOPEN_WINDOW_SECONDS = 24 * 3600
+# An unowned P1 is escalated (notified again) after this long in working hours.
+ESCALATE_AFTER_SECONDS = 30 * 60
+
+
+def priority_for(severity: AlertSeverity, is_server: bool, occurrences: int = 1) -> int:
+    value = _PRIORITY.get((AlertSeverity(severity), bool(is_server)), 4)
+    if occurrences >= RECURRING_OCCURRENCES and value > 1 and value < 4:
+        value -= 1
+    return value
+
+
+def is_server_category(category: str | None) -> bool:
+    return (category or "") in SERVER_CATEGORIES
+
+
+# ── Windows System events (device health report) ────────────────────────────
+# The critical-events monitor opens one alert per group, each with its own
+# rule. "min_count" occurrences within "window_h" hours open it; on a PC the
+# PC rule applies. "severity" None takes the monitor's own severity.
+@dataclass(frozen=True)
+class EventGroupRule:
+    key: str
+    title: str
+    window_h: int
+    min_count: int
+    severity: AlertSeverity | None
+    pc_window_h: int | None = None
+    pc_min_count: int | None = None
+    # Escalates to critical on a server or at this many occurrences.
+    critical_from: int | None = None
+
+
+EVENT_GROUPS: dict[str, EventGroupRule] = {
+    # Power lost or button held: one on a PC is not a problem, a pattern is.
+    "shutdown": EventGroupRule("shutdown", "Unexpected shutdown", 24, 1, None, pc_window_h=24 * 7, pc_min_count=2),
+    "bsod": EventGroupRule("bsod", "Blue screen", 24, 1, None, critical_from=2),
+    "hardware": EventGroupRule("hardware", "Fatal hardware error", 24, 1, AlertSeverity.CRITICAL),
+    "disk_bad": EventGroupRule("disk_bad", "Disk errors", 24, 1, AlertSeverity.CRITICAL),
+    # Retries and paging errors are common on USB drives and busy VMs.
+    "disk_retry": EventGroupRule("disk_retry", "Disk I/O retried", 24, 3, None),
+    "filesystem": EventGroupRule("filesystem", "File system needs repair", 24, 1, None),
+}
+
+# (provider, event id) → group. Providers lower-case, as EVENT_CATALOG.
+EVENT_GROUP_OF: dict[tuple[str, int], str] = {
+    ("microsoft-windows-kernel-power", 41): "shutdown",
+    ("eventlog", 6008): "shutdown",
+    ("microsoft-windows-wer-systemerrorreporting", 1001): "bsod",
+    ("bugcheck", 1001): "bsod",
+    ("microsoft-windows-whea-logger", 18): "hardware",
+    ("disk", 7): "disk_bad",
+    ("disk", 11): "disk_bad",
+    ("disk", 51): "disk_retry",
+    ("disk", 153): "disk_retry",
+    ("ntfs", 55): "filesystem",
+    ("microsoft-windows-ntfs", 55): "filesystem",
+    ("ntfs", 98): "filesystem",
+    ("microsoft-windows-ntfs", 98): "filesystem",
+    ("ntfs", 137): "filesystem",
+    ("microsoft-windows-ntfs", 137): "filesystem",
+}
+# Kernel-Power 41 and EventLog 6008 written at the same boot are one shutdown.
+SAME_INCIDENT_SECONDS = 600

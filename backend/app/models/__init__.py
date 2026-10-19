@@ -1,5 +1,5 @@
 from app.models.agent_command_batch import AgentCommandBatch
-from app.models.alert import DeviceAlert
+from app.models.alert import AlertActivity, AlertAnalysis, AlertMute, DeviceAlert
 from app.models.client import Client
 from app.models.client_document import ClientDocument
 from app.models.client_location import ClientLocation, ClientLocationRule
@@ -29,6 +29,7 @@ from app.models.telemetry_pipeline import (
     TelemetrySample,
 )
 from app.models.remote_support_connection import RemoteSupportConnection
+from app.models.remote_support_peer import RemoteSupportPeer
 from app.models.team import Team, TeamClientAccess, TeamDeviceAccess, TeamGroupAccess, TeamMember
 from app.models.trusted_domain import TrustedDomain
 from app.models.terminal_session import TerminalSession
@@ -49,7 +50,11 @@ __all__ = [
     "ClientLocation",
     "ClientLocationRule",
     "Device",
+    "AlertActivity",
+    "AlertAnalysis",
+    "AlertMute",
     "DeviceAlert",
+    "RemoteSupportPeer",
     "DeviceGroup",
     "DeviceActivityEvent",
     "DeviceHeartbeat",

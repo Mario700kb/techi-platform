@@ -70,6 +70,11 @@ class DeviceBase(BaseModel):
     rustdesk_conflict_detected: bool = False
     rustdesk_last_repair_at: Optional[datetime] = None
     rustdesk_repair_count: int = 0
+    # Where the Remote Support ID came from and when the client itself last
+    # reported (app/services/remote_support_presence.py).
+    rustdesk_id_source: Optional[str] = None
+    rustdesk_presence_at: Optional[datetime] = None
+    agent_rustdesk_id: Optional[str] = None
     auto_assigned: bool = False
     assignment_source: str = "manual"
     is_archived: bool = False

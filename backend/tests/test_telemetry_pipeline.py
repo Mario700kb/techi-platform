@@ -243,7 +243,8 @@ def test_a_firing_monitor_opens_an_alert_and_ok_closes_it(db):
     alerts = db.query(DeviceAlert).filter(DeviceAlert.kind == AlertKind.HIGH_CPU).all()
     assert len(alerts) == 1
     assert alerts[0].message == "CPU above 95% for 15 min on Mario-Lenovo (now 97%)"
-    assert alerts[0].severity.value == "critical"
+    # Critical in the policy, but on a user PC: a warning (P3), not a page.
+    assert alerts[0].severity.value == "warning" and alerts[0].priority == 3
     service.apply(device, MonitorEvent(key="cpu", state="ok"), policy)
     assert db.query(DeviceAlert).filter(DeviceAlert.state == AlertState.OPEN).count() == 0
 

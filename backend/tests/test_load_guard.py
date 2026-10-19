@@ -8,7 +8,6 @@ pending actions, so none is marked SENT for an agent that stopped listening.
 import asyncio
 import json
 
-import pytest
 
 from app.core.load_guard import HeartbeatGuard, HeartbeatLoad, RequestMetrics
 

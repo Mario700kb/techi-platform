@@ -164,12 +164,44 @@ def _run_monitor_sweep() -> None:
     except Exception:
         logger.exception("Monitor sweep failed")
         db.rollback()
+    try:
+        # A P1 nobody took within 30 minutes of working hours: send it again.
+        from app.services.alert_center_service import AlertCenterService
+
+        AlertCenterService(db).escalate_unowned()
+    except Exception:
+        logger.exception("Alert reminder sweep failed")
+        db.rollback()
     finally:
         db.close()
 
 
 # First runs well after a restart: the fleet reconnects in the first minutes.
 MONITOR_SWEEP_FIRST_DELAY_S = 600
+
+
+def _flush_remote_support_presence() -> None:
+    from app.db.session import SessionLocal
+    from app.services.remote_support_presence import flush
+
+    db = SessionLocal()
+    try:
+        flush(db)
+    except Exception:
+        logger.exception("Remote Support presence flush failed")
+        db.rollback()
+    finally:
+        db.close()
+
+
+async def _presence_flush_scheduler() -> None:
+    """Remote Support clients report every 15 s and are answered from memory;
+    their "last seen" is written once a minute in one batch."""
+    from app.services.remote_support_presence import FLUSH_EVERY_S
+
+    while True:
+        await asyncio.sleep(FLUSH_EVERY_S)
+        await asyncio.to_thread(_flush_remote_support_presence)
 
 
 async def _monitor_sweep_scheduler() -> None:
@@ -244,6 +276,7 @@ async def lifespan(app: FastAPI):
     location_sweep_task = asyncio.create_task(_location_sweep_scheduler())
     await asyncio.to_thread(_ensure_telemetry_partitions)
     monitor_sweep_task = asyncio.create_task(_monitor_sweep_scheduler())
+    presence_flush_task = asyncio.create_task(_presence_flush_scheduler())
     # Only runs when the feature is actually reachable — flag OFF stays
     # zero-extra-behavior (no new periodic queries).
     if feature_enabled("FEATURE_TERMINAL"):
@@ -272,12 +305,14 @@ async def lifespan(app: FastAPI):
 
     cancel_presence_checks()
 
-    for task in (cleanup_task, location_sweep_task, monitor_sweep_task):
+    for task in (cleanup_task, location_sweep_task, monitor_sweep_task, presence_flush_task):
         task.cancel()
         try:
             await task
         except asyncio.CancelledError:
             pass
+    # The last minute of Remote Support "last seen" times.
+    await asyncio.to_thread(_flush_remote_support_presence)
     await terminal_watchdog.stop()
     ssh_connector_runner.stop()
     await notification_worker.stop()

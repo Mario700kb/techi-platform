@@ -202,6 +202,9 @@ class HealthEvent(_Lenient):
     event_id: int
     at: datetime
     message: Optional[str] = None
+    # Windows level as the agent read it (agents >= 2.1.34): 1 critical,
+    # 2 error, 3 warning, 4 information, 0 "log always", 5 verbose.
+    win_level: Optional[int] = None
     # Filled from EVENT_CATALOG; whatever the agent sent is not trusted.
     category: Optional[EventCategory] = None
     level: Optional[str] = None
@@ -216,6 +219,11 @@ class HealthEvent(_Lenient):
     @classmethod
     def _message(cls, value: Any) -> Optional[str]:
         return _text(value, MAX_MESSAGE_CHARS)
+
+    @field_validator("win_level", mode="before")
+    @classmethod
+    def _win_level(cls, value: Any) -> Optional[int]:
+        return _bounded_int(value, 0, 5)
 
     @field_validator("at", mode="before")
     @classmethod

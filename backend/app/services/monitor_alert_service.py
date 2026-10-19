@@ -55,6 +55,21 @@ UNIT = {
 }
 # The agent that measures disk activity, network quality, services and health.
 AGENT_METRICS_SINCE = (2, 1, 33)
+# Posture findings that, when they appear on a device that had them off,
+# open an alert (a protection was switched off). The rest stay findings.
+REGRESSION_CODES = ("no_antivirus", "realtime_off", "firewall_off", "uac_off")
+
+
+def fingerprint_for(metric: str, target: Optional[str]) -> str:
+    """What inside the device an alert is about: one alert per service and per
+    volume, so a second one is not swallowed by the first."""
+    if not target:
+        return ""
+    if metric == "service":
+        return f"svc:{target.strip().lower()}"[:128]
+    if metric in ("disk", "disk_busy"):
+        return f"vol:{target.strip().upper()}"[:128]
+    return ""
 
 
 def _minutes(seconds: int) -> str:
@@ -104,22 +119,24 @@ class MonitorAlertService:
         if kind is None:
             return
         engine = self._engine()
+        if monitor.metric == "service":
+            self._apply_services(device, event, monitor, kind, engine)
+            return
+        fingerprint = fingerprint_for(monitor.metric, event.target)
+        if event.state == "ok" and not event.target:
+            engine.resolve_kind(device.id, kind, reason=f"monitor_{monitor.key}_ok")
+            return
         if event.state == "ok" or (monitor.metric == "disk" and self._small_volume(device.id, event.target)):
             # A small volume (recovery, EFI) full is not a problem; agents
             # before 2.1.33 still report it.
-            engine._resolve(device.id, kind, reason=f"monitor_{monitor.key}_ok")
+            self._resolve_target(engine, device.id, kind, fingerprint, event.target, f"monitor_{monitor.key}_ok")
             return
         hostname = device.display_name or device.hostname or f"device-{device.id}"
-        if monitor.metric == "service":
-            stopped = event.target or monitor.target or "a watched service"
-            duration = f" for {_minutes(monitor.duration_s)}" if monitor.duration_s else ""
-            engine._open_alert(
-                device.id, kind, AlertSeverity(monitor.severity),
-                f"Service stopped{duration} on {hostname}: {stopped}"[:512],
-                detail=f"Monitor {monitor.key} · set to start automatically · reported by the device",
-                device=device,
-            )
-            return
+        severity = AlertSeverity(monitor.severity)
+        if monitor.metric in ("cpu", "mem") and severity == AlertSeverity.CRITICAL and not self._is_server(device):
+            # A busy user PC is slow, not down: it waits for a technician,
+            # it does not page one.
+            severity = AlertSeverity.WARNING
         label = LABEL.get(monitor.metric, monitor.metric)
         if event.target:
             label = f"{label} {event.target}"
@@ -129,11 +146,49 @@ class MonitorAlertService:
         engine._open_alert(
             device.id,
             kind,
-            AlertSeverity(monitor.severity),
+            severity,
             f"{label} {describe(monitor)} on {hostname}{now}",
             detail=f"Monitor {monitor.key} · reported by the device",
             device=device,
+            fingerprint=fingerprint,
         )
+
+    def _apply_services(self, device: Device, event: MonitorEvent, monitor: Monitor, kind: AlertKind, engine) -> None:
+        """The agent reports every watched service that is stopped, comma
+        separated, in one event ("MSSQL$SAGE, vmms"); "ok" means none is.
+        Each stopped service is its own alert."""
+        stopped = [] if event.state == "ok" else [t.strip() for t in (event.target or "").split(",") if t.strip()]
+        if event.state != "ok" and not stopped:
+            stopped = [monitor.target or "a watched service"]
+        hostname = device.display_name or device.hostname or f"device-{device.id}"
+        duration = f" for {_minutes(monitor.duration_s)}" if monitor.duration_s else ""
+        keep = []
+        for name in stopped:
+            fingerprint = fingerprint_for("service", name)
+            keep.append(fingerprint)
+            engine._open_alert(
+                device.id, kind, AlertSeverity(monitor.severity),
+                f"Service stopped{duration} on {hostname}: {name}"[:512],
+                detail=f"Monitor {monitor.key} · set to start automatically · reported by the device",
+                device=device,
+                fingerprint=fingerprint,
+            )
+        engine.resolve_kind(device.id, kind, reason=f"monitor_{monitor.key}_ok", keep=tuple(keep))
+
+    def _is_server(self, device: Device) -> bool:
+        from app.services.alert_engine import device_is_server
+
+        return device_is_server(device)
+
+    @staticmethod
+    def _resolve_target(engine, device_id: int, kind: AlertKind, fingerprint: str, target: Optional[str], reason: str) -> None:
+        if engine._resolve(device_id, kind, reason=reason, fingerprint=fingerprint) is not None or not fingerprint:
+            return
+        # Alerts opened before fingerprints carry none: close the old one when
+        # its message names this service or volume.
+        legacy = engine.repo.get_open(device_id, kind, "")
+        if legacy is not None and target and target.lower() in (legacy.message or "").lower():
+            engine.resolve_alert(legacy, reason=reason)
 
     def _small_volume(self, device_id: int, mount: Optional[str]) -> bool:
         if not mount:
@@ -155,14 +210,19 @@ class MonitorAlertService:
 
     # ── reports: security posture and device health ─────────────────────────
 
-    def evaluate_reports(self, device: Device) -> None:
+    def evaluate_reports(self, device: Device, previous_posture=None) -> None:
         """Judge the device's last security posture and health report against
         its policy. Called when a heartbeat brings either; each report is
-        re-sent at least every six hours, so an alert also closes on its own."""
-        from app.services.device_health import alerting_events, disks_with_problems, reboot_pending_days
+        re-sent at least every six hours, so an alert also closes on its own.
+
+        A security posture is a finding (the Security view lists it), not an
+        incident: an alert opens only when a protection that was on is now
+        off. System events open one alert per group (EVENT_GROUPS), each with
+        its own rule; a pending restart alerts on servers only."""
+        from app.services.device_health import disks_with_problems, firing_event_groups, reboot_pending_days
         from app.services.device_inventory_service import DeviceInventoryService
         from app.services.monitoring_policy_service import effective_policy
-        from app.services.security_posture import posture_findings, posture_score
+        from app.services.security_posture import posture_findings
 
         policy = effective_policy(self.db, device)
         monitors = {m.metric: m for m in policy.monitors if m.enabled}
@@ -172,7 +232,9 @@ class MonitorAlertService:
         inventory = DeviceInventoryService(self.db)
         hostname = device.display_name or device.hostname or f"device-{device.id}"
         engine = self._engine()
+        engine.prefetch_open(device.id)
         now = utcnow()
+        is_server = self._is_server(device)
 
         def judge(metric: str, firing: bool, message: str, detail: str) -> None:
             monitor = monitors[metric]
@@ -181,17 +243,30 @@ class MonitorAlertService:
                 engine._resolve(device.id, kind, reason=f"monitor_{monitor.key}_ok")
                 return
             engine._open_alert(device.id, kind, AlertSeverity(monitor.severity), message[:512],
-                               detail=f"{detail} · monitor {monitor.key}"[:1024], device=device)
+                               detail=f"{detail} · monitor {monitor.key}"[:1024], device=device, refresh=True)
 
         if "security_score" in monitors:
             posture = inventory.get_security_posture(device.id)
             if posture is not None:
                 monitor = monitors["security_score"]
-                score = posture_score(posture)
-                findings = [text for _, text in posture_findings(posture)]
-                judge("security_score", score < monitor.threshold,
-                      f"Security score below {monitor.threshold:g} on {hostname} (now {score})",
-                      "; ".join(findings) or "No known problem")
+                current = dict(posture_findings(posture))
+                before = dict(posture_findings(previous_posture)) if previous_posture is not None else None
+                firing: list = []
+                for code, text in current.items():
+                    if code not in REGRESSION_CODES:
+                        continue
+                    fingerprint = f"regress:{code}"
+                    already = engine._get_open(device.id, AlertKind.SECURITY_POSTURE, fingerprint)
+                    worse = before is not None and (code not in before or (code == "firewall_off" and before[code] != text))
+                    if already is not None or worse:
+                        firing.append(fingerprint)
+                        engine._open_alert(
+                            device.id, AlertKind.SECURITY_POSTURE, AlertSeverity(monitor.severity),
+                            f"Protection turned off on {hostname}: {text}"[:512],
+                            detail=f"Was on in the previous report · monitor {monitor.key}",
+                            device=device, fingerprint=fingerprint, refresh=True,
+                        )
+                engine.resolve_kind(device.id, AlertKind.SECURITY_POSTURE, reason="posture_finding", keep=tuple(firing))
 
         health = inventory.get_health(device.id) if {"disk_health", "critical_events", "reboot_pending_days"} & set(monitors) else None
         if health is None:
@@ -203,21 +278,28 @@ class MonitorAlertService:
                   "; ".join(f"{d.name}: {d.problem}" for d in problems))
         if "critical_events" in monitors:
             monitor = monitors["critical_events"]
-            events = alerting_events(health, now)
-            titles = []
-            for e in events[:5]:
-                titles.append(f"{e.title} ({e.source} {e.event_id}) {e.at:%d %b %H:%M} UTC")
-            count = len(events)
-            judge("critical_events", count > monitor.threshold,
-                  f"{count} critical event{'s' if count != 1 else ''} in 24 h on {hostname}: {events[0].title if events else ''}",
-                  "; ".join(titles))
+            groups = firing_event_groups(health, now, is_server=is_server, base_severity=monitor.severity)
+            for group in groups:
+                latest = group.events[0]
+                times = "time" if group.count == 1 else "times"
+                span = "24 h" if group.window_h <= 24 else f"{group.window_h // 24} days"
+                titles = [f"{e.title} ({e.source} {e.event_id}) {e.at:%d %b %H:%M} UTC" for e in group.events[:5]]
+                engine._open_alert(
+                    device.id, AlertKind.CRITICAL_EVENTS, AlertSeverity(group.severity),
+                    f"{group.title}: {group.count} {times} in {span} on {hostname}"[:512],
+                    detail=f"{'; '.join(titles)} · last {latest.at:%d %b %H:%M} UTC · monitor {monitor.key}"[:1024],
+                    device=device, fingerprint=group.fingerprint, refresh=True,
+                )
+            engine.resolve_kind(device.id, AlertKind.CRITICAL_EVENTS, reason=f"monitor_{monitor.key}_ok",
+                                keep=tuple(g.fingerprint for g in groups))
         if "reboot_pending_days" in monitors:
             monitor = monitors["reboot_pending_days"]
             days = reboot_pending_days(health, now)
             from app.schemas.device_health import REBOOT_REASONS
 
             reasons = ", ".join(REBOOT_REASONS.get(r, r) for r in health.reboot_reasons) or "Windows"
-            judge("reboot_pending_days", days is not None and days > monitor.threshold,
+            # On a PC a pending restart is maintenance (the Findings view), not an alert.
+            judge("reboot_pending_days", is_server and days is not None and days > monitor.threshold,
                   f"Restart pending for {days:.0f} days on {hostname}" if days is not None else "",
                   f"Waiting for: {reasons}")
 

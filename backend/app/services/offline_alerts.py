@@ -34,7 +34,7 @@ from datetime import datetime, time, timedelta
 from typing import Optional
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, exists, or_
+from sqlalchemy import and_, exists, func, or_
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -142,12 +142,13 @@ class OfflineAlertSweep:
         open_alert = DeviceAlert.state == AlertState.OPEN
         offline_alert = and_(DeviceAlert.device_id == Device.id, DeviceAlert.kind == AlertKind.DEVICE_OFFLINE)
 
-        # Two NOT EXISTS rather than one with an OR: each is a single index
-        # seek, (device_id, kind, state) and (device_id, kind, created_at).
+        # Two NOT EXISTS rather than one with an OR. An alert that came back
+        # reopens its old row, so "opened this episode" is its last opening.
+        last_opened = func.coalesce(DeviceAlert.last_seen_at, DeviceAlert.created_at)
         due = (
             self._out_too_long(now)
             .filter(~exists().where(offline_alert, open_alert))
-            .filter(~exists().where(offline_alert, DeviceAlert.created_at >= Device.last_seen))
+            .filter(~exists().where(offline_alert, last_opened >= Device.last_seen))
             .all()
         )
 
@@ -159,10 +160,8 @@ class OfflineAlertSweep:
             absent_after = timedelta(days=settings.OFFLINE_ALERT_ABSENT_DAYS)
             for device, category in absent.filter(~exists().where(offline_alert, open_alert)).all():
                 latest = (
-                    self.db.query(DeviceAlert.created_at)
+                    self.db.query(func.max(last_opened))
                     .filter(DeviceAlert.device_id == device.id, DeviceAlert.kind == AlertKind.DEVICE_OFFLINE)
-                    .order_by(DeviceAlert.created_at.desc())
-                    .limit(1)
                     .scalar()
                 )
                 if latest is None or ensure_utc(latest) < ensure_utc(device.last_seen) + absent_after:

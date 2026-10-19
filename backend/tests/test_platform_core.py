@@ -157,6 +157,8 @@ class TestWiringBoundary:
             "app/services/offline_alerts.py",  # Unified Classification Engine consumer: always-on vs workstation offline policy
             "app/services/monitoring_policy_service.py",  # Unified Classification Engine consumer: device-category monitoring policies
             "app/services/metrics_query_service.py",  # Unified Classification Engine consumer: device category in client analytics
+            "app/services/alert_engine.py",  # Unified Classification Engine consumer: server vs PC alert priority
+            "app/repositories/alert_repository.py",  # Unified Classification Engine consumer: server vs PC in the alert queue
             "app/services/client_reports/common.py",  # Unified Classification Engine consumer: server vs workstation in client reports (+ versioning for agent gates)
             "app/services/permission_service.py",  # ACTION_PERMISSION_MAP derives from the Action Registry (Step 1c)
             "app/services/agent_enrollment_service.py",  # registry-driven architecture validation (MikroTik phase)

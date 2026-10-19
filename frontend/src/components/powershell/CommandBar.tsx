@@ -19,6 +19,7 @@ export default function CommandBar({
   onRun,
   onInterrupt,
   compact = false,
+  initialValue = "",
 }: {
   /** This session's commands, oldest first. */
   history: string[];
@@ -26,8 +27,10 @@ export default function CommandBar({
   onRun: (text: string) => void;
   onInterrupt: () => void;
   compact?: boolean;
+  /** Typed in, not run: a command brought from an alert, read before Enter. */
+  initialValue?: string;
 }) {
-  const [value, setValue] = useState("");
+  const [value, setValue] = useState(initialValue);
   // Position while walking the history; null = editing a new command.
   const [cursor, setCursor] = useState<number | null>(null);
   const draft = useRef("");

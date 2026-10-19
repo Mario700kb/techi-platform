@@ -4,6 +4,7 @@ import { useParams, useSearchParams } from "react-router-dom";
 import { getDevice, type Device } from "../api/devices";
 import type { TerminalSession } from "../api/terminal";
 import { PowerShellCodeForm } from "../components/PowerShellStepUp";
+import { takePowerShellPrefill } from "../utils/powershellPrefill";
 import PowerShellConsole from "../components/powershell/PowerShellConsole";
 
 const DeviceTerminal = lazy(() => import("../components/DeviceTerminal"));
@@ -30,6 +31,10 @@ export default function TerminalWindow() {
   const deviceId = Number(id);
   const name = params.get("name") || `Device #${deviceId}`;
   const powershell = params.get("engine") === "powershell";
+  // "Open in PowerShell" from an alert leaves the command for this window.
+  const [prefill] = useState(() =>
+    powershell && params.get("prefill") === "1" && Number(id) > 0 ? takePowerShellPrefill(Number(id)) : null,
+  );
   const [session, setSession] = useState<TerminalSession | null>(null);
   // Client, signed-in user and OS for the header and side panel; best-effort.
   const [device, setDevice] = useState<Device | null>(null);
@@ -73,6 +78,7 @@ export default function TerminalWindow() {
             session={session}
             onEnd={() => undefined}
             onNewSession={() => setSession(null)}
+            initialCommand={prefill}
           />
         ) : (
           <div className="flex h-full flex-col">

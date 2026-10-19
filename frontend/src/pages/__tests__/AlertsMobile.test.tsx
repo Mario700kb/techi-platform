@@ -40,6 +40,9 @@ const ALERTS = [
 ];
 
 vi.mock("../../contexts/AppDataContext", () => ({ useAppData: () => ({ alerts: ALERTS, reloadAlerts }) }));
+vi.mock("../../auth/AuthContext", () => ({
+  useAuth: () => ({ user: { id: 1, username: "denis" }, can: () => true, hasPermission: () => true }),
+}));
 
 describe("AlertsMobile", () => {
   afterEach(() => {

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.device import DeviceStatus, DeviceType
 from app.schemas.remote_action import PendingActionDelivery
@@ -14,6 +14,9 @@ class AgentHeartbeatPayload(BaseModel):
     device_id: Optional[int] = None
     rustdesk_id: Optional[str] = None
     rustdesk_enc_id: Optional[str] = None
+    # Windows MachineGuid (agents >= 2.1.34): Remote Support's uuid is its
+    # base64, which ties the client's own ID report to this device.
+    machine_guid: Optional[str] = Field(default=None, max_length=64)
     hostname: Optional[str] = None
     current_user: Optional[str] = None
     user_source: Optional[str] = None
