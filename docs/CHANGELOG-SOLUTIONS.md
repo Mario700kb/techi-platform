@@ -5,6 +5,41 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-19] BACKEND-PERF-2026-10-19 — heartbeat path, overload protection, data lifecycle (`aa1cd01`)
+
+**Backend deployed 17:27 (Tirana), no migration.** From the 19 Oct database
+and backend analysis (4 days of pg_stat_statements, CPU measured at 23%
+backend / 13% PostgreSQL / 13% proxy for 2.4 heartbeats/s).
+- Heartbeat: 41 statements and 7 transactions became 15 (13 without
+  inventory; the request part 12 → 6): heartbeat sessions keep what they
+  wrote, open alerts read once, telemetry/inventory read once, trusted-domain
+  placement cached 60 s, no RustDesk conflict lookup for the device's own ID,
+  no device_heartbeats row per beat (timeline shows the last heartbeat).
+- Overload: HeartbeatGuard answers 503 + Retry-After past 24 heartbeats in
+  flight and to an agent's own retry, before any thread or session; no
+  actions delivered after 8 s of waiting; async /health; channel handshakes
+  in worker threads, 8 at a time; reconciliation waits 150 s after a start;
+  sweeps start after 10 min; graceful shutdown; cpu_shares 4096 for backend
+  and PostgreSQL (PostgreSQL applied live with `docker update`).
+- Data: legacy telemetry 1 day for pipeline agents, status history 90 days,
+  failed enrollments 30 days (one row per host and reason an hour), 5-minute
+  rollups 8 days; availability and capacity queries by index probe.
+- agent_id redacted from logs; migrations run with lock_timeout 10 s.
+Deploy order from the 16:06 lesson: dump, image built, load allowed to fall
+to ~3, then restart. Ready in 10 s; /health ≤0.65 s throughout the
+reconnect; first minute 324 requests, 0 5xx, p95 2.0 s, peak 19 heartbeats in
+flight, none shed; next minute p95 0.20 s; load back to ~2 in 2 minutes.
+Last device_heartbeats row 4 s before the restart. Dump
+`/opt/backups/techi/pre-backend-perf-20261019-172238.sql.gz`, rollback
+`techi-platform-backend:pre-backend-perf-d35a138`. Earlier the same day:
+Docker build cache and 5 old rollback tags removed (843 MB → 2.9 GB free).
+**Open:** workstation sampling 300 s (owner, Monitoring page); the one-off
+purge of old history (~1.3 GB) was refused by the permission classifier and
+waits for the owner; disk resize, off-host backups and an external monitor
+of https://api-rdp.techi.com.al/api/v1/health/ready need the owner's
+accounts. Agent-binary downloads show as slow requests (15–24 s, normal for a
+download). Disk 2.7 GB free (89%).
+
 ## [2026-10-19] DEVICE-TRASH-2026-10-19 — trash with 30-day restore, revoked agents (`d35a138`)
 
 **Backend + frontend deployed 16:03–16:08 (Tirana), migration `u9v0w1x2y3z4`.**
