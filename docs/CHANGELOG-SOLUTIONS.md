@@ -5,6 +5,27 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-19] ENROLL-ONCE-2026-10-19 — a token install no longer creates the device twice (`f1295c6`)
+
+**Backend deployed 15:35 (Tirana), no migration.** KLEIVID-PC, freshly
+formatted and installed with the token script, appeared twice: device 977
+`kleivid-pc` (Remote Support 1102400781, silent 7 s after enrolling) and 978
+`KLEIVID-PC` (1107092325), enrolled 11 s apart. The script ran the MSI, whose
+agent enrolled at once (os.Hostname, lower case), then overwrote
+agent.config.json without agent_id/device_id, deleted the Remote Support
+identity TOML (new ID) and restarted the agent, which enrolled again with
+%COMPUTERNAME% (upper case). The hostname match was case-sensitive, so no
+re-enrollment match. Now the token and GPO scripts keep an enrolled agent's
+identity and every key they do not set (token only for an agent not yet
+enrolled), write no agent_name, and keep the identity TOML; hostname matching
+ignores case, so such a case goes to re-enrollment review. Generated script
+parses in pwsh; merge tested on an enrolled and a fresh config; 1652 backend
+tests pass. Dump `/opt/backups/techi/pre-enroll-once-20261019-152944.sql.gz`,
+rollback `techi-platform-backend:pre-enroll-once-1ab8753`; ready in ~25 s,
+guard and smoke passed, 601 devices heartbeating within 2 min. Device 977
+still to archive (owner, from the console). Not yet seen on a real install.
+Disk 1.2 GB free (95%).
+
 ## [2026-10-19] WINDOWS11-ICON-2026-10-19 — Windows devices show the Windows 11 logo (`feb61c7`)
 
 **Frontend deployed 14:55 (Tirana).** `PlatformIcon` still drew the tilted
