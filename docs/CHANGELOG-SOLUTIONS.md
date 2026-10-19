@@ -5,6 +5,16 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-19] EXPLORER-COUNTRY-2026-10-19 — the country on every location row (`a48d160`)
+
+**Frontend deployed (Tirana, evening).** A client whose sites are all in one
+country showed them without it (Alasfalt: "Kantier"); the ISO prefix
+appeared only for clients with sites in several countries (SLH: "AL KFC
+Ring", "DE Hetzner"). Every site and city row now carries it, in the same
+form. Rollback `techi-platform-frontend:pre-explorer-country-87cea1f`; guard,
+`nginx -t` and smoke passed. Disk 1.9 GB free (93%): two dumps and today's
+telemetry since the afternoon.
+
 ## [2026-10-19] AGENT-IDENTITY-2026-10-19 — agents known by agent_id on every endpoint (`87cea1f`)
 
 **Backend deployed 17:44 (Tirana), no migration.** Mario-Lenovo, deleted for
