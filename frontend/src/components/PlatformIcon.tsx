@@ -2,6 +2,8 @@
 // A future platform is one new entry here — never a new component. Kept tiny
 // and inline (no external assets) to match the self-contained design system.
 
+import { useId } from "react";
+
 type PlatformKey = "windows" | "linux" | "mikrotik" | "synology" | "qnap" | "unknown";
 
 function normalize(platform?: string | null): PlatformKey {
@@ -22,6 +24,9 @@ interface Props {
 
 export default function PlatformIcon({ platform, size = 14, className }: Props) {
   const key = normalize(platform);
+  // Per-instance gradient id: the icon renders many times per page. useId's
+  // colons are stripped so the id is safe inside url(#…).
+  const gradientId = `win-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const common = {
     width: size,
     height: size,
@@ -47,10 +52,17 @@ export default function PlatformIcon({ platform, size = 14, className }: Props) 
       );
     case "windows":
       return (
+        // Windows 11 mark: four equal flat squares sharing one diagonal gradient.
         <svg {...common} role="img" aria-label="Windows">
+          <defs>
+            <linearGradient id={gradientId} x1="3" y1="3" x2="21" y2="21" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stopColor="#4CC2FF" />
+              <stop offset="1" stopColor="#0067C0" />
+            </linearGradient>
+          </defs>
           <path
-            style={{ fill: "var(--th-status-info)" }}
-            d="M3 5.4l7.7-1.1v7.2H3zM12 4.1 21 3v8.5h-9zM3 12.5h7.7v7.2L3 18.6zM12 12.5h9V21l-9-1.3z"
+            fill={`url(#${gradientId})`}
+            d="M3 3h8.6v8.6H3zM12.4 3H21v8.6h-8.6zM3 12.4h8.6V21H3zM12.4 12.4H21V21h-8.6z"
           />
         </svg>
       );
