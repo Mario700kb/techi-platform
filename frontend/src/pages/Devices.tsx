@@ -6,6 +6,7 @@ import { Client, DeviceGroup, getClients, getGroups } from "../api/clients";
 import {
   archiveDevice,
   deleteDevice,
+  purgeDevice,
   getDevice,
   getDevices,
   getDeviceQuickCounts,
@@ -27,6 +28,7 @@ import GenericDeviceDrawer from "../components/GenericDeviceDrawer";
 import { usesRegistryDrawer } from "../utils/drawerChoice";
 import DeviceTree from "../components/DeviceTree";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
+import RevokedAgentsPanel from "../components/RevokedAgentsPanel";
 import DevicesTable, { type ActiveActionEntry, type QuickFilter } from "../components/DevicesTable";
 import { Button, PageHeader } from "../components/ui";
 import { useFavorites } from "../hooks/useFavorites";
@@ -862,8 +864,17 @@ export default function Devices() {
     patchDrawerFallback(updated.id, () => updated);
   };
 
-  const handleDeviceDelete = async (device: Device) => {
-    await deleteDevice(device.id, true);
+  const handleDeviceDelete = async (device: Device, reason: string, mfaCode: string) => {
+    await deleteDevice(device.id, reason, mfaCode);
+    setTableDevices((items) => items.filter((item) => item.id !== device.id));
+    if (drawerDeviceId === device.id) {
+      closeDrawer();
+    }
+    await refreshBoth();
+  };
+
+  const handleDevicePurge = async (device: Device, mfaCode: string) => {
+    await purgeDevice(device.id, mfaCode);
     setTableDevices((items) => items.filter((item) => item.id !== device.id));
     if (drawerDeviceId === device.id) {
       closeDrawer();
@@ -890,12 +901,13 @@ export default function Devices() {
   const handleDeviceRestore = async (device: Device) => {
     const updated = await restoreDevice(device.id);
     patchDrawerFallback(device.id, () => updated);
+    const leavesView = filters.lifecycle_state === "archived" || filters.lifecycle_state === "trash";
     setTableDevices((items) =>
-      filters.lifecycle_state === "archived"
+      leavesView
         ? items.filter((item) => item.id !== device.id)
         : items.map((item) => (item.id === device.id ? updated : item)),
     );
-    if (drawerDeviceId === device.id && filters.lifecycle_state === "archived") {
+    if (drawerDeviceId === device.id && leavesView) {
       closeDrawer();
     }
     await refreshBoth();
@@ -1006,6 +1018,7 @@ export default function Devices() {
         </div>
 
         <div className="min-w-0 space-y-4 xl:min-h-0">
+          {filters.lifecycle_state === "trash" && can("admin") && <RevokedAgentsPanel />}
           <DevicesTable
             devices={tableDevices}
             loading={tableLoading && tableDevices.length === 0}
@@ -1018,6 +1031,7 @@ export default function Devices() {
             onRefresh={handleRefresh}
             onDeviceSelect={openDrawer}
             onDeviceDelete={handleDeviceDelete}
+            onDevicePurge={handleDevicePurge}
             onDeviceArchive={handleDeviceArchive}
             onDeviceRestore={handleDeviceRestore}
             healthMap={healthMap}

@@ -75,6 +75,9 @@ class DeviceBase(BaseModel):
     is_archived: bool = False
     archived_at: Optional[datetime] = None
     archived_by: Optional[str] = None
+    deleted_at: Optional[datetime] = None
+    deleted_by: Optional[str] = None
+    delete_reason: Optional[str] = None
     duplicate_candidate: bool = False
     duplicate_of_device_id: Optional[int] = None
     duplicate_score: Optional[float] = None

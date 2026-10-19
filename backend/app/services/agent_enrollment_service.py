@@ -132,6 +132,12 @@ class AgentEnrollmentService:
                 existing=existing,
             )
             reenrollment_matched = bool(getattr(device, "_reenrollment_matched", False))
+            if reenrollment_matched and device.deleted_at is not None:
+                # A token install on a machine that was deleted is someone
+                # bringing it back: out of the trash, its agent accepted again.
+                from app.services.device_service import DeviceService
+
+                device = DeviceService(self.db).restore_device(device.id) or device
             if not reenrollment_matched:
                 device = self.assignment_service.apply_enrollment_assignment(
                     device,

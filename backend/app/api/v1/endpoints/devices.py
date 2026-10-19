@@ -1,5 +1,6 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_operator, get_operator_scope, require_min_role, require_roles, require_team_permission
@@ -637,21 +638,78 @@ def update_device(
     return updated
 
 
-@router.delete("/{device_id}", response_model=DeviceSchema)
+class DeviceDeleteRequest(BaseModel):
+    reason: str = Field(min_length=3, max_length=500)
+    mfa_code: Optional[str] = Field(default=None, max_length=12)
+
+
+class DevicePurgeRequest(BaseModel):
+    mfa_code: Optional[str] = Field(default=None, max_length=12)
+
+
+def _require_delete_step_up(db: Session, operator: Operator, device: Device, code: Optional[str], step: str) -> None:
+    """Deleting a device is asked with a current two-factor code, whatever
+    the operator's session says (same rule as the administrator PowerShell)."""
+    from app.services.mfa_service import MfaService
+
+    reason = None
+    if not operator.mfa_enabled:
+        reason = "mfa_not_enabled"
+    elif not (code or "").strip() or MfaService(db).verify(operator, code.strip().replace(" ", "")) is None:
+        reason = "mfa_invalid"
+    if reason is None:
+        return
+    audit_log(db, operator=operator, action=AuditAction.DEVICE_DELETE_DENIED, entity_type="device",
+              entity_id=device.id, details={"reason": reason, "step": step, "hostname": device.hostname})
+    detail = (
+        "Turn on two-factor authentication to delete devices."
+        if reason == "mfa_not_enabled" else "Enter a current two-factor code to delete this device."
+    )
+    raise HTTPException(status_code=403, detail={"code": reason, "detail": detail})
+
+
+@router.post("/{device_id}/delete", response_model=DeviceSchema)
 def delete_device(
     *,
     db: Session = Depends(get_db),
     operator: Operator = Depends(require_roles(OperatorRole.ADMIN.value)),
     device: Device = Depends(get_scoped_device),
-    confirm_delete: bool = Query(default=False),
+    payload: DeviceDeleteRequest,
 ):
-    if not confirm_delete:
-        raise HTTPException(status_code=400, detail="Permanent device delete requires explicit confirmation")
-    deleted = DeviceService(db).delete_device(device.id)
+    """Move the device to the trash: out of every list, agent revoked,
+    restorable for TRASH_RETENTION_DAYS."""
+    if device.deleted_at is not None:
+        raise HTTPException(status_code=409, detail="Device is already in the trash")
+    reason = payload.reason.strip()
+    if len(reason) < 3:
+        raise HTTPException(status_code=422, detail="Give a reason for deleting this device")
+    _require_delete_step_up(db, operator, device, payload.mfa_code, "trash")
+    deleted = DeviceService(db).trash_device(device.id, deleted_by=operator.username, reason=reason)
     if not deleted:
         raise HTTPException(status_code=404, detail="Device not found")
-    audit_log(db, operator=operator, action=AuditAction.DEVICE_DELETED, entity_type="device", entity_id=device.id, details={"hostname": device.hostname})
+    audit_log(db, operator=operator, action=AuditAction.DEVICE_DELETED, entity_type="device", entity_id=device.id,
+              details={"hostname": device.hostname, "reason": reason, "trash": True})
     return deleted
+
+
+@router.post("/{device_id}/purge", status_code=204)
+def purge_device(
+    *,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(require_roles(OperatorRole.ADMIN.value)),
+    device: Device = Depends(get_scoped_device),
+    payload: DevicePurgeRequest,
+):
+    """Delete a device in the trash for good, before the nightly purge."""
+    if device.deleted_at is None:
+        raise HTTPException(status_code=409, detail="Only a device in the trash can be deleted permanently")
+    _require_delete_step_up(db, operator, device, payload.mfa_code, "purge")
+    hostname = device.hostname
+    device_id = device.id
+    if not DeviceService(db).delete_device(device_id):
+        raise HTTPException(status_code=404, detail="Device not found")
+    audit_log(db, operator=operator, action=AuditAction.DEVICE_PURGED, entity_type="device", entity_id=device_id,
+              details={"hostname": hostname})
 
 
 @router.get("/{device_id}/inventory", response_model=DeviceInventoryResponse)

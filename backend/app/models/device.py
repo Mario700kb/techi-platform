@@ -75,6 +75,11 @@ class Device(Base):
     is_archived = Column(Boolean, default=False, nullable=False)
     archived_at = Column(DateTime, nullable=True)
     archived_by = Column(String(128), nullable=True)
+    # Trash: an archived device an admin deleted. Restorable until the nightly
+    # purge removes it TRASH_RETENTION_DAYS after deleted_at.
+    deleted_at = Column(DateTime, nullable=True)
+    deleted_by = Column(String(128), nullable=True)
+    delete_reason = Column(String(500), nullable=True)
     rustdesk_install_status = Column(String(32), default="unknown", nullable=False)
     rustdesk_status = Column(String(32), default="unknown", nullable=False)
     rustdesk_version = Column(String(80), nullable=True)

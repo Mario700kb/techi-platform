@@ -20,6 +20,7 @@ from app.schemas.agent import (
 from app.services import agent_config_service as _cfg_svc
 from app.services.agent_enrollment_service import AgentEnrollmentService
 from app.services.device_heartbeat_service import DeviceHeartbeatService
+from app.services.agent_revocation import AgentRevokedError
 from app.services.device_status_service import DeviceStatusService
 from app.services.remote_action_service import RemoteActionService
 from app.schemas.telemetry_pipeline import TelemetryAck, TelemetryUpload
@@ -142,6 +143,8 @@ def agent_heartbeat(
     service = DeviceHeartbeatService(db)
     try:
         device, heartbeat, ctx = service.process_heartbeat_core(payload)
+    except AgentRevokedError as exc:
+        raise HTTPException(status_code=410, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

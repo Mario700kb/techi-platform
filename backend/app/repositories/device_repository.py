@@ -382,10 +382,13 @@ class DeviceRepository:
 
     def _apply_lifecycle_filter(self, query, lifecycle_state: Optional[str]):
         state = (lifecycle_state or "active").strip().lower()
+        # The trash is archived too, so "active" already leaves it out.
+        if state == "trash":
+            return query.filter(Device.deleted_at.is_not(None))
         if state == "all":
-            return query
+            return query.filter(Device.deleted_at.is_(None))
         if state == "archived":
-            return query.filter(Device.is_archived.is_(True))
+            return query.filter(Device.is_archived.is_(True), Device.deleted_at.is_(None))
         return query.filter(or_(Device.is_archived.is_(False), Device.is_archived.is_(None)))
 
     def _apply_assignment_filter(self, query, assignment_source: Optional[str]):

@@ -143,6 +143,23 @@ def cleanup_old_remote_support_connections(db: Session, days: int = 180) -> int:
     return deleted
 
 
+def purge_trashed_devices(db: Session) -> int:
+    """Devices deleted more than TRASH_RETENTION_DAYS ago go for good, with
+    their history and console recordings. Their agents stay revoked."""
+    from app.models.device import Device
+    from app.services.device_service import TRASH_RETENTION_DAYS, DeviceService
+
+    cutoff = utcnow_naive() - timedelta(days=TRASH_RETENTION_DAYS)
+    ids = [row[0] for row in db.query(Device.id).filter(Device.deleted_at.is_not(None), Device.deleted_at < cutoff)]
+    service = DeviceService(db)
+    purged = 0
+    for device_id in ids:
+        if service.delete_device(device_id):
+            purged += 1
+    logger.info(f"Cleanup: purged {purged} devices from the trash (deleted over {TRASH_RETENTION_DAYS} days ago)")
+    return purged
+
+
 def cleanup_old_enrollment_audit(db: Session, days: int = 180) -> int:
     cutoff = utcnow_naive() - timedelta(days=days)
     result = db.execute(

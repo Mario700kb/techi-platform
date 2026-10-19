@@ -94,6 +94,10 @@ export interface Device {
   is_archived?: boolean;
   archived_at?: string | null;
   archived_by?: string | null;
+  /** Set while the device is in the trash (deleted, restorable for 30 days). */
+  deleted_at?: string | null;
+  deleted_by?: string | null;
+  delete_reason?: string | null;
   duplicate_candidate?: boolean;
   duplicate_of_device_id?: number | null;
   duplicate_score?: number | null;
@@ -123,7 +127,7 @@ export interface DeviceFilters {
   client_id?: number;
   group_id?: number;
   assignment_source?: "auto" | "manual" | "token" | "unassigned";
-  lifecycle_state?: "active" | "archived" | "all";
+  lifecycle_state?: "active" | "archived" | "all" | "trash";
   search?: string;
   duplicate_candidates?: boolean;
   maintenance_state?: "maintenance" | "normal";
@@ -197,7 +201,7 @@ const allowedAssignmentSources = new Set([
   "auto_os",
   "unassigned",
 ]);
-const allowedLifecycleStates = new Set(["active", "archived", "all"]);
+const allowedLifecycleStates = new Set(["active", "archived", "all", "trash"]);
 const allowedMaintenanceStates = new Set(["maintenance", "normal"]);
 const allowedSmartFolders = new Set([
   "windows_server",
@@ -509,9 +513,48 @@ export async function updateDevice(deviceId: number, updates: Partial<Device>): 
   });
 }
 
-export async function deleteDevice(deviceId: number, confirmDelete = false): Promise<void> {
-  const suffix = confirmDelete ? "?confirm_delete=true" : "";
-  await fetchJson<Device>(`/api/v1/devices/${deviceId}${suffix}`, { method: "DELETE" });
+/** Days a deleted device stays in the trash (backend TRASH_RETENTION_DAYS). */
+export const TRASH_RETENTION_DAYS = 30;
+
+/** Move a device to the trash: its agent is refused until it is restored. */
+export async function deleteDevice(deviceId: number, reason: string, mfaCode: string): Promise<Device> {
+  return fetchJson<Device>(`/api/v1/devices/${deviceId}/delete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason, mfa_code: mfaCode }),
+  });
+}
+
+/** Delete a device in the trash for good. */
+export async function purgeDevice(deviceId: number, mfaCode: string): Promise<void> {
+  await fetchJson<void>(`/api/v1/devices/${deviceId}/purge`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mfa_code: mfaCode }),
+  });
+}
+
+/** An agent the platform refuses: its device was archived or deleted. */
+export interface RevokedAgent {
+  id: number;
+  device_id: number | null;
+  hostname: string | null;
+  client_id: number | null;
+  reason: string | null;
+  revoked_at: string;
+  revoked_by: string | null;
+  last_attempt_at: string | null;
+  last_attempt_ip: string | null;
+  attempt_count: number;
+  device_exists: boolean;
+}
+
+export async function getRevokedAgents(): Promise<RevokedAgent[]> {
+  return fetchJson<RevokedAgent[]>("/api/v1/revoked-agents");
+}
+
+export async function allowRevokedAgent(revokedId: number): Promise<void> {
+  await fetchJson<void>(`/api/v1/revoked-agents/${revokedId}/allow`, { method: "POST" });
 }
 
 export async function archiveDevice(deviceId: number): Promise<Device> {

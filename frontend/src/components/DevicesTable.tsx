@@ -32,6 +32,7 @@ import {
   DeviceQuickCounts,
   DeviceSortKey,
   enterDeviceMaintenance,
+  TRASH_RETENTION_DAYS,
 } from "../api/devices";
 import { Client } from "../api/clients";
 import { FilterSheet } from "./FilterSheet";
@@ -43,6 +44,7 @@ import { isValidRustDeskId, buildRustDeskFallbackUrlFromTechiUrl, launchConnect 
 import { DeviceHealthSummary } from "../types/telemetry";
 import { Button, ConnectButton, EmptyState, Select, TablePagination } from "./ui";
 import ConfirmationModal from "./ConfirmationModal";
+import { ApiError } from "../api/client";
 import BulkAgentUpdatePlan, { useSelfUpdatePreview } from "./BulkAgentUpdatePlan";
 import { sendBulkCommand } from "../api/agentCommands";
 import { parseUTC, tiranaInputToUtcIso, utcToTiranaInput } from "../utils/time";
@@ -93,7 +95,10 @@ interface DevicesTableProps {
   onFilterChange: (key: keyof DeviceFilters, value: string | boolean | undefined) => void;
   onRefresh: () => void;
   onDeviceSelect?: (device: Device) => void;
-  onDeviceDelete?: (device: Device) => void;
+  /** Move to the trash; rejects with the API error so the dialog can show it. */
+  onDeviceDelete?: (device: Device, reason: string, mfaCode: string) => Promise<void>;
+  /** Delete a device in the trash for good. */
+  onDevicePurge?: (device: Device, mfaCode: string) => Promise<void>;
   onDeviceArchive?: (device: Device) => void;
   onDeviceRestore?: (device: Device) => void;
   healthMap?: Record<number, DeviceHealthSummary>;
@@ -195,7 +200,7 @@ const QUICK_FILTERS: { id: QuickFilter; label: string }[] = [
   { id: "favorites", label: "Favorites" },
 ];
 
-type PendingAction = "archive" | "restore" | "delete";
+type PendingAction = "archive" | "restore" | "delete" | "purge";
 
 // ─── Visual constants ────────────────────────────────────────────────────────
 
@@ -376,6 +381,7 @@ const DevicesTable = memo(function DevicesTable({
   onRefresh,
   onDeviceSelect,
   onDeviceDelete,
+  onDevicePurge,
   onDeviceArchive,
   onDeviceRestore,
   healthMap = {},
@@ -712,7 +718,6 @@ const DevicesTable = memo(function DevicesTable({
     if (!pendingAction) return;
     if (pendingAction.type === "archive") onDeviceArchive?.(pendingAction.device);
     if (pendingAction.type === "restore") onDeviceRestore?.(pendingAction.device);
-    if (pendingAction.type === "delete") onDeviceDelete?.(pendingAction.device);
     setPendingAction(null);
   };
 
@@ -879,6 +884,7 @@ const DevicesTable = memo(function DevicesTable({
               { value: "active", label: "Active devices", hint: "Excludes archived devices" },
               { value: "archived", label: "Archived devices", hint: "Retired, kept for history" },
               { value: "all", label: "All devices", hint: "Active and archived" },
+              { value: "trash", label: "Trash", hint: "Deleted, restorable for 30 days" },
             ]}
           />
           <Select
@@ -1782,10 +1788,10 @@ const DevicesTable = memo(function DevicesTable({
                         className="th-menu-item th-menu-item-danger"
                         onClick={() => {
                           close();
-                          setPendingAction({ type: "delete", device });
+                          setPendingAction({ type: device.deleted_at ? "purge" : "delete", device });
                         }}
                       >
-                        <Trash2 className="h-4 w-4" /> Remove permanently
+                        <Trash2 className="h-4 w-4" /> {device.deleted_at ? "Delete permanently" : "Delete device"}
                       </button>
                     )}
                   </div>
@@ -1856,13 +1862,26 @@ const DevicesTable = memo(function DevicesTable({
         </ConfirmationModal>
       )}
 
-      {pendingAction && (
-        <ConfirmDeviceAction
-          type={pendingAction.type}
+      {pendingAction && (pendingAction.type === "delete" || pendingAction.type === "purge") ? (
+        <DeleteDeviceDialog
+          purge={pendingAction.type === "purge"}
           device={pendingAction.device}
           onCancel={() => setPendingAction(null)}
-          onConfirm={confirmAction}
+          onSubmit={async (reason, code) => {
+            if (pendingAction.type === "purge") await onDevicePurge?.(pendingAction.device, code);
+            else await onDeviceDelete?.(pendingAction.device, reason, code);
+            setPendingAction(null);
+          }}
         />
+      ) : (
+        pendingAction && (
+          <ConfirmDeviceAction
+            type={pendingAction.type === "archive" ? "archive" : "restore"}
+            device={pendingAction.device}
+            onCancel={() => setPendingAction(null)}
+            onConfirm={confirmAction}
+          />
+        )
       )}
     </div>
   );
@@ -1878,26 +1897,25 @@ function ConfirmDeviceAction({
   onCancel,
   onConfirm,
 }: {
-  type: PendingAction;
+  type: "archive" | "restore";
   device: Device;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  const isDelete = type === "delete";
-  const title = type === "archive" ? "Archive device" : type === "restore" ? "Restore device" : "Remove permanently";
+  const title = type === "archive" ? "Archive device" : "Restore device";
   const message =
     type === "archive"
-      ? "Device will be removed from the active fleet. History is preserved."
-      : type === "restore"
-        ? "Device will be returned to the active fleet."
-        : "This action cannot be undone.";
-  const actionLabel = type === "archive" ? "Archive" : type === "restore" ? "Restore" : "Remove permanently";
+      ? "Device will be removed from the active fleet and its agent refused. History is preserved."
+      : device.deleted_at
+        ? "Device will leave the trash and return to the active fleet; its agent is accepted again."
+        : "Device will be returned to the active fleet; its agent is accepted again.";
+  const actionLabel = type === "archive" ? "Archive" : "Restore";
 
   return (
     <ConfirmationModal
       title={title}
       confirmLabel={actionLabel}
-      destructive={isDelete || type === "archive"}
+      destructive={type === "archive"}
       onClose={onCancel}
       onConfirm={onConfirm}
     >
@@ -1905,6 +1923,108 @@ function ConfirmDeviceAction({
         {deviceDisplayName(device)}
       </p>
       <p className="mt-3">{message}</p>
+    </ConfirmationModal>
+  );
+}
+
+function deleteErrorMessage(err: unknown): string {
+  if (err instanceof ApiError && err.code === "mfa_not_enabled") {
+    return "Two-factor is off for your account. Turn it on in Settings → Security, then try again.";
+  }
+  if (err instanceof ApiError && err.code === "mfa_invalid") {
+    return "Wrong or expired code. Enter the current code from your app.";
+  }
+  return err instanceof Error && err.message ? err.message : "Could not delete the device.";
+}
+
+/** Delete (to the trash) or delete permanently: a reason for the first, and
+ * a current two-factor code for both, asked every time. */
+function DeleteDeviceDialog({
+  purge,
+  device,
+  onCancel,
+  onSubmit,
+}: {
+  purge: boolean;
+  device: Device;
+  onCancel: () => void;
+  onSubmit: (reason: string, code: string) => Promise<void>;
+}) {
+  const [reason, setReason] = useState("");
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const ready = code.length === 6 && (purge || reason.trim().length >= 3);
+
+  const submit = async () => {
+    if (!ready || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await onSubmit(reason.trim(), code);
+    } catch (err) {
+      setError(deleteErrorMessage(err));
+      setCode("");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <ConfirmationModal
+      title={purge ? "Delete permanently" : "Delete device"}
+      confirmLabel={purge ? "Delete permanently" : "Move to trash"}
+      destructive
+      loading={busy}
+      confirmDisabled={!ready}
+      onClose={onCancel}
+      onConfirm={() => void submit()}
+    >
+      <p className="font-medium" style={{ color: "var(--th-text-primary)" }}>
+        {deviceDisplayName(device)}
+      </p>
+      <p className="mt-3">
+        {purge
+          ? "The device and all its history are removed now. This cannot be undone. Its agent stays refused."
+          : `The device leaves every list and its agent is refused, so it does not come back while the agent is still installed. It can be restored from Trash for ${TRASH_RETENTION_DAYS} days.`}
+      </p>
+      <form
+        className="mt-4 space-y-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit();
+        }}
+      >
+        {!purge && (
+          <label className="block">
+            <span className="premium-kicker mb-1.5 block">Reason</span>
+            <input
+              className="th-input h-10 w-full rounded-lg border px-3 text-[14px]"
+              value={reason}
+              maxLength={500}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="e.g. PC sold, duplicate of KLEIVID-PC"
+            />
+          </label>
+        )}
+        <label className="block">
+          <span className="premium-kicker mb-1.5 block">Two-factor code</span>
+          <input
+            className="th-input h-11 w-full rounded-lg border px-3 text-center font-mono text-[20px] tracking-[0.5em]"
+            value={code}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            aria-label="Two-factor code"
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            placeholder="123456"
+          />
+        </label>
+        {error && (
+          <p role="alert" className="th-drawer-callout text-[13px]" data-tone="critical">
+            {error}
+          </p>
+        )}
+        <button type="submit" hidden />
+      </form>
     </ConfirmationModal>
   );
 }

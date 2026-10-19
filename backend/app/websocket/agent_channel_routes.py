@@ -26,6 +26,7 @@ from app.core.agent_auth import _SlidingWindowRateLimiter
 from app.core.time import utcnow
 from app.db.session import SessionLocal
 from app.repositories.device_repository import DeviceRepository
+from app.services.agent_revocation import is_agent_revoked
 from app.websocket.agent_channel import agent_command_channel
 from app.websocket.live_hub import device_live_hub, parse_agent_message
 
@@ -241,6 +242,10 @@ async def agent_command_ws(websocket: WebSocket, device_id: int = 0, agent_id: s
         if device is None or not _agent_id_matches(agent_id, getattr(device, "agent_id", None)):
             logger.info("[agent-channel] rejected device_id=%s (unknown device or agent_id mismatch)", device_id)
             await websocket.close(code=4001)
+            return
+        if device.is_archived and is_agent_revoked(db, agent_id):
+            logger.info("[agent-channel] rejected device_id=%s (agent revoked)", device_id)
+            await websocket.close(code=4003)
             return
         agent_version = getattr(device, "agent_version", None)
     finally:

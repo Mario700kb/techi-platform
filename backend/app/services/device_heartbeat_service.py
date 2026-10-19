@@ -20,6 +20,7 @@ from app.schemas.security_posture import parse_security_posture
 from app.services.remote_session_service import RemoteSessionService
 from app.schemas.device import DeviceCreate, DeviceUpdate
 from app.services.alert_engine import AlertEngine
+from app.services.agent_revocation import refuse_if_revoked
 from app.services.alert_rules import RECONNECT_WINDOW_SECONDS
 from app.services.device_assignment_service import AssignmentSignal, DeviceAssignmentService
 from app.services.device_fingerprint_service import DeviceFingerprintService, FingerprintMatch
@@ -192,6 +193,11 @@ class DeviceHeartbeatService:
                 _AGENT_ID_CACHE.pop(payload.agent_id, None)
         if device is None and payload.agent_id:
             device = self.device_repo.get_by_agent_id(payload.agent_id)
+        # A revoked agent (its device archived or in the trash) is refused
+        # before it can update the device or, once the device is gone, come
+        # back as a new one. Live devices never reach the lookup.
+        if payload.agent_id and (device is None or device.is_archived):
+            refuse_if_revoked(self.db, payload.agent_id, payload.public_ip)
         if platform_id == "mikrotik" and device is None:
             device = self._create_from_stable_identity(payload, device_type, now)
         if device is None:

@@ -20,6 +20,7 @@ from app.models.operator import Operator
 from app.models.operator_session import OperatorSession
 from app.models.remote_action import RemoteAction
 from app.models.reenrollment_request import ReenrollmentRequest
+from app.models.revoked_agent import RevokedAgent
 from app.models.telemetry_pipeline import (
     DeviceTelemetryState,
     MonitoringPolicy,
@@ -67,6 +68,7 @@ __all__ = [
     "OperatorConnectPreference",
     "RemoteAction",
     "ReenrollmentRequest",
+    "RevokedAgent",
     "RemoteSupportConnection",
     "DeviceTelemetryState",
     "MonitoringPolicy",

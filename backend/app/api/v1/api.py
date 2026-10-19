@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import actions, component_actions, connect, agent, agent_commands, agent_config, agent_packages, alerts, audit, auth, bootstrap, clients, deployments, devices, enrollment_bootstrap, enrollment_tokens, groups, health, notifications, reports, operator_scopes, system, install, operators, packages, platform, reenrollment, remote_support, terminal, teams, trusted_domains, vault, monitoring, console_scripts
+from app.api.v1.endpoints import actions, component_actions, connect, agent, agent_commands, agent_config, agent_packages, alerts, audit, auth, bootstrap, clients, deployments, devices, enrollment_bootstrap, enrollment_tokens, groups, health, notifications, reports, operator_scopes, system, install, operators, packages, platform, reenrollment, revoked_agents, remote_support, terminal, teams, trusted_domains, vault, monitoring, console_scripts
 
 api_router = APIRouter()
 api_router.include_router(health.router, prefix="", tags=["health"])
@@ -10,6 +10,7 @@ api_router.include_router(bootstrap.router, prefix="/bootstrap", tags=["bootstra
 api_router.include_router(clients.router, prefix="/clients", tags=["clients"])
 api_router.include_router(trusted_domains.router, prefix="/trusted-domains", tags=["trusted-domains"])
 api_router.include_router(reenrollment.router, prefix="/reenrollment-requests", tags=["reenrollment"])
+api_router.include_router(revoked_agents.router, prefix="/revoked-agents", tags=["devices"])
 api_router.include_router(devices.router, prefix="/devices", tags=["devices"])
 api_router.include_router(groups.router, prefix="/groups", tags=["groups"])
 api_router.include_router(deployments.router, prefix="/deployments", tags=["deployments"])

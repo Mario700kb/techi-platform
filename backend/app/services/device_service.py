@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 if TYPE_CHECKING:
     from app.core.scope import AllowedScope
 
+from app.core.time import utcnow
 from app.models.device import Device, DeviceFreshnessState, DeviceStatus, DeviceType
 from app.repositories.client_repository import ClientRepository
 from app.repositories.device_group_repository import DeviceGroupRepository
@@ -19,6 +20,9 @@ from app.services.agent_package_service import AgentPackageService
 from app.services.rustdesk_service import RustDeskIdentityService
 from app.websocket.events import RealtimeEventType, build_event, device_payload
 from app.websocket.publisher import realtime_publisher
+
+# Days a deleted device stays in the trash before the nightly purge.
+TRASH_RETENTION_DAYS = 30
 
 
 _stats_cache: dict = {}
@@ -191,13 +195,69 @@ class DeviceService:
         return self.assignment.apply_resolution(self.repository.update(device, device_in))
 
     def delete_device(self, device_id: int) -> Optional[Device]:
-        return self.repository.hard_delete(device_id)
+        """Remove the device and its history for good, with its console
+        recordings. The agent stays revoked (revoked_agents outlives it)."""
+        from app.models.terminal_session import TerminalSession
+        from app.services.terminal_recording import recording_path
 
-    def archive_device(self, device_id: int, archived_by: Optional[str] = None) -> Optional[Device]:
+        session_ids = [
+            row[0]
+            for row in self.repository.db.query(TerminalSession.id).filter(TerminalSession.device_id == device_id)
+        ]
+        deleted = self.repository.hard_delete(device_id)
+        if deleted:
+            for session_id in session_ids:
+                path = recording_path(session_id)
+                try:
+                    if path is not None:
+                        path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+        return deleted
+
+    def trash_device(self, device_id: int, deleted_by: Optional[str], reason: str) -> Optional[Device]:
+        """Delete as an operator sees it: the device leaves every list, its
+        agent is revoked, and it can be restored until the nightly purge
+        TRASH_RETENTION_DAYS later."""
+        from app.services.agent_revocation import close_agent_channel, revoke_device_agent
+
+        device = self.repository.get(device_id)
+        if not device:
+            return None
+        if not device.is_archived:
+            self.archive_device(device_id, archived_by=deleted_by, revoke_agent=False)
+            device = self.repository.get(device_id)
+        device.deleted_at = utcnow()
+        device.deleted_by = deleted_by
+        device.delete_reason = reason[:500]
+        revoke_device_agent(self.repository.db, device, by=deleted_by, reason=f"deleted: {reason}")
+        self.repository.db.commit()
+        self.repository.db.refresh(device)
+        self.activity.record(
+            device_id=device.id,
+            event_type="device_deleted",
+            summary="Device moved to the trash",
+            actor=deleted_by,
+            fail_silently=True,
+        )
+        close_agent_channel(device.id)
+        return device
+
+    def archive_device(
+        self, device_id: int, archived_by: Optional[str] = None, *, revoke_agent: bool = True
+    ) -> Optional[Device]:
         device = self.repository.get(device_id)
         if not device:
             return None
         archived = self.repository.archive(device, archived_by=archived_by)
+        if revoke_agent:
+            # A retired device's agent may still be installed: refuse it, so
+            # its heartbeats stop updating the device. Restore accepts it again.
+            from app.services.agent_revocation import close_agent_channel, revoke_device_agent
+
+            if revoke_device_agent(self.repository.db, archived, by=archived_by, reason="archived"):
+                self.repository.db.commit()
+                close_agent_channel(archived.id)
         # An archived device leaves the active fleet; its open alerts would
         # otherwise stay open with nothing left to close them.
         from app.services.alert_engine import AlertEngine
@@ -215,6 +275,12 @@ class DeviceService:
         device = self.repository.get(device_id)
         if not device:
             return None
+        from app.services.agent_revocation import unrevoke_device_agent
+
+        device.deleted_at = None
+        device.deleted_by = None
+        device.delete_reason = None
+        unrevoke_device_agent(self.repository.db, device)
         restored = self.repository.restore(device)
         self.activity.record(
             device_id=restored.id,

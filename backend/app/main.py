@@ -58,6 +58,7 @@ def _run_heartbeat_cleanup() -> None:
         cleanup_old_audit_logs,
         cleanup_old_enrollment_audit,
         cleanup_old_remote_support_connections,
+        purge_trashed_devices,
         resolve_stale_alerts,
         rotate_remote_support_passwords,
     )
@@ -68,6 +69,7 @@ def _run_heartbeat_cleanup() -> None:
         return cleanup_recordings()
 
     tasks = (
+        purge_trashed_devices,
         resolve_stale_alerts,
         rotate_remote_support_passwords,
         cleanup_old_heartbeats,

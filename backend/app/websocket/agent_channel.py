@@ -123,6 +123,18 @@ class AgentCommandChannel:
                     self._evicted[device_id] = websocket
             return False
 
+    async def close_device(self, device_id: int) -> bool:
+        """Close a device's channel (its agent was revoked). The agent's
+        reconnect is then refused at the handshake."""
+        websocket: Optional[WebSocket] = self._connections.get(device_id)
+        if websocket is None:
+            return False
+        try:
+            await websocket.close(code=4003)
+        except Exception:
+            pass
+        return True
+
     async def connection_count(self) -> int:
         return len(self._connections)
 
