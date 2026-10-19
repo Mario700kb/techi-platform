@@ -5,6 +5,25 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-19] AGENT-IDENTITY-2026-10-19 — agents known by agent_id on every endpoint (`87cea1f`)
+
+**Backend deployed 17:44 (Tirana), no migration.** Mario-Lenovo, deleted for
+good and let back in, showed online but never live. Its agent keeps the
+device_id it enrolled with (924); the heartbeat, resolved by agent_id,
+re-created the device as 983. The command channel, telemetry upload and power
+event looked the device up by device_id and refused it on every attempt.
+Five more agents had the same stale id after older deletes (312, 349, 579,
+712, 981), unnoticed. Now every agent endpoint resolves like the heartbeat:
+the named device when it carries the agent_id, otherwise the device that
+does. After the restart all six were accepted by agent_id: 867, 871, 898,
+908 and 983 connected live (983 at 17:45:12); 984 (kleivid-pc, in the trash
+since 16:39 with reason "Prove") stays refused as revoked. An agent still
+sending an old id is logged once an hour, and the System status Agents tile
+warns about agents from 2.1.26 online without a live channel for 15 minutes.
+Load lines after the restart: 0 5xx, peak 16 heartbeats in flight, none
+shed, p95 0.18 s from the second minute. Rollback
+`techi-platform-backend:pre-agent-identity-aa1cd01`.
+
 ## [2026-10-19] BACKEND-PERF-2026-10-19 — heartbeat path, overload protection, data lifecycle (`aa1cd01`)
 
 **Backend deployed 17:27 (Tirana), no migration.** From the 19 Oct database
