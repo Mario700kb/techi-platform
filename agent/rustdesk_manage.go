@@ -72,6 +72,15 @@ func ensureRustDesk(cfg *Config, configPath string) {
 	}
 
 	if installed {
+		// Agents before 2.1.35 left the identity file read-only: the client
+		// could not keep its key pair and took a new ID at every restart. Make
+		// it writable and restart the client once (no session open) so it
+		// stores a key pair and keeps its ID from then on.
+		if healed := healRemoteSupportIdentity(rustDeskConfigDirs()); len(healed) > 0 {
+			repaired = true
+			restartRemoteSupportForIdentity()
+		}
+
 		// Config repair with 30-minute cooldown.
 		// The cooldown prevents unnecessary writes on every heartbeat when the
 		// service has already updated the config with identity data.
@@ -168,9 +177,10 @@ func installRustDeskMSI(cfg *Config) error {
 }
 
 // writeRustDeskConfig ensures managed [options] keys are correct in every
-// known config location. It operates in patch mode: existing files are updated
-// in-place so identity fields (enc_id, key_pair, etc.) are never overwritten.
-// New config files are created with a minimal base template.
+// known config location. They live in the options file (Config2,
+// "TECHI Remote Support2.toml"), patched in place, never in the identity
+// file, and nothing is made read-only: the client must be able to store
+// its own state (see rustdesk_identity.go).
 //
 // Returns (true, nil) only when at least one EXISTING file was repaired
 // (managed values were wrong and have been corrected). Creating a config file
@@ -191,10 +201,7 @@ func writeRustDeskConfig(cfg *Config) (bool, error) {
 			continue
 		}
 
-		// Only write TECHI Remote Support.toml (the options/config file).
-		// TECHI Remote Support2.toml is the identity file managed by the
-		// service itself — writing to it causes the repair loop.
-		path := filepath.Join(dir, "TECHI Remote Support.toml")
+		path := filepath.Join(dir, remoteSupportOptionsFile)
 
 		existing, readErr := os.ReadFile(path)
 
@@ -204,28 +211,22 @@ func writeRustDeskConfig(cfg *Config) (bool, error) {
 			if !cfg.RustDeskForceConfig && !rustDeskConfigNeedsRepair(existingStr, cfg) {
 				continue // already correct, nothing to do
 			}
-			// Patch in-place: update only managed keys, leave identity intact.
+			// Patch in-place: update only managed keys, leave the rest intact.
 			patched, changed := applyTOMLOptionPatch(existingStr, managed)
 			if !changed {
 				continue
 			}
-			// Clear read-only (set by us after the last repair) before writing,
-			// then restore it immediately after -- this is what prevents RustDesk
-			// from wiping the managed keys when its service restarts.
-			removeTomlReadOnly(path)
+			if isReadOnlyFile(path) {
+				removeTomlReadOnly(path) // made read-only by agents before 2.1.35
+			}
 			if err := os.WriteFile(path, []byte(patched), 0644); err != nil {
 				log.Printf("[rustdesk_manage] write %s: %v", path, err)
 				continue
 			}
 			log.Printf("[rustdesk_manage] repaired: %s", path)
-			setTomlReadOnly(path)
 			repaired = true
 		} else {
-			// File does not exist yet: write a fresh minimal config.
-			// Do NOT set read-only here -- RustDesk must be able to write its
-			// own identity fields (id, enc_id, key_pair) into this file on
-			// first run.  The next heartbeat cycle will find the file, detect
-			// that managed options are missing, and patch+protect it then.
+			// File does not exist yet: write a fresh minimal options file.
 			newContent := buildRustDeskTOML(cfg)
 			if err := os.WriteFile(path, []byte(newContent), 0644); err != nil {
 				log.Printf("[rustdesk_manage] init write %s: %v", path, err)
@@ -399,12 +400,14 @@ func setRustDeskPassword(password string) error {
 			wrote = true
 			continue
 		}
-		removeTomlReadOnly(path)
+		if isReadOnlyFile(path) {
+			removeTomlReadOnly(path)
+		}
+		// Never read-only afterwards: the client stores its key pair and ID here.
 		if err := os.WriteFile(path, []byte(patched), 0644); err != nil {
 			lastErr = err
 			continue
 		}
-		setTomlReadOnly(path)
 		log.Printf("[rustdesk_manage] password written to %s", path)
 		wrote = true
 	}

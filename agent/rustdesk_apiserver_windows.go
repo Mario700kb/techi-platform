@@ -46,17 +46,10 @@ func ensurePlatformAPIServer(cfg *Config) {
 		if !changed {
 			continue
 		}
-		readOnly := false
-		if info, statErr := os.Stat(path); statErr == nil {
-			readOnly = info.Mode().Perm()&0200 == 0
-		}
-		if readOnly {
-			removeTomlReadOnly(path)
+		if isReadOnlyFile(path) {
+			removeTomlReadOnly(path) // agents before 2.1.35 left it read-only
 		}
 		err = os.WriteFile(path, []byte(patched), 0644)
-		if readOnly {
-			setTomlReadOnly(path)
-		}
 		if err != nil {
 			log.Printf("[rustdesk_manage] api-server update failed %s: %v", path, err)
 			continue
@@ -111,4 +104,25 @@ func brandedRemoteSupportCmdlines() []string {
 		cmdlines = append(cmdlines, cmdline)
 	}
 	return cmdlines
+}
+
+var identityHealRestart time.Time
+
+// restartRemoteSupportForIdentity restarts Remote Support once after its
+// identity file was made writable again, so it generates and stores a key
+// pair now instead of at its next chance restart. Never during a session.
+func restartRemoteSupportForIdentity() {
+	if !identityHealRestart.IsZero() {
+		return
+	}
+	if remoteSupportSessionActive(brandedRemoteSupportCmdlines()) {
+		log.Printf("[rustdesk_manage] identity file healed; remote session active, Remote Support keeps its ID from its next restart")
+		return
+	}
+	identityHealRestart = time.Now()
+	log.Printf("[rustdesk_manage] restarting Remote Support so it stores its key pair and keeps its ID")
+	stopRustDeskServiceFn()
+	if err := startRustDeskServiceFn(); err != nil {
+		log.Printf("[rustdesk_manage] Remote Support restart failed: %v", err)
+	}
 }
