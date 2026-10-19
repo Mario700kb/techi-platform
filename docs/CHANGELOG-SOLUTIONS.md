@@ -5,6 +5,40 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-20] RS-IDENTITY-FILE-2026-10-20 — Remote Support kept changing ID: the agent made its identity file read-only; agent 2.1.35 (`096892b`, `c1a3ad7`)
+
+**Why IDs churned.** Node-01 (#985, Windows Server 2025, MachineGuid
+`0720021f`) took ten Remote Support IDs on 19 Oct. hbbs logged "Peer 499953666
+ip/pk mismatch" at every Remote Support restart: the client came back with its
+MAC-derived ID, a **new key pair** each time and another address (.164 vs the
+first registration's .176), so the ID server refused it and the client picked
+a random ID that it then lost at the next restart. The agent's
+`writeRustDeskConfig` wrote the managed [options] into
+`TECHI Remote Support.toml` and made it read-only, its comment having the two
+files swapped: that file is the client's identity (hbb_common `Config`: id,
+key_pair, key_confirmed, password); options live in `TECHI Remote
+Support2.toml` (`Config2`, which the installer writes correctly). 43 such
+refusals fleet-wide in 24 h; most of the "cloned machine" groups found by
+HBBS-SYNC are this, not clones.
+- Agent 2.1.35 (CI 39331101548 / 39331101498): options go to the options
+  file, nothing is made read-only (also the password write and the api-server
+  patch); an identity file left read-only is made writable and Remote Support
+  restarted once without an open session. Packages active 00:10 (20 Oct):
+  agent binary `d6e1179b…` (`2030c613…`), Endpoint MSI `27aae294…`
+  (`d2d908ef…`), Update Bridge `2a3eff00…` (`6e5be519…`); 2.1.34 kept
+  inactive. Pilot: Node-01 self_update queued 00:11, on 2.1.35 at 00:12; at
+  00:12:35 hbbs stored its new ID 1063900938 with a key that is now kept; no
+  refusal for it since (a remote session was open, so no forced restart test).
+- Platform (backend + frontend deployed 23:57–00:00, dump
+  `pre-new-ids-text-20261019-235502.sql.gz`, rollback `pre-new-ids-text-40cff5d`):
+  the device message says "Remote Support keeps taking new IDs…" with the
+  agent cause first, sysprep only if it goes on; the ID-change log line names
+  the ID server. Guard and smoke passed, 0 5xx.
+- CI: Frontend CI (Playwright) fixed: alert queue mocks and the alert panel
+  flow, the Explorer's city rows (broken since EXPLORER-CITY), P1 chip
+  contrast. The contrast change reaches production with the next frontend
+  deploy.
+
 ## [2026-10-19] HBBS-SYNC-2026-10-19 — Remote Support IDs from the ID server; all alerts deleted (`6acc8fd`)
 
 **Backend + frontend deployed 23:30–23:32 (Tirana), no migration.**
