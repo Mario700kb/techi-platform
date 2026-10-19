@@ -5,6 +5,26 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-19] EDGE-CONNECTIONS-2026-10-19 — nginx-proxy-manager ran out of connections; 500 for the whole site
+
+**Outage 12:24–13:25 (Tirana), edge config only, no code change.** After the
+bulk update 353 devices run 2.1.33, and each holds a `/ws/agent/commands`
+WebSocket through nginx-proxy-manager. Every proxied connection takes two
+slots (client + upstream), and the edge ran on the default single worker with
+`worker_connections 512`. Once ~250 long-lived connections were open, nginx
+answered 500 to everything (`512 worker_connections are not enough while
+connecting to upstream`): the console, its JS and the agents' heartbeats.
+Sporadic from 12:24, constant (~150/min) from 12:49. The 12:53 reboot did not
+help because the agents reconnect at once. Fix (not in Git, bind mount
+`/root/nginx-proxy-manager/data/nginx/custom/`): `events.conf` with
+`worker_connections 8192;` and `root_top.conf` with
+`worker_rlimit_nofile 20000;` (container soft limit 1024, hard 524288).
+`nginx -t` passed, reload 13:25; last alert 13:25:22, 686 connections open
+afterwards, /devices 200, heartbeats and agent WebSockets reaching the
+backend. Revert: delete both files and `nginx -s reload`. The fleet move off
+2.1.20 (562 devices) adds one WebSocket per device. The new limit covers that
+with room to spare.
+
 ## [2026-10-19] BULK-UPDATE-FIX-2026-10-19 — bulk "Update agent" no longer refused with 422 (`c28b337`)
 
 **Frontend deployed (Tirana, night of 19 Oct).** The bulk bar sent
