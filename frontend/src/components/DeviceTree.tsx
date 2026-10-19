@@ -110,8 +110,8 @@ const DeviceTree = memo(function DeviceTree({
   // Cities and locations opened below a client, by tree key.
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
 
-  // Each client's sites, grouped by country and city (a city row only when it
-  // holds more than one site).
+  // Each client's sites, grouped by country and city: country + city row,
+  // then its sites, also when the city holds one site.
   const sitesByClient = useMemo(() => {
     const byClient = new Map<number, { cityKey: string; city: string; country: string; sites: TreeLocation[] }[]>();
     const sorted = [...(treeCounts.locations ?? [])].sort(
@@ -152,7 +152,7 @@ const DeviceTree = memo(function DeviceTree({
     const siteId = site?.[2] ?? selectedKey.match(/^client-\d+-loc-(\d+)$/)?.[1];
     if (siteId && siteId !== "none") {
       const city = sitesByClient.get(clientId)?.find((c) => c.sites.some((x) => String(x.id) === siteId));
-      if (city && city.sites.length > 1) opened.push(city.cityKey);
+      if (city) opened.push(city.cityKey);
     }
     if (opened.length) {
       setExpandedNodes((prev) => (opened.every((k) => prev.has(k)) ? prev : new Set([...prev, ...opened])));
@@ -439,7 +439,7 @@ export default DeviceTree;
 
 type CityGroup = { cityKey: string; city: string; country: string; sites: TreeLocation[] };
 
-/** A client's sites: city rows (when a city holds several), each site with its
+/** A client's sites: a country + city row for every city, each site with its
  *  categories and platforms, then the devices at no site. */
 function SiteBranch({
   clientId,
@@ -549,17 +549,9 @@ function SiteBranch({
   return (
     <>
       {cities.map((city) => {
-        // The country prefixes every site and city row, also for a client whose
-        // sites are all in one country (it showed only with several).
+        // Always country + city, then the sites: a city with one site used to
+        // show the site in its place ("AL HQ" instead of "AL Tiranë" › "HQ").
         const flag = `${city.country} `;
-        if (city.sites.length === 1) {
-          const site = city.sites[0];
-          return (
-            <li key={site.id} style={{ "--i": index++ } as CSSProperties}>
-              {siteRow(`client-${clientId}-loc-${site.id}`, `${flag}${site.name}`, counts?.get(site.id))}
-            </li>
-          );
-        }
         const open = expandedNodes.has(city.cityKey);
         const cityStats = sumStats(city.sites.map((x) => counts?.get(x.id)));
         return (
