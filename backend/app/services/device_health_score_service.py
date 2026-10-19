@@ -12,6 +12,9 @@ from app.services import agent_config_service
 from app.core.time import utcnow_naive
 
 
+_LOAD = object()
+
+
 class DeviceHealthScoreService:
     def __init__(self, db):
         self.telemetry_repo = DeviceTelemetryRepository(db)
@@ -23,12 +26,16 @@ class DeviceHealthScoreService:
         device: Device,
         snapshot: Optional[DeviceTelemetry] = None,
         alert_counts: Optional[Dict[str, int]] = None,
+        inventory: object = _LOAD,
     ) -> Tuple[int, str, List[str]]:
+        """`inventory`: the device's inventory row (or None for none) when the
+        caller already has it; loaded here otherwise."""
         if snapshot is None:
             snapshot = self.telemetry_repo.get_latest(device.id)
         if alert_counts is None:
             alert_counts = self.alert_repo.count_open_by_device_and_severity([device.id]).get(device.id, {})
-        inventory = self.inventory_repo.get_by_device(device.id)
+        if inventory is _LOAD:
+            inventory = self.inventory_repo.get_by_device(device.id)
         return compute_device_health_score(device, snapshot, alert_counts, inventory)
 
     def compute_for_devices(self, devices: List[Device]) -> Dict[int, Tuple[int, str, List[str]]]:

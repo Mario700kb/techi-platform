@@ -494,7 +494,12 @@ class DeviceRepository:
             setattr(db_obj, field, value)
         self.db.add(db_obj)
         self.db.commit()
-        self.db.refresh(db_obj)
+        if self.db.expire_on_commit:
+            self.db.refresh(db_obj)
+        elif update_data.keys() & {"client_id", "group_id", "location_id"}:
+            # A session that keeps what it wrote (the heartbeat's) reloads only
+            # the relationships behind a changed key, on their next use.
+            self.db.expire(db_obj, ["client", "group", "location"])
         return db_obj
 
     def archive(self, db_obj: Device, archived_by: Optional[str] = None) -> Device:

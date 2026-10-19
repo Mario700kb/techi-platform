@@ -28,11 +28,19 @@ def cleanup_old_heartbeats(db: Session, days: int = 7) -> int:
     return deleted
 
 
-def cleanup_old_telemetry(db: Session, days: int = 7) -> int:
-    cutoff = utcnow_naive() - timedelta(days=days)
+def cleanup_old_telemetry(db: Session, days: int = 7, pipeline_days: int = 1) -> int:
+    """Heartbeat telemetry (the legacy table). Agents that send pipeline
+    telemetry keep one day here plus their newest row, which the device list,
+    health score and reports read; the others keep `days` for their charts."""
+    now = utcnow_naive()
     result = db.execute(
-        text("DELETE FROM device_telemetry WHERE created_at < :cutoff"),
-        {"cutoff": cutoff},
+        text(
+            "DELETE FROM device_telemetry WHERE created_at < :cutoff "
+            "OR (created_at < :pipeline_cutoff "
+            "    AND device_id IN (SELECT device_id FROM device_telemetry_state WHERE policy_version IS NOT NULL) "
+            "    AND id NOT IN (SELECT max(id) FROM device_telemetry GROUP BY device_id))"
+        ),
+        {"cutoff": now - timedelta(days=days), "pipeline_cutoff": now - timedelta(days=pipeline_days)},
     )
     db.commit()
     deleted = result.rowcount
@@ -55,10 +63,19 @@ def cleanup_old_activity_events(db: Session, days: int = 7) -> int:
 
 
 def cleanup_resolved_alerts(db: Session, days: int = 90) -> int:
-    """Open alerts are never touched; only resolved ones past the window."""
+    """Open alerts are never touched; only resolved ones past the window.
+
+    The newest offline alert of a device that is still offline stays: the
+    offline sweep reads it to know an alert was already raised for this
+    outage, and without it would open (and notify) a new one."""
     cutoff = utcnow_naive() - timedelta(days=days)
     result = db.execute(
-        text("DELETE FROM device_alerts WHERE state = 'resolved' AND updated_at < :cutoff"),
+        text(
+            "DELETE FROM device_alerts WHERE state = 'resolved' AND updated_at < :cutoff "
+            "AND id NOT IN ("
+            "  SELECT max(a.id) FROM device_alerts a JOIN devices d ON d.id = a.device_id "
+            "  WHERE a.kind = 'device_offline' AND d.status = 'OFFLINE' GROUP BY a.device_id)"
+        ),
         {"cutoff": cutoff},
     )
     db.commit()
@@ -104,7 +121,8 @@ def cleanup_old_command_batches(db: Session, days: int = 90) -> int:
     return deleted
 
 
-def cleanup_old_status_history(db: Session, days: int = 60) -> int:
+def cleanup_old_status_history(db: Session, days: int = 90) -> int:
+    """90 days: the availability report offers 7, 30 and 90 days."""
     cutoff = utcnow_naive() - timedelta(days=days)
     result = db.execute(
         text("DELETE FROM device_status_history WHERE created_at < :cutoff"),
@@ -160,11 +178,16 @@ def purge_trashed_devices(db: Session) -> int:
     return purged
 
 
-def cleanup_old_enrollment_audit(db: Session, days: int = 180) -> int:
-    cutoff = utcnow_naive() - timedelta(days=days)
+def cleanup_old_enrollment_audit(db: Session, days: int = 180, failed_days: int = 30) -> int:
+    """Successful enrollments stay: token diagnostics compare them with the
+    token's use count. Failures go after `failed_days`, the rest after `days`."""
+    now = utcnow_naive()
     result = db.execute(
-        text("DELETE FROM enrollment_audit WHERE created_at < :cutoff"),
-        {"cutoff": cutoff},
+        text(
+            "DELETE FROM enrollment_audit WHERE result <> 'success' AND ("
+            "  (result = 'failed' AND created_at < :failed_cutoff) OR created_at < :cutoff)"
+        ),
+        {"cutoff": now - timedelta(days=days), "failed_cutoff": now - timedelta(days=failed_days)},
     )
     db.commit()
     deleted = result.rowcount

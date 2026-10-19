@@ -69,6 +69,12 @@ class Settings(BaseSettings):
     BOOTSTRAP_OWNER_PASSWORD: str = ""
     HEARTBEAT_TIMEOUT_SECONDS: int = 300
     RECONCILIATION_INTERVAL_SECONDS: int = 30
+    # Heartbeats handled at once (side effects included) before new ones get
+    # 503 + Retry-After; keeps the queue shorter than the agents' 10 s timeout.
+    HEARTBEAT_MAX_IN_FLIGHT: int = 24
+    # After a start, agents reconnect their command channel within ~65 s;
+    # reconciling before that marks connected devices offline and back.
+    RECONCILIATION_STARTUP_GRACE_SECONDS: int = 150
     RECONCILIATION_BATCH_SIZE: int = 500
     STALE_DEVICE_CLEANUP_DAYS: int = 0
     # Offline alerts (app/services/offline_alerts.py). Always-on devices

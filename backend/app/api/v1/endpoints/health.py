@@ -12,7 +12,7 @@ logger = logging.getLogger("techi.health")
 
 
 @router.get("/health", response_model=HealthResponse, summary="API health check")
-def read_health() -> HealthResponse:
+async def read_health() -> HealthResponse:
     """Liveness: the process answers. Deliberately no database check — a
     container restart cannot fix a database outage, and restarting would
     only add a reconnect storm to it."""

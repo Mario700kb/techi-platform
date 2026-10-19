@@ -9,8 +9,10 @@ total" — no forecast for those.
 from datetime import timedelta
 from typing import Dict, List
 
-from sqlalchemy import func
+from sqlalchemy import select
 
+from app.db.sql import id_in
+from app.models.device import Device
 from app.models.device_telemetry import DeviceTelemetry
 from app.schemas.client_report import ReportKpi, ReportSection
 from app.services.client_reports.common import (
@@ -32,16 +34,23 @@ def _latest_heartbeat_disk(ctx: ReportContext, ids: List[int]) -> Dict[int, floa
     if not ids:
         return {}
     since = (ctx.now - HEARTBEAT_MAX_AGE).replace(tzinfo=None)
-    latest = (
-        ctx.db.query(DeviceTelemetry.device_id, func.max(DeviceTelemetry.created_at).label("at"))
-        .filter(DeviceTelemetry.device_id.in_(ids), DeviceTelemetry.created_at >= since,
-                DeviceTelemetry.disk_percent.isnot(None))
-        .group_by(DeviceTelemetry.device_id)
-        .subquery()
+    # One index probe per device (as DeviceTelemetryRepository does); the
+    # max() GROUP BY read a week of rows for every device first.
+    latest_id = (
+        select(DeviceTelemetry.id)
+        .where(DeviceTelemetry.device_id == Device.id, DeviceTelemetry.created_at >= since,
+               DeviceTelemetry.disk_percent.isnot(None))
+        .order_by(DeviceTelemetry.created_at.desc())
+        .limit(1)
+        .correlate(Device)
+        .scalar_subquery()
+    )
+    latest_ids = select(latest_id).select_from(Device).where(
+        id_in(Device.id, ids, ctx.db.get_bind().dialect.name)
     )
     rows = (
         ctx.db.query(DeviceTelemetry.device_id, DeviceTelemetry.disk_percent)
-        .join(latest, (DeviceTelemetry.device_id == latest.c.device_id) & (DeviceTelemetry.created_at == latest.c.at))
+        .filter(DeviceTelemetry.id.in_(latest_ids))
         .all()
     )
     return {device_id: float(value) for device_id, value in rows if value is not None}

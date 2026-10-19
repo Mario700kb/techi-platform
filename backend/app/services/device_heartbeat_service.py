@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import logging
 import secrets
+import threading
+from dataclasses import dataclass
 import time
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from datetime import datetime, timedelta
 from app.core.time import utcnow, utcnow_naive
 from typing import Optional
@@ -14,7 +16,7 @@ from app.platform_core.flags import feature_enabled
 from app.platform_core.classification import classify_platform
 from app.repositories.device_repository import DeviceRepository
 from app.repositories.device_heartbeat_repository import DeviceHeartbeatRepository
-from app.schemas.agent import AgentHeartbeatPayload, DeviceHeartbeatCreate
+from app.schemas.agent import AgentHeartbeatPayload
 from app.schemas.device_health import parse_device_health
 from app.schemas.security_posture import parse_security_posture
 from app.services.remote_session_service import RemoteSessionService
@@ -36,6 +38,15 @@ from app.services.rustdesk_service import RustDeskIdentityService
 from app.websocket.events import RealtimeEventType, build_event, device_payload, device_payload_delta
 from app.websocket.publisher import realtime_publisher
 
+
+@dataclass(frozen=True)
+class HeartbeatRef:
+    """The heartbeat just processed, as the response and realtime event name it."""
+
+    id: int
+    created_at: datetime
+
+
 logger = logging.getLogger(__name__)
 
 # Active devices seen within this window are protected from automatic reuse
@@ -44,9 +55,14 @@ _RECENTLY_SEEN_HOURS = 24
 
 # agent_id → (device_id, cached_at): avoids per-heartbeat agent_id index scans.
 # agent_id is immutable post-enroll, so a long TTL is safe.
+# A lock: heartbeats run in several worker threads, and an eviction between a
+# get and a move_to_end raised KeyError (a 500 and an agent retry). The TTL is
+# longer than the ~5 min heartbeat interval, or almost every lookup missed;
+# identity is re-checked on every hit anyway.
 _AGENT_ID_CACHE: OrderedDict[str, tuple[int, float]] = OrderedDict()
-_AGENT_ID_CACHE_TTL = 300.0  # seconds
-_AGENT_ID_CACHE_MAX_SIZE = 1000
+_AGENT_ID_CACHE_LOCK = threading.Lock()
+_AGENT_ID_CACHE_TTL = 3600.0  # seconds
+_AGENT_ID_CACHE_MAX_SIZE = 4000
 _AGENT_ID_CACHE_EVICT_COUNT = 100
 RUSTDESK_REPAIR_EVENT_THROTTLE_HOURS = 24
 RUSTDESK_REPAIR_COUNTER_RETENTION_HOURS = 24
@@ -101,17 +117,31 @@ def _proves_identity(payload, device) -> bool:
 
 
 def _cache_agent_device(agent_id: str, device_id: int) -> None:
-    _AGENT_ID_CACHE.pop(agent_id, None)
-    _AGENT_ID_CACHE[agent_id] = (device_id, time.monotonic())
-    if len(_AGENT_ID_CACHE) > _AGENT_ID_CACHE_MAX_SIZE:
-        for _ in range(min(_AGENT_ID_CACHE_EVICT_COUNT, len(_AGENT_ID_CACHE))):
-            _AGENT_ID_CACHE.popitem(last=False)
+    with _AGENT_ID_CACHE_LOCK:
+        _AGENT_ID_CACHE.pop(agent_id, None)
+        _AGENT_ID_CACHE[agent_id] = (device_id, time.monotonic())
+        if len(_AGENT_ID_CACHE) > _AGENT_ID_CACHE_MAX_SIZE:
+            for _ in range(min(_AGENT_ID_CACHE_EVICT_COUNT, len(_AGENT_ID_CACHE))):
+                _AGENT_ID_CACHE.popitem(last=False)
+
+
+def _cached_device_id(agent_id: str) -> Optional[int]:
+    with _AGENT_ID_CACHE_LOCK:
+        cached = _AGENT_ID_CACHE.get(agent_id)
+        if cached is None:
+            return None
+        if time.monotonic() - cached[1] >= _AGENT_ID_CACHE_TTL:
+            _AGENT_ID_CACHE.pop(agent_id, None)
+            return None
+        _AGENT_ID_CACHE.move_to_end(agent_id)
+        return cached[0]
 
 
 def _evict_agent_cache(agent_id: str | None) -> None:
     """Call on device delete/archive so the next heartbeat does a fresh lookup."""
     if agent_id:
-        _AGENT_ID_CACHE.pop(agent_id, None)
+        with _AGENT_ID_CACHE_LOCK:
+            _AGENT_ID_CACHE.pop(agent_id, None)
 
 
 class DeviceHeartbeatService:
@@ -182,15 +212,12 @@ class DeviceHeartbeatService:
 
         device = None
         if payload.agent_id:
-            cached = _AGENT_ID_CACHE.get(payload.agent_id)
-            if cached and time.monotonic() - cached[1] < _AGENT_ID_CACHE_TTL:
-                _AGENT_ID_CACHE.move_to_end(payload.agent_id)
-                device = self.device_repo.get(cached[0])  # PK lookup — faster than agent_id scan
+            cached_id = _cached_device_id(payload.agent_id)
+            if cached_id is not None:
+                device = self.device_repo.get(cached_id)  # PK lookup — faster than agent_id scan
                 if not _proves_identity(payload, device):
-                    _AGENT_ID_CACHE.pop(payload.agent_id, None)
+                    _evict_agent_cache(payload.agent_id)
                     device = None
-            elif cached:
-                _AGENT_ID_CACHE.pop(payload.agent_id, None)
         if device is None and payload.agent_id:
             device = self.device_repo.get_by_agent_id(payload.agent_id)
         # A revoked agent (its device archived or in the trash) is refused
@@ -316,31 +343,10 @@ class DeviceHeartbeatService:
         from app.services.remote_action_service import RemoteActionService
         RemoteActionService(self.db).verify_self_update_for_device(device.id)
 
-        heartbeat_data = DeviceHeartbeatCreate(
-            device_id=device.id,
-            rustdesk_id=device.rustdesk_id,
-            hostname=device.hostname,
-            current_user=device.current_user,
-            domain=device.domain,
-            public_ip=device.public_ip,
-            local_ip=device.local_ip,
-            os_name=device.os_name,
-            os_version=device.os_version,
-            os_caption=device.os_caption,
-            os_build=device.os_build,
-            windows_product_type=device.windows_product_type,
-            platform=device.platform,
-            device_type=device.device_type,
-            status=device.status,
-            cpu=device.cpu,
-            ram=device.ram,
-            storage=device.storage,
-            rustdesk_install_status=device.rustdesk_install_status,
-            rustdesk_status=device.rustdesk_status,
-            rustdesk_version=device.rustdesk_version,
-            rustdesk_install_path=device.rustdesk_install_path,
-        )
-        heartbeat = self.heartbeat_repo.create(heartbeat_data)
+        # Heartbeats are no longer stored one row each (634 MB for a timeline
+        # that showed the last 100): devices.last_seen and the status history
+        # carry what the console needs. The response still names the beat.
+        heartbeat = HeartbeatRef(id=int(now.timestamp()) % 2_000_000_000, created_at=now)
 
         return device, heartbeat, {
             "previous_payload": previous_payload,
@@ -415,7 +421,11 @@ class DeviceHeartbeatService:
                 actor="connector",
                 fail_silently=True,
             )
-        self._process_telemetry(payload, device)
+        # One read of the device's open alerts serves every resolve check and
+        # the health score below.
+        alerts = AlertEngine(self.db)
+        open_alerts = alerts.prefetch_open(device.id)
+        self._process_telemetry(payload, device, alerts=alerts, open_alerts=open_alerts)
         self._process_inventory(payload, device, verified=bool(ctx.get("verified")))
         self._process_capabilities(payload, device)
         # Only a verified agent may drive the device's Remote Support session
@@ -428,7 +438,7 @@ class DeviceHeartbeatService:
 
                 RustDeskAuditService(self.db).close_lost_connections(device, utcnow_naive())
             RemoteSessionService(self.db).apply_report(device, payload.remote_session_active)
-        self._evaluate_post_heartbeat_alerts(device)
+        self._evaluate_post_heartbeat_alerts(device, alerts)
 
     def _process_capabilities(self, payload: AgentHeartbeatPayload, device) -> None:
         """Persist normalized capabilities (Platform Expansion, flag-gated).
@@ -644,9 +654,9 @@ class DeviceHeartbeatService:
 
         return self.device_repo.update(existing, DeviceUpdate(**update_data))
 
-    def _evaluate_post_heartbeat_alerts(self, device) -> None:
+    def _evaluate_post_heartbeat_alerts(self, device, engine: Optional[AlertEngine] = None) -> None:
         from app.repositories.device_status_history_repository import DeviceStatusHistoryRepository
-        engine = AlertEngine(self.db)
+        engine = engine or AlertEngine(self.db)
         engine.evaluate_archived_checkin(device)
         engine.evaluate_rustdesk_sync(device)
         window_start = utcnow() - timedelta(seconds=RECONNECT_WINDOW_SECONDS)
@@ -700,7 +710,9 @@ class DeviceHeartbeatService:
             values["rustdesk_repair_count"] = 0
             values["rustdesk_last_repair_at"] = None
 
-    def _process_telemetry(self, payload: AgentHeartbeatPayload, device) -> None:
+    def _process_telemetry(
+        self, payload: AgentHeartbeatPayload, device, alerts: Optional[AlertEngine] = None, open_alerts=None
+    ) -> None:
         has_telemetry = any(
             v is not None
             for v in [payload.cpu_percent, payload.ram_percent, payload.disk_percent, payload.uptime_seconds]
@@ -716,7 +728,7 @@ class DeviceHeartbeatService:
         # new_state was the root cause of phantom health-warning events.
         prev_snapshot = telemetry_service.repo.get_latest(device.id)
 
-        snapshot, _, _, _ = telemetry_service.create_snapshot(
+        snapshot = telemetry_service.repo.create(
             device_id=device.id,
             cpu_percent=payload.cpu_percent,
             ram_percent=payload.ram_percent,
@@ -726,9 +738,18 @@ class DeviceHeartbeatService:
         )
 
         score_service = DeviceHealthScoreService(self.db)
-        # Compute both states with the identical scoring algorithm
-        _, prev_state, _ = score_service.compute_for_device(device, prev_snapshot)
-        health_score, new_state, reasons = score_service.compute_for_device(device, snapshot)
+        # Both states with the identical scoring algorithm and the same inputs,
+        # read once: the open alerts and the inventory row.
+        alert_counts = None
+        if open_alerts is not None:
+            alert_counts = dict(Counter(alert.severity.value for alert in open_alerts))
+        inventory = score_service.inventory_repo.get_by_device(device.id)
+        _, prev_state, _ = score_service.compute_for_device(
+            device, prev_snapshot, alert_counts=alert_counts, inventory=inventory
+        )
+        health_score, new_state, reasons = score_service.compute_for_device(
+            device, snapshot, alert_counts=alert_counts, inventory=inventory
+        )
 
         realtime_publisher.publish_threadsafe(
             build_event(
@@ -755,7 +776,7 @@ class DeviceHeartbeatService:
         from app.services.telemetry_ingest_service import devices_with_agent_monitoring
 
         if not devices_with_agent_monitoring(self.db, {device.id}):
-            AlertEngine(self.db).evaluate_telemetry(
+            (alerts or AlertEngine(self.db)).evaluate_telemetry(
                 device,
                 cpu_percent=payload.cpu_percent,
                 ram_percent=payload.ram_percent,

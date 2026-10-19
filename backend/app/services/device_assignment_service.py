@@ -1,4 +1,6 @@
 import re
+import threading
+import time
 from dataclasses import dataclass
 from typing import Optional
 
@@ -15,6 +17,37 @@ from app.schemas.client import ClientCreate
 from app.schemas.device import DeviceUpdate
 from app.schemas.device_group import DeviceGroupCreate
 from app.services.trusted_domain_service import TrustedDomainService
+
+
+# Where a domain's devices belong (domain, group name) -> (client_id, group_id),
+# resolved in the last minute. Every verified heartbeat of a domain-joined
+# device re-resolved it: two trusted-domain, one client and three group
+# lookups (about 6 of 21 queries a heartbeat). Used only to confirm a device is
+# already placed there; any change goes through the database. A mapping
+# changed by an admin applies within PLACEMENT_TTL_S.
+PLACEMENT_TTL_S = 60.0
+_placements: dict = {}
+_placements_lock = threading.Lock()
+
+
+def _recent_placement(key: tuple) -> Optional[tuple]:
+    with _placements_lock:
+        entry = _placements.get(key)
+    if entry is None or time.monotonic() - entry[0] > PLACEMENT_TTL_S:
+        return None
+    return entry[1], entry[2]
+
+
+def _remember_placement(key: tuple, client_id: int, group_id: int) -> None:
+    with _placements_lock:
+        if len(_placements) > 2000:
+            _placements.clear()
+        _placements[key] = (time.monotonic(), client_id, group_id)
+
+
+def clear_placement_cache() -> None:
+    with _placements_lock:
+        _placements.clear()
 
 
 @dataclass
@@ -207,9 +240,6 @@ class DeviceAssignmentService:
         if self.is_manual_locked(source):
             return device
 
-        client_name = self._normalize_domain_to_client_name(signal.domain) or TrustedDomainService.normalize_to_client_name(signal.domain or "")
-        client = self._get_client_for_domain(signal.domain, fallback_name=client_name)
-        self._ensure_standard_groups(client.id)
         group_name = TrustedDomainService.detect_group_name(
             signal.os_name,
             signal.platform,
@@ -217,7 +247,22 @@ class DeviceAssignmentService:
             os_caption=signal.os_caption,
             windows_product_type=signal.windows_product_type,
         )
+        placement_key = ((signal.domain or "").strip().lower(), group_name)
+        placed = _recent_placement(placement_key)
+        if (
+            placed is not None
+            and device.client_id == placed[0]
+            and device.group_id == placed[1]
+            and source == self.TRUSTED_DOMAIN_SOURCE
+            and device.auto_assigned
+        ):
+            return device
+
+        client_name = self._normalize_domain_to_client_name(signal.domain) or TrustedDomainService.normalize_to_client_name(signal.domain or "")
+        client = self._get_client_for_domain(signal.domain, fallback_name=client_name)
+        self._ensure_standard_groups(client.id)
         group = self._get_or_create_group(client.id, group_name)
+        _remember_placement(placement_key, client.id, group.id)
         if (
             device.client_id == client.id
             and device.group_id == group.id

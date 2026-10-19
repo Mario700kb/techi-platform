@@ -38,6 +38,13 @@ class DeviceReconciliationWorker:
         return await asyncio.to_thread(self._run_once_sync)
 
     async def _run(self) -> None:
+        # Right after a start no agent channel is open yet: reconciling now
+        # would mark every connected device offline until it reconnects.
+        try:
+            await asyncio.wait_for(self._stop_event.wait(), timeout=settings.RECONCILIATION_STARTUP_GRACE_SECONDS)
+            return
+        except asyncio.TimeoutError:
+            pass
         while not self._stop_event.is_set():
             try:
                 transitioned = await self.run_once()

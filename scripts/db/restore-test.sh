@@ -121,7 +121,8 @@ for t in $live_tables; do
   case "$t" in
     operators|clients|device_groups|teams|vault_credentials|enrollment_tokens|notification_channels|notification_rules)
       [ "$live_n" = "$rest_n" ] || flag="  ← differs (edited since the dump?)";;
-    device_heartbeats|device_telemetry|devices)
+    # device_heartbeats is no longer written (2026-10-19): empty is expected.
+    device_telemetry|devices)
       [ "$rest_n" != missing ] && [ "$rest_n" -gt 0 ] || { flag="  ← EMPTY"; fail=1; };;
   esac
   if [ "$rest_n" = missing ]; then

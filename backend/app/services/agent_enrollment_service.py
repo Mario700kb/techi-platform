@@ -1,6 +1,7 @@
 import logging
 import secrets
-from app.core.time import utcnow
+from datetime import timedelta
+from app.core.time import utcnow, utcnow_naive
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -502,12 +503,37 @@ class AgentEnrollmentService:
         return f"agent_{secrets.token_urlsafe(18)}"
 
     def _record_audit(self, **values) -> None:
+        if values.get("result") == "failed" and self._failed_recently(values):
+            # The same machine retries on every heartbeat (about 700 rows and
+            # notifications a day from one host): one per hour says it all.
+            return
         try:
             self.enrollment_audit.record(**values)
         except Exception:
             logger.exception("Enrollment audit failed outside best-effort service boundary")
         if values.get("result") == "failed":
             self._notify_enrollment_failed(**values)
+
+    def _failed_recently(self, values: dict) -> bool:
+        from app.models.enrollment_audit import EnrollmentAudit
+
+        payload = values.get("payload")
+        hostname = (getattr(payload, "hostname", None) or "").strip()[:128] or None
+        try:
+            return (
+                self.db.query(EnrollmentAudit.id)
+                .filter(
+                    EnrollmentAudit.result == "failed",
+                    EnrollmentAudit.reason == values.get("reason"),
+                    EnrollmentAudit.hostname == hostname,
+                    EnrollmentAudit.created_at >= utcnow_naive() - timedelta(hours=1),
+                )
+                .first()
+                is not None
+            )
+        except Exception:
+            logger.exception("Enrollment audit dedupe lookup failed")
+            return False
 
     def _notify_enrollment_failed(self, **values) -> None:
         try:

@@ -4,7 +4,6 @@ from app.models.alert import AlertKind, DeviceAlert
 from app.models.device import Device
 from app.models.remote_action import ActionStatus, RemoteAction
 from app.repositories.device_activity_event_repository import DeviceActivityEventRepository
-from app.repositories.device_heartbeat_repository import DeviceHeartbeatRepository
 from app.repositories.device_status_history_repository import DeviceStatusHistoryRepository
 from app.schemas.activity import ActivityEvent
 
@@ -22,12 +21,10 @@ class DeviceActivityService:
     def __init__(self, db):
         self.db = db
         self.event_repo = DeviceActivityEventRepository(db)
-        self.heartbeat_repo = DeviceHeartbeatRepository(db)
         self.history_repo = DeviceStatusHistoryRepository(db)
 
     def get_activity_feed(self, device_id: int, limit: int = 40) -> List[ActivityEvent]:
         device = self.db.query(Device).filter(Device.id == device_id).first()
-        heartbeats = self.heartbeat_repo.get_recent_by_device(device_id, limit=limit)
         status_history = self.history_repo.get_recent_by_device(device_id, limit=limit)
         stored_events = self.event_repo.get_recent_by_device(device_id, limit=limit)
         remote_actions = (
@@ -81,13 +78,15 @@ class DeviceActivityService:
                 device_id=device_id,
             ))
 
-        for hb in heartbeats:
+        # One entry for the newest heartbeat. One per heartbeat filled the
+        # timeline on an online device and pushed the real events out of it.
+        if device and device.last_seen:
             events.append(ActivityEvent(
-                id=f"hb-{hb.id}",
+                id=f"hb-last-{device.id}",
                 type="heartbeat_received",
-                occurred_at=hb.created_at,
-                summary="Heartbeat received",
-                detail=hb.current_user or hb.hostname,
+                occurred_at=device.last_seen,
+                summary="Last heartbeat",
+                detail=device.current_user or device.hostname,
                 device_id=device_id,
             ))
 

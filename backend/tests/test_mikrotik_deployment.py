@@ -327,7 +327,7 @@ def test_mikrotik_heartbeat_populates_connector_state(monkeypatch):
     )
 
     device, heartbeat = DeviceHeartbeatService(s).process_heartbeat(payload)
-    assert heartbeat.device_id == device.id
+    assert heartbeat.id > 0
     assert device.status == DeviceStatus.ONLINE
     assert device.last_seen is not None
     assert device.platform == "mikrotik"

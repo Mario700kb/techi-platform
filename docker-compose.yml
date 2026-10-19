@@ -40,6 +40,9 @@ services:
       -c log_lock_waits=on
       -c log_temp_files=0
     restart: unless-stopped
+    # Same priority as the backend (see there). Applied live with
+    # `docker update --cpu-shares 4096` when the container is not recreated.
+    cpu_shares: 4096
     logging:
       driver: "json-file"
       options:
@@ -80,6 +83,12 @@ services:
       - "${BACKEND_PORT:-8000}:8000"
     mem_limit: 800m
     memswap_limit: 800m
+    # cpu.weight above the default 100 of other cgroups (an image build among
+    # them): a build during the fleet's reconnect starved the backend on
+    # 2026-10-19 (the default 1024 shares are weight 39).
+    cpu_shares: 4096
+    # uvicorn closes the agent channels, then has 5 s to finish requests.
+    stop_grace_period: 15s
     volumes:
       - agent_packages:/app/agent_packages
       - /opt/techi/packages:/opt/techi/packages:ro

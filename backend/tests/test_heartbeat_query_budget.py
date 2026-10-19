@@ -76,5 +76,6 @@ def test_heartbeat_does_not_reselect_client_or_group(setup):
     assert response.status_code == 200
     standalone = [s for s in statements if re.match(r"\s*SELECT .* FROM (clients|device_groups)\b", s, re.S)]
     assert standalone == []
-    # Budget for the whole request; was 17 before the joined load.
-    assert len(statements) <= 12, statements
+    # Budget for the whole request: 17 before the joined load, 12 before the
+    # heartbeat kept what it wrote and stopped storing a row per beat (6 now).
+    assert len(statements) <= 7, statements

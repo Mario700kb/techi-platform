@@ -179,3 +179,21 @@ def test_a_forged_heartbeat_by_rustdesk_id_is_logged(db, victim, caplog):
     with caplog.at_level("WARNING"):
         _beat(db, agent_id=FORGED_AGENT_ID, rustdesk_id=REAL_RUSTDESK_ID)
     assert "RISK-IDENT-001: heartbeat resolved via rustdesk_id" in caplog.text
+
+
+def test_a_heartbeat_past_the_delivery_deadline_gets_no_actions(client, victim, db):
+    from app.core import load_guard
+    from app.core.time import utcnow_naive
+    from app.models.remote_action import ActionStatus, RemoteAction
+
+    db.add(RemoteAction(device_id=victim.id, action_type="ping", status=ActionStatus.QUEUED, created_by="op", queued_at=utcnow_naive()))
+    db.commit()
+    with patch.object(load_guard, "DELIVERY_DEADLINE_S", -1.0), \
+            patch("app.api.v1.endpoints.agent.DELIVERY_DEADLINE_S", -1.0):
+        response = client.post(
+            "/api/v1/agent/heartbeat",
+            json={"device_id": victim.id, "agent_id": REAL_AGENT_ID, "hostname": "victim-pc", "platform": "windows"},
+        )
+    assert response.status_code == 200
+    assert response.json()["pending_actions"] == []
+    assert db.query(RemoteAction).one().status.value == "queued"

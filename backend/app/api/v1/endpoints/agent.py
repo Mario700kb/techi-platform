@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.agent_auth import _SlidingWindowRateLimiter, enroll_limiter
 from app.core.config import settings
+from app.core.load_guard import DELIVERY_DEADLINE_S, heartbeat_age
 from app.db.session import get_db, SessionLocal
 from app.repositories.device_repository import DeviceRepository
 from app.schemas.agent import (
@@ -65,7 +66,9 @@ def _heartbeat_side_effects(
     heartbeat_id: int,
     ctx: dict,
 ) -> None:
-    db = SessionLocal()
+    # expire_on_commit=False: each commit below would otherwise send the device,
+    # telemetry and inventory rows back to the database on their next read.
+    db = SessionLocal(expire_on_commit=False)
     try:
         device = DeviceRepository(db).get(device_id)
         if device is None:
@@ -140,6 +143,9 @@ def agent_heartbeat(
     if not payload.public_ip and request.client:
         payload = payload.model_copy(update={"public_ip": request.client.host})
 
+    # The heartbeat keeps what it wrote: with the default, each of its commits
+    # re-read the device (with three joins) on the next attribute access.
+    db.expire_on_commit = False
     service = DeviceHeartbeatService(db)
     try:
         device, heartbeat, ctx = service.process_heartbeat_core(payload)
@@ -170,9 +176,12 @@ def agent_heartbeat(
     # also mark them SENT, starving the real device while reporting them complete
     # via the leaked callback token. So it only runs for an authenticated caller;
     # everyone else gets an empty list and nothing is marked SENT.
+    # A heartbeat that waited past DELIVERY_DEADLINE_S is answered without its
+    # actions: they stay queued for the next one instead of being marked SENT
+    # for an agent that has stopped listening.
     pending_actions = (
         RemoteActionService(db).collect_pending_for_delivery(device.id)
-        if authenticated
+        if authenticated and heartbeat_age(request) < DELIVERY_DEADLINE_S
         else []
     )
     interval = _cfg_svc.get_heartbeat_interval(payload.platform)

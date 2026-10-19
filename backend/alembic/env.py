@@ -34,10 +34,17 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    # A migration that cannot get its lock within 10 s fails instead of
+    # queueing every heartbeat behind it (devices is written constantly). Set
+    # per connection: a SET statement here would open the transaction that
+    # autocommit_block() migrations expect alembic to own.
+    url = config.get_main_option("sqlalchemy.url") or ""
+    extra = {"connect_args": {"options": "-c lock_timeout=10s"}} if url.startswith("postgresql") else {}
     connectable = engine_from_config(
         config.get_section(config.config_ini_section),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        **extra,
     )
 
     with connectable.connect() as connection:

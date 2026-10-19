@@ -31,3 +31,14 @@ def _current_event_loop():
     finally:
         asyncio.set_event_loop(None)
         loop.close()
+
+
+@pytest.fixture(autouse=True)
+def _fresh_placement_cache():
+    """The trusted-domain placement cache is process-wide: one test's mapping
+    must not answer for the next."""
+    from app.services.device_assignment_service import clear_placement_cache
+
+    clear_placement_cache()
+    yield
+    clear_placement_cache()

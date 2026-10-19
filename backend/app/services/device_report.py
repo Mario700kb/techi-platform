@@ -34,7 +34,7 @@ SECTION_TITLES = {
     "assignments": "Assignment History", "notes": "Notes", "event_history": "Event History",
 }
 RETENTION_DAYS = {
-    "user_activity": 7, "status_uptime": 60, "health": 7, "alerts": 90,
+    "user_activity": 7, "status_uptime": 90, "health": 7, "alerts": 90,
     "actions": 90, "remote_support": 7, "assignments": 7,
     "event_history": 7,
 }

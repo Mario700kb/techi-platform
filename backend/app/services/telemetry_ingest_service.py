@@ -320,7 +320,9 @@ def cleanup_telemetry_pipeline(db: Session) -> int:
         db.commit()
     else:
         removed += db.query(TelemetrySample).filter(TelemetrySample.ts < now - RAW_KEEP).delete(synchronize_session=False)
-    removed += db.query(TelemetryRollup5m).filter(TelemetryRollup5m.bucket < now - timedelta(days=30)).delete(synchronize_session=False)
+    # 5-minute rollups feed only the 7-day chart (30 days and longer read the
+    # hourly ones); 30 days of them would take ~2 GB for 600 devices.
+    removed += db.query(TelemetryRollup5m).filter(TelemetryRollup5m.bucket < now - timedelta(days=8)).delete(synchronize_session=False)
     removed += db.query(TelemetryRollup1h).filter(TelemetryRollup1h.bucket < now - timedelta(days=400)).delete(synchronize_session=False)
     db.commit()
     return removed

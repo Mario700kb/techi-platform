@@ -12,7 +12,8 @@ def test_agent_id_cache_evicts_oldest_batch():
     for index in range(device_heartbeat_service._AGENT_ID_CACHE_MAX_SIZE + 1):
         device_heartbeat_service._cache_agent_device(f"agent-{index}", index)
 
-    assert len(cache) == 901
+    size = device_heartbeat_service._AGENT_ID_CACHE_MAX_SIZE
+    assert len(cache) == size + 1 - device_heartbeat_service._AGENT_ID_CACHE_EVICT_COUNT
     assert "agent-0" not in cache
     assert "agent-99" not in cache
     assert "agent-100" in cache

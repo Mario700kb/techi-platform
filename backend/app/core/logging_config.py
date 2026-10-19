@@ -18,7 +18,9 @@ class _RedactSecrets(logging.Filter):
     handlers, not to one logger, so it covers every logger that writes.
     """
 
-    _SECRET_QUERY = re.compile(r"([?&](?:token|access_token|ticket|auth)=)[^&\s\"']+", re.IGNORECASE)
+    # agent_id too: agents up to 2.1.33 put it in the command-channel URL, and
+    # it is the agent's bearer secret.
+    _SECRET_QUERY = re.compile(r"([?&](?:token|access_token|ticket|auth|agent_id)=)[^&\s\"']+", re.IGNORECASE)
 
     def filter(self, record: logging.LogRecord) -> bool:
         try:

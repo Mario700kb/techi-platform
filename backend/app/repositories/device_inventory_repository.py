@@ -71,5 +71,6 @@ class DeviceInventoryRepository:
             )
             self.db.add(obj)
         self.db.commit()
-        self.db.refresh(obj)
+        if self.db.expire_on_commit:
+            self.db.refresh(obj)
         return obj

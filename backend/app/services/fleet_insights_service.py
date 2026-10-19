@@ -246,16 +246,25 @@ class FleetInsightsService:
                             bounds: list[datetime], online: list[float], known: list[float]) -> None:
         window_start, end = bounds[0], bounds[-1]
         ids = [d.id for d in devices]
+        # One index probe per device for its first in-window transition.
+        # DISTINCT ON read and sorted every transition in the window (up to
+        # 30 s in production); PostgreSQL 15 cannot skip through the index.
+        later = aliased(DeviceStatusHistory)
+        first_in_window = (
+            select(later.id)
+            .where(later.device_id == Device.id, later.created_at >= window_start, later.created_at <= end)
+            .order_by(later.created_at.asc())
+            .limit(1)
+            .correlate(Device)
+            .scalar_subquery()
+        )
+        first_ids = select(first_in_window).select_from(Device).where(id_in(Device.id, ids, self._dialect))
         first = {
             device_id: (_naive_utc(at), new_status, previous_status)
             for device_id, at, new_status, previous_status in (
                 self.db.query(DeviceStatusHistory.device_id, DeviceStatusHistory.created_at,
                               DeviceStatusHistory.new_status, DeviceStatusHistory.previous_status)
-                .filter(id_in(DeviceStatusHistory.device_id, ids, self._dialect),
-                        DeviceStatusHistory.created_at >= window_start,
-                        DeviceStatusHistory.created_at <= end)
-                .order_by(DeviceStatusHistory.device_id, DeviceStatusHistory.created_at)
-                .distinct(DeviceStatusHistory.device_id)
+                .filter(DeviceStatusHistory.id.in_(first_ids))
                 .all()
             )
         }
@@ -273,6 +282,8 @@ class FleetInsightsService:
                 _add_segment(cursor, until, state == DeviceStatus.ONLINE, bounds, online, known)
             cursors.append(cursor)
 
+        # The window sort spilled up to 1.9 GB to disk at the default 8 MB.
+        self.db.execute(text("SET LOCAL work_mem = '64MB'"))
         rows = self.db.execute(
             text("""
                 WITH ev AS (

@@ -45,12 +45,19 @@ class RustDeskIdentityService:
             return False, normalized, "TECHI Remote Support ID must be 6-64 characters and contain only letters, numbers, underscore, or dash"
         return True, normalized, None
 
-    def verify(self, rustdesk_id: str, *, exclude_device_id: Optional[int] = None) -> RustDeskIdVerifyResponse:
+    def verify(
+        self, rustdesk_id: str, *, exclude_device_id: Optional[int] = None, own_id: Optional[str] = None
+    ) -> RustDeskIdVerifyResponse:
         valid, normalized, message = self.validate_rustdesk_id(rustdesk_id)
         if not valid:
             return RustDeskIdVerifyResponse(valid=False, normalized_rustdesk_id=normalized, message=message)
 
-        conflict = self.device_repo.get_conflicting_rustdesk_id(normalized, exclude_device_id=exclude_device_id)
+        # rustdesk_id is unique: the ID the device already holds cannot be any
+        # other device's, so a heartbeat reporting it needs no lookup.
+        conflict = (
+            None if own_id and normalized == own_id
+            else self.device_repo.get_conflicting_rustdesk_id(normalized, exclude_device_id=exclude_device_id)
+        )
         if conflict:
             return RustDeskIdVerifyResponse(
                 valid=False,
@@ -128,7 +135,7 @@ class RustDeskIdentityService:
         old_install_path: Optional[str],
         old_sync_state: Optional[str],
     ) -> Device:
-        verification = self.verify(effective_id, exclude_device_id=device.id)
+        verification = self.verify(effective_id, exclude_device_id=device.id, own_id=device.rustdesk_id)
 
         if not verification.valid:
             device.rustdesk_conflict_detected = verification.conflict_device_id is not None
@@ -136,7 +143,8 @@ class RustDeskIdentityService:
             device.rustdesk_sync_message = verification.message
             self.db.add(device)
             self.db.commit()
-            self.db.refresh(device)
+            if self.db.expire_on_commit:
+                self.db.refresh(device)
             self._publish(RealtimeEventType.SYNC_FAILED, device, "rustdesk_sync_failed")
             return device
 
@@ -153,7 +161,8 @@ class RustDeskIdentityService:
 
         self.db.add(device)
         self.db.commit()
-        self.db.refresh(device)
+        if self.db.expire_on_commit:
+            self.db.refresh(device)
 
         # Only publish when rustdesk_id / version / install_path / sync_state actually changed.
         # This prevents a spurious "TECHI Remote Support metadata updated" event every heartbeat.
@@ -202,7 +211,8 @@ class RustDeskIdentityService:
 
             self.db.add(device)
             self.db.commit()
-            self.db.refresh(device)
+            if self.db.expire_on_commit:
+                self.db.refresh(device)
 
             if (
                 old_rustdesk_id != device.rustdesk_id
@@ -221,7 +231,8 @@ class RustDeskIdentityService:
 
             self.db.add(device)
             self.db.commit()
-            self.db.refresh(device)
+            if self.db.expire_on_commit:
+                self.db.refresh(device)
             # Only emit when sync_state actually moved to degraded
             if old_sync_state != device.rustdesk_sync_state:
                 self._publish(RealtimeEventType.SYNC_FAILED, device, "rustdesk_resolver_degraded")
@@ -233,7 +244,8 @@ class RustDeskIdentityService:
 
             self.db.add(device)
             self.db.commit()
-            self.db.refresh(device)
+            if self.db.expire_on_commit:
+                self.db.refresh(device)
             # Only emit when sync_state actually moved to failed
             if old_sync_state != device.rustdesk_sync_state:
                 self._publish(RealtimeEventType.SYNC_FAILED, device, "rustdesk_id_unresolved")
@@ -261,7 +273,8 @@ class RustDeskIdentityService:
         device.rustdesk_conflict_detected = False
         self.db.add(device)
         self.db.commit()
-        self.db.refresh(device)
+        if self.db.expire_on_commit:
+            self.db.refresh(device)
         self._publish(RealtimeEventType.RUSTDESK_UPDATED, device, "rustdesk_manual_override")
         return device
 

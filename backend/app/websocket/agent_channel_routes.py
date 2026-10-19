@@ -230,37 +230,67 @@ def _agent_id_matches(provided: str, stored: str) -> bool:
     return secrets.compare_digest(provided, stored)
 
 
-@router.websocket("/ws/agent/commands")
-async def agent_command_ws(websocket: WebSocket, device_id: int = 0, agent_id: str = ""):
-    if not device_id or not agent_id:
-        await websocket.close(code=4001)
-        return
-
+def _authorize_channel(device_id: int, agent_id: str) -> tuple[Optional[int], Optional[str]]:
+    """(close code, agent version): no close code when the agent may connect."""
     db = SessionLocal()
     try:
         device = DeviceRepository(db).get(device_id)
         if device is None or not _agent_id_matches(agent_id, getattr(device, "agent_id", None)):
             logger.info("[agent-channel] rejected device_id=%s (unknown device or agent_id mismatch)", device_id)
-            await websocket.close(code=4001)
-            return
+            return 4001, None
         if device.is_archived and is_agent_revoked(db, agent_id):
             logger.info("[agent-channel] rejected device_id=%s (agent revoked)", device_id)
-            await websocket.close(code=4003)
-            return
-        agent_version = getattr(device, "agent_version", None)
+            return 4003, None
+        return None, getattr(device, "agent_version", None)
     finally:
         db.close()
 
-    await websocket.accept()
-    await agent_command_channel.register(device_id, websocket)
+
+def _on_connected(device_id: int) -> None:
     # The open channel is the agent saying it is up: online now, not at its
     # next heartbeat.
-    await asyncio.to_thread(_mark_connected, device_id)
-    await asyncio.to_thread(_note_self_update_channel, device_id, True)
+    _mark_connected(device_id)
+    _note_self_update_channel(device_id, True)
+
+
+# Handshakes run their database lookup in a worker thread (it ran on the event
+# loop, so a reconnecting fleet blocked every other request), a few at a time.
+# Past HANDSHAKE_MAX_WAITING the agent is told to come back later (1013): it
+# retries after its own randomized backoff.
+HANDSHAKE_CONCURRENCY = 8
+HANDSHAKE_MAX_WAITING = 32
+_handshake_slots = asyncio.Semaphore(HANDSHAKE_CONCURRENCY)
+_handshakes_waiting = 0
+
+
+@router.websocket("/ws/agent/commands")
+async def agent_command_ws(websocket: WebSocket, device_id: int = 0, agent_id: str = ""):
+    global _handshakes_waiting
+    if not device_id or not agent_id:
+        await websocket.close(code=4001)
+        return
+
+    if _handshakes_waiting >= HANDSHAKE_MAX_WAITING:
+        await websocket.close(code=1013)
+        return
+    _handshakes_waiting += 1
+    try:
+        async with _handshake_slots:
+            close_code, agent_version = await asyncio.to_thread(_authorize_channel, device_id, agent_id)
+    finally:
+        _handshakes_waiting -= 1
+    if close_code is not None:
+        await websocket.close(code=close_code)
+        return
+
+    await websocket.accept()
+    await agent_command_channel.register(device_id, websocket)
+    await asyncio.to_thread(_on_connected, device_id)
     if device_live_hub.has_viewers(device_id):
         # Someone has the device open: an agent that just (re)connected picks
         # the live view up at once instead of at the page's next renewal.
         await device_live_hub.request_live(device_id)
+    shutting_down = False
     try:
         while True:
             # The agent sends pings, and live frames while someone watches the
@@ -274,15 +304,17 @@ async def agent_command_ws(websocket: WebSocket, device_id: int = 0, agent_id: s
             elif message is not None and message.get("type") == "monitor":
                 if _monitor_limiter.is_allowed(f"device:{device_id}"):
                     await asyncio.to_thread(_apply_monitor_event, device_id, message.get("event"))
-    except WebSocketDisconnect:
-        pass
+    except WebSocketDisconnect as exc:
+        # 1012: uvicorn closing every channel because the backend is stopping;
+        # none of those drops means a device went offline.
+        shutting_down = exc.code == 1012
     except asyncio.TimeoutError:
         logger.info("[agent-channel] device #%d idle past %ds; closing", device_id, IDLE_TIMEOUT_SECONDS)
     except Exception:
         logger.exception("[agent-channel] device #%d channel error", device_id)
     finally:
         was_current = await agent_command_channel.unregister(device_id, websocket)
-        if was_current and not agent_command_channel.presence_paused:
+        if was_current and not agent_command_channel.presence_paused and not shutting_down:
             disconnected_at = utcnow()
             agent_command_channel.note_lost(device_id, disconnected_at)
             task = asyncio.create_task(_after_drop(device_id, disconnected_at, agent_version))

@@ -55,14 +55,11 @@ class TerminalWatchdog:
             await self._task
         logger.info("Terminal watchdog stopped")
 
-    async def run_once(self) -> int:
-        """One sweep pass. Returns the number of sessions closed/expired."""
-        closed = 0
+    @staticmethod
+    def _expire_stale() -> int:
         db = SessionLocal()
         try:
-            svc = TerminalService(db)
-
-            expired = svc.expire_stale()
+            expired = TerminalService(db).expire_stale()
             if expired:
                 system_audit_log(
                     db,
@@ -70,9 +67,22 @@ class TerminalWatchdog:
                     entity_type="terminal_session",
                     details={"count": expired},
                 )
-                closed += expired
+            return expired
+        finally:
+            db.close()
 
-            violations = terminal_relay.idle_and_expired_sessions(IDLE_TIMEOUT_SECONDS, SESSION_MAX_SECONDS)
+    async def run_once(self) -> int:
+        """One sweep pass. Returns the number of sessions closed/expired."""
+        # The every-30-s expiry runs in a worker thread: on the event loop a
+        # slow database stalled every request (the 2026-10-13 pattern).
+        closed = await asyncio.to_thread(self._expire_stale)
+        violations = terminal_relay.idle_and_expired_sessions(IDLE_TIMEOUT_SECONDS, SESSION_MAX_SECONDS)
+        if not violations:
+            return closed
+        db = SessionLocal()
+        try:
+            svc = TerminalService(db)
+
             for session_id, reason in violations.items():
                 session = svc.get(session_id)
                 # End it in the database before closing the sockets, so the

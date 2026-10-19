@@ -8,6 +8,7 @@ import os
 from sqlalchemy.engine import make_url
 
 from app.core.logging_config import configure_logging
+from app.core.load_guard import HeartbeatGuard, RequestMetrics
 from app.core.request_context import ClientIPMiddleware
 
 configure_logging()
@@ -128,7 +129,7 @@ async def _heartbeat_cleanup_scheduler() -> None:
 # Client locations: new devices and changed addresses reach their site
 # without anyone pressing Re-apply. Light (only clients that have locations,
 # ~150 devices each), and first run after the restart's heartbeat surge.
-LOCATION_SWEEP_FIRST_DELAY_S = 120
+LOCATION_SWEEP_FIRST_DELAY_S = 600
 LOCATION_SWEEP_INTERVAL_S = 900
 
 
@@ -167,8 +168,12 @@ def _run_monitor_sweep() -> None:
         db.close()
 
 
+# First runs well after a restart: the fleet reconnects in the first minutes.
+MONITOR_SWEEP_FIRST_DELAY_S = 600
+
+
 async def _monitor_sweep_scheduler() -> None:
-    await asyncio.sleep(90)
+    await asyncio.sleep(MONITOR_SWEEP_FIRST_DELAY_S)
     while True:
         await asyncio.to_thread(_run_monitor_sweep)
         await asyncio.sleep(MONITOR_SWEEP_INTERVAL_S)
@@ -324,6 +329,9 @@ app.add_middleware(
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(ClientIPMiddleware)
+# Outermost: a shed heartbeat costs no thread, no session and no other middleware.
+app.add_middleware(RequestMetrics)
+app.add_middleware(HeartbeatGuard)
 
 app.include_router(api_router, prefix=settings.API_PREFIX)
 app.include_router(websocket_router)
@@ -346,7 +354,9 @@ app.include_router(rustdesk_audit_router)
 
 
 @app.get("/health", summary="Health check")
-def health() -> dict:
+async def health() -> dict:
+    # async: answered on the event loop, not queued behind the worker threads
+    # (a sync /health timed out with them on 2026-10-19).
     return {"status": "ok", "environment": settings.ENVIRONMENT}
 
 

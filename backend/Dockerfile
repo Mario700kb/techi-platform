@@ -15,4 +15,4 @@ EXPOSE 8000
 # cannot change them): a ping every 20 s, closed if unanswered for 20 s. This
 # is how an agent channel whose peer lost power or network is noticed within
 # 40 s (app/websocket/agent_channel_routes.py; tests/test_status_realtime.py).
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--ws-ping-interval", "20", "--ws-ping-timeout", "20"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--ws-ping-interval", "20", "--ws-ping-timeout", "20", "--timeout-graceful-shutdown", "5"]

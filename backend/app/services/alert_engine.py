@@ -50,6 +50,21 @@ def _alert_payload(alert: DeviceAlert) -> dict:
 class AlertEngine:
     def __init__(self, db: Session):
         self.repo = AlertRepository(db)
+        # A device's open alerts, when prefetched (the heartbeat does): a kind
+        # that is not open needs no lookup to know there is nothing to close.
+        # Six such lookups per heartbeat were the most frequent query in
+        # production, almost always empty.
+        self._open: Optional[dict] = None
+        self._open_device: Optional[int] = None
+
+    def prefetch_open(self, device_id: int) -> list:
+        alerts = self.repo.list_open_for_device(device_id)
+        self._open_device = device_id
+        self._open = {alert.kind: alert for alert in alerts}
+        return alerts
+
+    def _known_closed(self, device_id: int, kind: AlertKind) -> bool:
+        return self._open is not None and self._open_device == device_id and kind not in self._open
 
     def _is_suppressed(self, device_id: int, kind: AlertKind) -> bool:
         if self.repo.get_open_by_device_and_kind(device_id, kind):
@@ -86,6 +101,8 @@ class AlertEngine:
         except Exception:
             logger.exception("Failed to create alert kind=%s device_id=%s", kind, device_id)
             return None
+        if self._open is not None and self._open_device == device_id:
+            self._open[kind] = alert
         realtime_publisher.publish_threadsafe(
             build_event(RealtimeEventType.ALERT_CREATED, data=_alert_payload(alert), reason="alert_created"),
             dedupe_key=f"alert_created:{alert.id}",
@@ -116,6 +133,8 @@ class AlertEngine:
             )
 
     def _resolve(self, device_id: int, kind: AlertKind, reason: str = "resolved") -> Optional[DeviceAlert]:
+        if self._known_closed(device_id, kind):
+            return None
         open_alert = self.repo.get_open_by_device_and_kind(device_id, kind)
         if not open_alert:
             return None
@@ -127,6 +146,8 @@ class AlertEngine:
             logger.exception("Failed to resolve alert id=%s", open_alert.id)
             return None
         if resolved:
+            if self._open is not None and self._open_device == device_id:
+                self._open.pop(kind, None)
             realtime_publisher.publish_threadsafe(
                 build_event(RealtimeEventType.ALERT_RESOLVED, data=_alert_payload(resolved), reason=reason),
                 dedupe_key=f"alert_resolved:{resolved.id}",
@@ -201,7 +222,7 @@ class AlertEngine:
                 self._open_alert(device.id, kind, AlertSeverity.CRITICAL, f"{label} critical on {hostname}: {value:.1f}%", device=device)
             elif value > warn and sustained(attr, warn):
                 self._open_alert(device.id, kind, AlertSeverity.WARNING, f"{label} elevated on {hostname}: {value:.1f}%", device=device)
-            elif value < below and settled(attr, below):
+            elif value < below and not self._known_closed(device.id, kind) and settled(attr, below):
                 self._resolve(device.id, kind, reason=f"{label.lower()}_normalized")
 
         if disk_percent is not None:
