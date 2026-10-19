@@ -377,8 +377,9 @@ class RemoteSupportPresence:
                "id_server": "the ID server's registration",
                "hostname_ip": "hostname and address",
                "manual": "an operator"}.get(peer.bound_by or "", "its report")
-        logger.warning("Remote Support ID of device %s: %s -> %s (the client's own report, bound by %s)",
-                       device.id, old, peer.rustdesk_id, peer.bound_by)
+        source = "the ID server" if peer.bound_by == "id_server" else "the client's own report"
+        logger.warning("Remote Support ID of device %s: %s -> %s (%s, matched by %s)",
+                       device.id, old, peer.rustdesk_id, source, peer.bound_by)
         try:
             from app.services.device_activity_event_service import DeviceActivityEventService
 
@@ -490,6 +491,7 @@ def presence_summary(db: Session) -> dict:
     unbound = db.query(RemoteSupportPeer).filter(RemoteSupportPeer.device_id.is_(None),
                                                  RemoteSupportPeer.last_seen_at >= week).count()
     attention = live.filter(or_(Device.rustdesk_conflict_detected.is_(True),
+                                Device.rustdesk_sync_message.like("%keeps taking new IDs%"),
                                 Device.rustdesk_sync_message.like("%cloned machines%"))).count()
     disagree = live.filter(Device.agent_rustdesk_id.isnot(None),
                            or_(Device.rustdesk_id.is_(None), Device.agent_rustdesk_id != Device.rustdesk_id)).count()

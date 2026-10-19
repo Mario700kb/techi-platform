@@ -13,10 +13,12 @@ send), this covers every client, so it is the platform's ground truth:
 - A device known only by its ID (older agents) is matched to the machine that
   registered that ID. When the machine registered exactly one newer ID since,
   and nothing else uses it, the device's ID is corrected to it.
-- A MachineGuid with several IDs registered close together is a group of
-  cloned machines (Windows images copied without sysprep): they take each
-  other's IDs and the ID server makes them pick new ones, again and again.
-  Those are listed, not "corrected".
+- A MachineGuid that registered several IDs close together keeps taking new
+  IDs. Mostly because the client could not save its key pair (agents before
+  2.1.35 left its identity file read-only): with a new key from another
+  address, the ID server refuses its ID ("ip/pk mismatch") and it picks a new
+  one at every restart. Otherwise cloned machines share the MachineGuid.
+  Those are explained on the device, not "corrected".
 
 The database is read from a read-only mount; it is copied (with its WAL)
 before reading, so hbbs is never locked and recent changes are seen. Rows land
@@ -202,13 +204,14 @@ class HbbsSync:
                 row.device_id, row.bound_by, row.bound_at = device.id, "id_server", now
 
         if machine_key in clones:
-            text = (f"{len(ids)} Remote Support IDs registered by this machine's MachineGuid "
-                    f"({', '.join(p.rustdesk_id for p in ids[-4:])}): cloned machines take each other's IDs. "
-                    "Run sysprep (or a new MachineGuid) on the copies.")
+            text = (f"Remote Support keeps taking new IDs: {len(ids)} registered by this machine "
+                    f"({', '.join(p.rustdesk_id for p in ids[-4:])}). Usually it cannot save its identity "
+                    "(agents before 2.1.35 left its file read-only); if it goes on after the update, "
+                    "cloned machines share this MachineGuid (run sysprep on the copies).")
             for p in ids:
                 row = rows.get((p.uuid_b64, p.rustdesk_id))
                 if row is not None:
-                    row.note = "Cloned machine: this MachineGuid registers many IDs"
+                    row.note = "IDs keep changing: identity not saved, or cloned machines"
             # The agent's fresh reading tells which of the IDs this device has.
             agent_id = device.agent_rustdesk_id
             if device.machine_guid and agent_id and any(p.rustdesk_id == agent_id for p in ids):

@@ -37,7 +37,8 @@ export default function RemoteSupportIdsView() {
       <p className="th-ac-muted">
         Every TECHI Remote Support client registers its ID with the platform's ID server, together with its machine
         (MachineGuid). The platform checks every device against it every 5 minutes: it verifies the ID, corrects one
-        that changed, and lists cloned machines (copied without sysprep), which take each other's IDs.
+        that changed, and lists machines whose ID keeps changing (agents before 2.1.35 left the client unable to save
+        its identity; otherwise cloned machines).
       </p>
       {s && (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -55,9 +56,9 @@ export default function RemoteSupportIdsView() {
             <span className="th-kpi-hint">IDs registered in 7 days, no device found</span>
           </div>
           <div className="th-kpi" style={{ "--kpi-tone": "var(--th-status-critical)" } as CSSProperties}>
-            <span className="th-kpi-label">Cloned or in conflict</span>
+            <span className="th-kpi-label">IDs keep changing</span>
             <span className="th-kpi-value">{formatCount(s.attention_24h)}</span>
-            <span className="th-kpi-hint">Devices on cloned machines or sharing an ID</span>
+            <span className="th-kpi-hint">Identity not saved, clones or a shared ID</span>
           </div>
           <div className="th-kpi" style={{ "--kpi-tone": "var(--th-status-info)" } as CSSProperties}>
             <span className="th-kpi-label">Agent reads an old ID</span>

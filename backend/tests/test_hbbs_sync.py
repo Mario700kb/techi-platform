@@ -107,9 +107,9 @@ def test_ids_are_verified_corrected_and_clones_flagged(db, hbbs):
 
     ts = db.get(Device, 932)  # its ID belongs to the cloned group: not "corrected", explained
     assert ts.rustdesk_id == "499953666"
-    assert "cloned machines" in ts.rustdesk_sync_message
+    assert "keeps taking new IDs" in ts.rustdesk_sync_message and "2.1.35" in ts.rustdesk_sync_message
     notes = {p.rustdesk_id: p.note for p in db.query(RemoteSupportPeer).all()}
-    assert notes["1529551896"].startswith("Cloned machine")
+    assert notes["1529551896"].startswith("IDs keep changing")
     assert db.query(RemoteSupportPeer).count() == 8
 
 
@@ -121,7 +121,7 @@ def test_an_agent_that_names_its_machine_gets_its_own_id_among_the_clones(db, hb
     HbbsSync(db).run(read_hbbs(hbbs))
     dc = db.get(Device, 930)
     assert dc.rustdesk_id == "1529551896"
-    assert "cloned machines" in dc.rustdesk_sync_message
+    assert "keeps taking new IDs" in dc.rustdesk_sync_message
 
 
 def test_an_old_agents_stale_reading_does_not_undo_the_correction(db, hbbs):

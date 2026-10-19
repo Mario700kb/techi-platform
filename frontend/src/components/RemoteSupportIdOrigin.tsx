@@ -35,7 +35,10 @@ export default function RemoteSupportIdOrigin({
   const agentDisagrees =
     confirmed && Boolean(device.agent_rustdesk_id && device.agent_rustdesk_id !== device.rustdesk_id);
 
-  const cloned = Boolean(device.rustdesk_sync_message?.includes("cloned machines"));
+  const cloned = Boolean(
+    device.rustdesk_sync_message?.includes("keeps taking new IDs") ||
+    device.rustdesk_sync_message?.includes("cloned machines"),
+  );
   if ((device.rustdesk_conflict_detected || cloned) && device.rustdesk_sync_message) {
     return (
       <p className="mt-2 flex items-start gap-1.5 text-[12px]" style={{ color: "var(--th-status-critical)" }}>
