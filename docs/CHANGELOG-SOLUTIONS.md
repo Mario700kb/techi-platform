@@ -5,6 +5,33 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-19] DEVICE-TRASH-2026-10-19 — trash with 30-day restore, revoked agents (`d35a138`)
+
+**Backend + frontend deployed 16:03–16:08 (Tirana), migration `u9v0w1x2y3z4`.**
+Delete (admin, reason + current two-factor code) moves a device to the trash:
+archived, out of every list, restorable for 30 days, purged by the nightly
+cleanup with its console recordings. Delete permanently (trash only) also
+asks for the code. Archiving or deleting revokes the agent
+(`revoked_agents`): heartbeats get 410, the command channel is closed and
+refused, and a purged device no longer comes back while its agent is still
+installed. Restore accepts the agent again; the Trash view lists blocked
+agents of purged devices with Allow back. A token install that re-enrolls
+onto a trashed device restores it. The lookup runs only for archived or
+unknown agents. 1661 backend tests, 424 frontend tests. Dump
+`/opt/backups/techi/pre-device-trash-20261019-155923.sql.gz`, rollback
+`techi-platform-{backend,frontend}:pre-device-trash-f6b890a`; downgrade drops
+the table and the three columns.
+
+**Degraded 16:06–16:18.** The backend was ready 10 s after its restart, then
+the frontend build ran on the 1 vCPU during the fleet's reconnect. Heartbeats
+slowed past the agents' 10 s timeout, the agents retried up to 3 times, and
+the backend stayed saturated: heartbeat rows 340–400/min instead of ~120,
+`/health` timing out, container unhealthy, load 10–13. The revocation code
+refused nothing (`revoked_agents` empty). A plain `docker compose restart
+backend` at 16:17 broke the loop: ready at 16:18, heartbeats back to ~120/min,
+load 3.5 by 16:20; guard and smoke passed. Lesson: build every image before
+restarting the backend, never during its reconnect. Disk 867 MB free (97%).
+
 ## [2026-10-19] ENROLL-ONCE-2026-10-19 — a token install no longer creates the device twice (`f1295c6`)
 
 **Backend deployed 15:35 (Tirana), no migration.** KLEIVID-PC, freshly
