@@ -5,6 +5,17 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-19] WINDOWS11-ICON-2026-10-19 — Windows devices show the Windows 11 logo (`feb61c7`)
+
+**Frontend deployed 14:55 (Tirana).** `PlatformIcon` still drew the tilted
+Windows 8/10 mark. It now draws four equal flat squares with one blue
+gradient (#4CC2FF → #0067C0), as the Windows 11 logo does, wherever a
+platform icon appears (Devices table, Explorer, drawers, client profile). The
+gradient id comes from `useId`, so many icons on one page do not share one.
+The colour no longer follows `--th-status-info`. Rollback
+`techi-platform-frontend:pre-windows11-icon-d56cf01`; guard, `nginx -t` and
+smoke passed. Disk 1.3 GB free (95%).
+
 ## [2026-10-19] EDGE-CONNECTIONS-2026-10-19 — nginx-proxy-manager ran out of connections; 500 for the whole site
 
 **Outage 12:24–13:25 (Tirana), edge config only, no code change.** After the
