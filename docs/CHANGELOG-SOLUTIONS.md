@@ -5,6 +5,34 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-19] HBBS-SYNC-2026-10-19 — Remote Support IDs from the ID server; all alerts deleted (`6acc8fd`)
+
+**Backend + frontend deployed 23:30–23:32 (Tirana), no migration.**
+- Remote Support IDs now come from the ID server: `/etc/cron.d/techi-hbbs-export`
+  copies hbbs's peer database every 2 minutes (SQLite online backup) to
+  `/opt/techi/hbbs-export`, mounted read-only at `/hbbs` in the backend
+  (`HBBS_DB_PATH`); hbbs's own directory (private key) is not mounted. The
+  5-minute monitor sweep matches every device to its machine. First run
+  23:40:16: 1655 registrations, 769 machines, 708 devices verified,
+  11 corrected (4, 11, 263, 692, 741, 745, 797, 800, 861, 960, 969; IDs held
+  by silent devices 724 and 828 released), 32 cloned-machine groups with 174
+  devices explained ("Run sysprep"). Device 930 DC keeps 499953668: the ID
+  server holds it for its own MachineGuid since 5 Oct; 1529551896 belongs to a
+  cloned group (MachineGuid 0720021f, five IDs on 19 Oct).
+- Alerts, on the owner's request: 23:25 the 168 open alerts of rules that no
+  longer apply were closed (expected) and 956,565 resolved rows (older than
+  30 days, or closed within 15 minutes and older than a day) deleted in
+  batches of 40,000 with a CHECKPOINT after each (free disk stayed at
+  600 MB), then `VACUUM (FULL, ANALYZE)`: 272 MB → 7.3 MB, disk 600 → 864 MB
+  free. 23:39 the owner asked to delete every alert: `TRUNCATE device_alerts,
+  alert_activity, alert_analyses` (243 open, 25,930 history). Both in the
+  audit log (`alerts_cleanup`, `alerts_deleted_all`). Monitors reopen what is
+  still true at their next evaluation. Backup of everything deleted:
+  `/opt/backups/techi/pre-hbbs-sync-20261019-230327.sql.gz` (171 MB).
+Rollback `techi-platform-{backend,frontend}:pre-hbbs-sync-f3cdbae`. Backend
+ready 8 s after start, 7 slow heartbeats a minute while reconnecting, 0 from
+23:31:30; 0 5xx; guard and smoke passed. Disk 865 MB free (97%).
+
 ## [2026-10-19] ALERT-CENTER-2026-10-19 — alert work queue, AI analysis, Remote Support identity; agent 2.1.34 active (`13b9ac2`, `4a00251`)
 
 **Backend + frontend deployed 22:38–22:40 (Tirana), migrations
