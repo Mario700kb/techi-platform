@@ -5,6 +5,16 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-19] EXPLORER-CITY-2026-10-19 — country + city row for every city (`979bf1d`)
+
+**Frontend deployed (Tirana, evening).** The owner wants the Explorer to be
+country + city, then the sites, for every client. A city with one site
+showed the site in its place (ALBKOS: "AL HQ"); now every city has its
+"AL <city>" row with its sites below (as Daklesa: "AL Sarandë" › sites), and
+a selected site opens its city. Rollback
+`techi-platform-frontend:pre-explorer-city-a48d160` (the EXPLORER-COUNTRY tag
+was replaced by it); guard, `nginx -t` and smoke passed. Disk 1.8 GB free.
+
 ## [2026-10-19] EXPLORER-COUNTRY-2026-10-19 — the country on every location row (`a48d160`)
 
 **Frontend deployed (Tirana, evening).** A client whose sites are all in one
