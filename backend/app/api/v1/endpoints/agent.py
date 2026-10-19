@@ -21,6 +21,7 @@ from app.schemas.agent import (
 from app.services import agent_config_service as _cfg_svc
 from app.services.agent_enrollment_service import AgentEnrollmentService
 from app.services.device_heartbeat_service import DeviceHeartbeatService
+from app.services.agent_identity import resolve_agent_device
 from app.services.agent_revocation import AgentRevokedError
 from app.services.device_status_service import DeviceStatusService
 from app.services.remote_action_service import RemoteActionService
@@ -229,8 +230,8 @@ def agent_power_event(payload: AgentPowerEventPayload, db: Session = Depends(get
     caller could otherwise silence the offline alert of any device it names.
     A missing device and a wrong agent_id get the same 403.
     """
-    device = DeviceRepository(db).get(payload.device_id)
-    if device is None or not _agent_id_matches(payload.agent_id, device.agent_id):
+    device = resolve_agent_device(db, payload.device_id, payload.agent_id)
+    if device is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Unknown device or agent_id")
     DeviceStatusService(db).mark_offline_from_power_event(device, payload.state)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -278,8 +279,8 @@ async def agent_telemetry(request: Request):
     def store() -> TelemetryAck:
         db = SessionLocal()
         try:
-            device = DeviceRepository(db).get(upload.device_id)
-            if device is None or not _agent_id_matches(upload.agent_id, device.agent_id):
+            device = resolve_agent_device(db, upload.device_id, upload.agent_id)
+            if device is None:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Unknown device or agent_id")
             policy = effective_policy(db, device)
             return TelemetryIngestService(db).ingest(device, upload, policy)

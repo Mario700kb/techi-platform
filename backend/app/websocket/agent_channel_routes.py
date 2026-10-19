@@ -26,6 +26,7 @@ from app.core.agent_auth import _SlidingWindowRateLimiter
 from app.core.time import utcnow
 from app.db.session import SessionLocal
 from app.repositories.device_repository import DeviceRepository
+from app.services.agent_identity import resolve_agent_device
 from app.services.agent_revocation import is_agent_revoked
 from app.websocket.agent_channel import agent_command_channel
 from app.websocket.live_hub import device_live_hub, parse_agent_message
@@ -230,18 +231,20 @@ def _agent_id_matches(provided: str, stored: str) -> bool:
     return secrets.compare_digest(provided, stored)
 
 
-def _authorize_channel(device_id: int, agent_id: str) -> tuple[Optional[int], Optional[str]]:
-    """(close code, agent version): no close code when the agent may connect."""
+def _authorize_channel(device_id: int, agent_id: str) -> tuple[Optional[int], Optional[str], Optional[int]]:
+    """(close code, agent version, the agent's device id): no close code when
+    the agent may connect. The device is the one this agent_id belongs to,
+    whatever device_id the agent still has in its config."""
     db = SessionLocal()
     try:
-        device = DeviceRepository(db).get(device_id)
-        if device is None or not _agent_id_matches(agent_id, getattr(device, "agent_id", None)):
-            logger.info("[agent-channel] rejected device_id=%s (unknown device or agent_id mismatch)", device_id)
-            return 4001, None
+        device = resolve_agent_device(db, device_id, agent_id)
+        if device is None:
+            logger.info("[agent-channel] rejected device_id=%s (unknown agent)", device_id)
+            return 4001, None, None
         if device.is_archived and is_agent_revoked(db, agent_id):
-            logger.info("[agent-channel] rejected device_id=%s (agent revoked)", device_id)
-            return 4003, None
-        return None, getattr(device, "agent_version", None)
+            logger.info("[agent-channel] rejected device_id=%s (agent revoked)", device.id)
+            return 4003, None, None
+        return None, getattr(device, "agent_version", None), device.id
     finally:
         db.close()
 
@@ -276,12 +279,14 @@ async def agent_command_ws(websocket: WebSocket, device_id: int = 0, agent_id: s
     _handshakes_waiting += 1
     try:
         async with _handshake_slots:
-            close_code, agent_version = await asyncio.to_thread(_authorize_channel, device_id, agent_id)
+            close_code, agent_version, resolved_id = await asyncio.to_thread(_authorize_channel, device_id, agent_id)
     finally:
         _handshakes_waiting -= 1
     if close_code is not None:
         await websocket.close(code=close_code)
         return
+    # From here on the channel belongs to the device the agent_id names.
+    device_id = resolved_id
 
     await websocket.accept()
     await agent_command_channel.register(device_id, websocket)

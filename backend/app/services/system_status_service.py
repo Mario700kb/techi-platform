@@ -94,7 +94,46 @@ def agents_tile(db: Session, now: datetime) -> ServiceTile:
     if online and (newest_age is None or newest_age > HEARTBEAT_STALL):
         return ServiceTile(key="agents", state="down", label="Stalled", detail=detail, sub=sub,
                            value=reporting, total=online)
+    missing = devices_missing_channel(db, now)
+    if missing:
+        sub += f" · {len(missing)} without live channel"
+        return ServiceTile(key="agents", state="warn", label="Live", detail=detail, sub=sub,
+                           value=reporting, total=online)
     return ServiceTile(key="agents", state="ok", label="Live", detail=detail, sub=sub, value=reporting, total=online)
+
+
+# Agents from this version keep a command channel open. One that reports by
+# heartbeat but has had no channel for CHANNEL_MISSING_AFTER is not live for
+# a reason the console should show: on 2026-10-19 six such agents had gone
+# unnoticed (their channel was refused for a device_id the server no longer
+# had).
+CHANNEL_AGENT_VERSION = "2.1.26"
+CHANNEL_MISSING_AFTER = timedelta(minutes=15)
+
+
+def devices_missing_channel(db: Session, now: datetime) -> List[int]:
+    from app.websocket.agent_channel import agent_command_channel
+
+    connected = set(agent_command_channel.connected_ids())
+    recent = (now - timedelta(seconds=settings.HEARTBEAT_TIMEOUT_SECONDS)).replace(tzinfo=None)
+    settled = (now - CHANNEL_MISSING_AFTER).replace(tzinfo=None)
+    rows = (
+        db.query(Device.id, Device.agent_version)
+        .filter(Device.is_archived.is_(False), Device.status == DeviceStatus.ONLINE,
+                Device.last_seen >= recent, Device.registered_at <= settled)
+        .all()
+    )
+    missing = []
+    for device_id, version in rows:
+        if device_id in connected or not version:
+            continue
+        if version_service.compare_versions(version, CHANNEL_AGENT_VERSION) not in ("current", "ahead"):
+            continue
+        lost = agent_command_channel.lost_since(device_id)
+        if lost is not None and now - ensure_utc(lost) < CHANNEL_MISSING_AFTER:
+            continue  # dropped recently: reconnecting
+        missing.append(device_id)
+    return missing
 
 
 def agent_versions_tile(db: Session) -> ServiceTile:
