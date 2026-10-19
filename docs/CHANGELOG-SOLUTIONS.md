@@ -5,6 +5,21 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-20] DISK-CLEANUP-2026-10-20 — 559 MB → 3.1 GB free; P1 chip contrast deployed (`a8fc99c`)
+
+- `TRUNCATE device_heartbeats` (634 MB, not written since BACKEND-PERF on
+  19 Oct; only the cleanup task and device purge touch it), lock_timeout 5 s.
+- `docker builder prune --keep-storage 512MB` (~0.9 GB); rollback images
+  removed: backend `pre-agent-identity-aa1cd01`, `pre-alert-center-a657b35`,
+  `pre-backend-perf-d35a138`, `pre-device-trash-f6b890a`; frontend
+  `pre-alert-center-a657b35`, `pre-device-trash-f6b890a`,
+  `pre-explorer-city-a48d160`; unused `golang:1.23-alpine`, `debian:12`,
+  `ubuntu:24.04`. Kept: `pre-hbbs-sync-f3cdbae`, `pre-new-ids-text-40cff5d`
+  and every `pre-*.sql.gz` dump.
+- Frontend rebuilt at `1200249` (P1 chip text 72% tone + text colour on 10%
+  background, a11y contrast), rollback `pre-prio-contrast-1200249`; guard and
+  smoke passed. Disk 2.6 GB free (89%) after the build.
+
 ## [2026-10-20] RS-IDENTITY-FILE-2026-10-20 — Remote Support kept changing ID: the agent made its identity file read-only; agent 2.1.35 (`096892b`, `c1a3ad7`)
 
 **Why IDs churned.** Node-01 (#985, Windows Server 2025, MachineGuid
