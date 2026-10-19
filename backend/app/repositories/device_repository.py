@@ -78,11 +78,13 @@ class DeviceRepository:
         match = self.get_by_rustdesk_id(rustdesk_id)
         if match:
             return match
-        normalized_hostname = (hostname or "").strip()
+        # Case-insensitive: os.Hostname() and %COMPUTERNAME% report the same
+        # machine as "pc-name" and "PC-NAME", which once created a second row.
+        normalized_hostname = (hostname or "").strip().lower()
         if normalized_hostname and local_ip:
             match = (
                 self.db.query(Device)
-                .filter(Device.hostname == normalized_hostname, Device.local_ip == local_ip)
+                .filter(func.lower(Device.hostname) == normalized_hostname, Device.local_ip == local_ip)
                 .order_by(Device.id.desc())
                 .first()
             )
@@ -91,7 +93,7 @@ class DeviceRepository:
         if normalized_hostname and public_ip:
             return (
                 self.db.query(Device)
-                .filter(Device.hostname == normalized_hostname, Device.public_ip == public_ip)
+                .filter(func.lower(Device.hostname) == normalized_hostname, Device.public_ip == public_ip)
                 .order_by(Device.id.desc())
                 .first()
             )

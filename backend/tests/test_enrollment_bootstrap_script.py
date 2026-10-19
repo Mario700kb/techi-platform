@@ -139,8 +139,11 @@ def _check_config_json(script: str, label: str) -> None:
     """ConvertTo-Json block must be present; no literal JSON blob in script."""
     assert "ConvertTo-Json" in script, f"{label}: missing ConvertTo-Json call"
     assert "$AgentConfig = [ordered]@{" in script, f"{label}: missing ordered hashtable"
-    # Ensure agent_name is set to $env:COMPUTERNAME
-    assert "$env:COMPUTERNAME" in script, f"{label}: agent_name not set from $env:COMPUTERNAME"
+    # No agent_name: the agent reports os.Hostname(); %COMPUTERNAME% is
+    # upper-case and made one PC enroll under two hostnames.
+    assert "agent_name" not in script, f"{label}: agent_name must not be written"
+    # An enrolled agent's identity survives a re-run of the script.
+    assert "keeping its identity" in script, f"{label}: existing agent identity not preserved"
 
 
 def _check_sha256(script: str, sha256: str, label: str) -> None:
@@ -274,10 +277,16 @@ class TestRustDeskForceMigrationScript:
         assert "Join-Path $env:LOCALAPPDATA 'TECHI Remote Support'" in self.script
 
     def test_removes_requested_config_files_and_config_contents(self):
-        assert "'TECHI Remote Support.toml', 'TECHI Remote Support2.toml'" in self.script
+        assert "foreach ($Name in @('TECHI Remote Support2.toml'))" in self.script
         assert "-Filter '*.toml'" in self.script
         assert "Join-Path $Root 'config'" in self.script
         assert "Remove-Item -LiteralPath $_.FullName -Recurse -Force" in self.script
+
+    def test_keeps_the_identity_toml(self):
+        # Deleting it gave the device a new Remote Support id on every run.
+        assert "$TechiIdentityToml = 'TECHI Remote Support.toml'" in self.script
+        assert self.script.count("Where-Object { $_.Name -ne $TechiIdentityToml }") == 2
+        assert "@('TECHI Remote Support.toml', 'TECHI Remote Support2.toml')" not in self.script
 
     def test_profile_cleanup_is_access_denied_safe(self):
         assert "function Test-PathSafe" in self.script
@@ -1046,12 +1055,14 @@ class TestConfigPSLines:
     def setup_method(self):
         self.svc = _StubService()
 
-    def test_hostname_uses_computername(self):
-        cfg_json = json.dumps({"agent_name": "<HOSTNAME>", "timeout_seconds": 10})
-        lines = self.svc._config_ps_lines(cfg_json)
-        joined = "\n".join(lines)
-        assert "$env:COMPUTERNAME" in joined
-        assert "<HOSTNAME>" not in joined
+    def test_enrolled_identity_is_kept(self):
+        cfg_json = json.dumps({"enrollment_token": "tok", "timeout_seconds": 10})
+        joined = "\n".join(self.svc._config_ps_lines(cfg_json))
+        merge = joined.index("keeping its identity")
+        assert joined.index("ConvertFrom-Json") < merge < joined.index("WriteAllText(")
+        assert "if (-not $AgentConfig.Contains($Prop.Name))" in joined
+        assert "$AgentConfig.Remove('enrollment_token')" in joined
+        assert "$env:COMPUTERNAME" not in joined
 
     def test_bool_literals(self):
         cfg_json = json.dumps({"manage_power_policy": True, "collect_processes": False})

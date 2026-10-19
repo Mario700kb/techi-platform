@@ -112,6 +112,21 @@ def test_an_agent_that_lost_its_config_reattaches_by_rustdesk_id(db=None):
     assert db.query(ReenrollmentRequest).count() == 0
 
 
+def test_hostname_match_ignores_case(db=None):
+    # 2026-10-19: the same PC enrolled as "kleivid-pc" (os.Hostname) and then
+    # as "KLEIVID-PC" (%COMPUTERNAME%) with a new RustDesk id; the
+    # case-sensitive compare missed it and a plain second device appeared.
+    db = _db()
+    plaintext = _token(db)
+    victim = _victim(db, hostname="kleivid-pc")
+
+    resp = _enroll(db, plaintext, hostname="KLEIVID-PC", agent_id=None, rustdesk_id="987654321")
+
+    request = db.query(ReenrollmentRequest).one()
+    assert request.device_id == victim.id and request.new_device_id == resp.device_id
+    assert db.query(Device).get(resp.device_id).duplicate_candidate is True
+
+
 def test_approve_moves_the_device_and_archives_the_placeholder(db=None):
     db = _db()
     plaintext = _token(db)

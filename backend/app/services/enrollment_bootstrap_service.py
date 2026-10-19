@@ -217,7 +217,6 @@ class EnrollmentBootstrapService:
             "api_url": backend_url,
             "backend_url": f"{backend_url}/api/v1/agent/heartbeat",
             "websocket_url": self.websocket_url_for_backend(backend_url),
-            "agent_name": "<HOSTNAME>",
             "public_ip_service": "https://api.ipify.org?format=text",
             "timeout_seconds": 10,
             "retries": 3,
@@ -293,16 +292,37 @@ class EnrollmentBootstrapService:
         """Return PowerShell lines that write agent.config.json without using
         a here-string.  Uses [ordered]@{} + ConvertTo-Json so the output is
         pretty-printed and avoids all indentation/terminator issues.
-        'agent_name' is always set to $env:COMPUTERNAME at runtime."""
+
+        An agent that is already enrolled keeps its identity: agent_id,
+        device_id and every other key the script does not set are carried
+        over from the existing file, and the token is dropped. Overwriting
+        that file (the MSI's agent has enrolled by the time this runs) made
+        the restarted agent enroll a second time as a new device."""
         cfg: dict = json.loads(config_json)
         lines = ["$AgentConfig = [ordered]@{"]
         for key, value in cfg.items():
-            if key == "agent_name":
-                lines.append(f"    {key} = $env:COMPUTERNAME")
-            else:
-                ps_val = self._py_to_ps_literal(value)
-                lines.append(f"    {key} = {ps_val}")
+            ps_val = self._py_to_ps_literal(value)
+            lines.append(f"    {key} = {ps_val}")
         lines.append("}")
+        lines.extend([
+            "$ExistingConfig = $null",
+            "if (Test-Path -LiteralPath $ConfigPath -ErrorAction SilentlyContinue) {",
+            "    try {",
+            "        $ExistingConfig = Get-Content -LiteralPath $ConfigPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop",
+            "    } catch {",
+            '        Write-Log "Existing config unreadable, writing a fresh one: $($_.Exception.Message)"',
+            "    }",
+            "}",
+            "$ExistingDeviceId = 0",
+            "if ($ExistingConfig) { [void][int]::TryParse([string]$ExistingConfig.device_id, [ref]$ExistingDeviceId) }",
+            "if ($ExistingConfig -and -not [string]::IsNullOrWhiteSpace([string]$ExistingConfig.agent_id) -and $ExistingDeviceId -gt 0) {",
+            '    Write-Log "Agent already enrolled (device_id=$ExistingDeviceId) -- keeping its identity."',
+            "    foreach ($Prop in $ExistingConfig.PSObject.Properties) {",
+            "        if (-not $AgentConfig.Contains($Prop.Name)) { $AgentConfig[$Prop.Name] = $Prop.Value }",
+            "    }",
+            "    $AgentConfig.Remove('enrollment_token')",
+            "}",
+        ])
         lines.append("$ConfigJson = $AgentConfig | ConvertTo-Json -Depth 5")
         lines.append(
             "[System.IO.File]::WriteAllText("
@@ -422,10 +442,14 @@ class EnrollmentBootstrapService:
             "    $TechiRoots += (Join-Path $env:LOCALAPPDATA 'TECHI Remote Support')",
             "}",
             "$TechiRoots = $TechiRoots | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique",
+            "# The suffix-less identity TOML (id / key_pair) is kept: deleting it gave",
+            "# the device a new Remote Support ID on every run, and the platform knows",
+            "# the device by that ID. Only the server/options files are rewritten.",
+            "$TechiIdentityToml = 'TECHI Remote Support.toml'",
             "foreach ($Root in $TechiRoots) {",
             "    if (Test-PathSafe -Path $Root) {",
             '        Write-Log "Old TECHI Remote Support config found: $Root"',
-            "        foreach ($Name in @('TECHI Remote Support.toml', 'TECHI Remote Support2.toml')) {",
+            "        foreach ($Name in @('TECHI Remote Support2.toml')) {",
             "            $Path = Join-Path $Root $Name",
             "            if (Test-PathSafe -Path $Path) {",
             "                try {",
@@ -436,7 +460,7 @@ class EnrollmentBootstrapService:
             "                }",
             "            }",
             "        }",
-            "        Get-ChildItemSafe -Path $Root -Filter '*.toml' -FileOnly | ForEach-Object {",
+            "        Get-ChildItemSafe -Path $Root -Filter '*.toml' -FileOnly | Where-Object { $_.Name -ne $TechiIdentityToml } | ForEach-Object {",
             "            try {",
             "                Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue",
             '                Write-Log "TECHI Remote Support config removed: $($_.FullName)"',
@@ -446,7 +470,7 @@ class EnrollmentBootstrapService:
             "        }",
             "        $ConfigDir = Join-Path $Root 'config'",
             "        if (Test-PathSafe -Path $ConfigDir) {",
-            "            Get-ChildItemSafe -Path $ConfigDir | ForEach-Object {",
+            "            Get-ChildItemSafe -Path $ConfigDir | Where-Object { $_.Name -ne $TechiIdentityToml } | ForEach-Object {",
             "                try {",
             "                    Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue",
             '                    Write-Log "TECHI Remote Support config removed: $($_.FullName)"',
@@ -477,9 +501,9 @@ class EnrollmentBootstrapService:
             "    }",
             "}",
             "# Start TECHI Remote Support BEFORE attempting to patch its identity file.",
-            "# The cleanup loop above deletes config\\ entirely, so the identity TOML",
-            "# (id/password/salt/key_pair) does not exist on disk again until RustDesk",
-            "# itself runs at least once and recreates it -- without this order every",
+            "# On a machine where Remote Support never ran, the identity TOML",
+            "# (id/password/salt/key_pair) does not exist on disk until RustDesk",
+            "# itself runs at least once and creates it -- without this order every",
             "# write attempt below would find nothing to patch and silently do nothing,",
             "# which is exactly what happened in earlier testing.",
             "# Tray mode is DEPRECATED: the managed Windows service is what recreates",
