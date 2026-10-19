@@ -26,7 +26,35 @@ var (
 	cliProbeVersion string
 	cliProbeVerAt   time.Time
 	cliProbeIDAt    time.Time
+	// The ID the last --get-id gave. Between probes it is reported instead
+	// of the ID saved at enrollment, which never changes: reporting that one
+	// made the platform's ID flip back to a stale value after every probe.
+	cliProbeID string
 )
+
+func cachedCLIRustDeskID() string {
+	cliProbeMu.Lock()
+	defer cliProbeMu.Unlock()
+	return cliProbeID
+}
+
+func rememberCLIRustDeskID(id string) {
+	cliProbeMu.Lock()
+	cliProbeID = id
+	cliProbeMu.Unlock()
+}
+
+// chooseRustDeskID picks the ID to report, most trustworthy first: what the
+// client said just now (--get-id), what it said at the last probe, what its
+// own service configuration holds, and only then the ID saved at enrollment.
+func chooseRustDeskID(freshCLI, cachedCLI, serviceFile, otherFile, enrolled string) string {
+	for _, id := range []string{freshCLI, cachedCLI, serviceFile, otherFile, enrolled} {
+		if isUsableRustDeskID(id) {
+			return normalizeRustDeskID(id)
+		}
+	}
+	return ""
+}
 
 func cachedRustDeskVersion(path string) string {
 	cliProbeMu.Lock()
@@ -241,20 +269,26 @@ func discoverRustDeskWindows(info RustDeskInfo) RustDeskInfo {
 
 	// Prefer CLI: rustdesk.exe --get-id gives the exact ID shown in the UI.
 	// Only probe when we don't have a usable ID yet, or periodically to
-	// catch drift -- see cliProbeInterval.
-	if installPath != "" && shouldProbeRustDeskID(info.ID) {
-		if cliID := localRustDeskIDFromCLI(installPath); cliID != "" {
-			info.ID = cliID
+	// catch drift -- see cliProbeInterval. The answer is kept for the
+	// heartbeats in between.
+	enrolledID := info.ID
+	freshCLI := ""
+	if installPath != "" && shouldProbeRustDeskID(cachedCLIRustDeskID()) {
+		freshCLI = localRustDeskIDFromCLI(installPath)
+		if freshCLI != "" {
+			rememberCLIRustDeskID(freshCLI)
 		}
 		recordRustDeskIDProbe()
 	}
 
-	// Read TOML files for encID, and ID as fallback if CLI produced nothing.
+	// The service's own configuration (LocalService profile) is what the
+	// running client uses; user profiles can hold an older copy.
+	serviceID, serviceEncID := readRustDeskFieldsFromFile(remoteSupportServiceConfigPath())
 	fileID, encID := readRustDeskFromKnownFiles()
-	if info.ID == "" && fileID != "" {
-		info.ID = fileID
-	}
-	if encID != "" {
+	info.ID = chooseRustDeskID(freshCLI, cachedCLIRustDeskID(), serviceID, fileID, enrolledID)
+	if serviceEncID != "" {
+		info.EncID = serviceEncID
+	} else if encID != "" {
 		info.EncID = encID
 	}
 	return info
@@ -826,6 +860,17 @@ func readRustDeskFromKnownFiles() (id, encID string) {
 		}
 	}
 	return
+}
+
+// remoteSupportServiceConfigPath is the configuration file of the Remote
+// Support service itself (it runs as SYSTEM and keeps its ID under the
+// LocalService profile).
+func remoteSupportServiceConfigPath() string {
+	if runtime.GOOS != "windows" {
+		return ""
+	}
+	return filepath.Join(os.Getenv("SystemRoot"), "ServiceProfiles", "LocalService", "AppData", "Roaming",
+		"TECHI Remote Support", "config", "TECHI Remote Support.toml")
 }
 
 func rustDeskConfigCandidates() []string {

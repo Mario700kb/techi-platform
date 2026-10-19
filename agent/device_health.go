@@ -78,6 +78,9 @@ type HealthEvent struct {
 	EventID  int    `json:"event_id"`
 	At       string `json:"at"`
 	Message  string `json:"message,omitempty"`
+	// Windows level (1 critical, 2 error, 3 warning; 2.1.34+). The platform
+	// ignores informational events such as NTFS 98 "is healthy".
+	WinLevel *int `json:"win_level,omitempty"`
 }
 
 // The script's lists may arrive as an array, one object, null, or the
@@ -258,6 +261,9 @@ func (h *DeviceHealth) normalise(now time.Time) {
 		e.At = at.UTC().Format(time.RFC3339)
 		e.Source = clipText(e.Source, 64)
 		e.Message = clipText(strings.Join(strings.Fields(e.Message), " "), maxHealthMessageLen)
+		if e.WinLevel != nil && (*e.WinLevel < 0 || *e.WinLevel > 5) {
+			e.WinLevel = nil
+		}
 		events = append(events, e)
 	}
 	sort.SliceStable(events, func(i, j int) bool { return events[i].At > events[j].At })

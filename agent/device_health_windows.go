@@ -99,16 +99,17 @@ try {
 } catch {}
 
 # Critical System events of the last 25 hours, by id; the agent keeps only
-# the providers it knows for each id.
+# the providers it knows for each id. Critical, Error and Warning only: NTFS 98
+# is also written at every mount as Information ("is healthy").
 $events = New-Object System.Collections.Generic.List[object]
 try {
-  $filter = @{ LogName = 'System'; StartTime = (Get-Date).AddHours(-25); Id = @(41, 1001, 6008, 18, 7, 11, 51, 153, 55, 98, 137, 7031, 7034) }
+  $filter = @{ LogName = 'System'; StartTime = (Get-Date).AddHours(-25); Level = @(1, 2, 3); Id = @(41, 1001, 6008, 18, 7, 11, 51, 153, 55, 98, 137, 7031, 7034) }
   foreach ($e in @(Get-WinEvent -FilterHashtable $filter -MaxEvents 200 -ErrorAction SilentlyContinue)) {
     $message = ''
     try { $message = [string]$e.Message } catch {}
     if ($message.Length -gt 300) { $message = $message.Substring(0, 300) }
     $events.Add([ordered]@{
-      record_id = [int64]$e.RecordId; source = [string]$e.ProviderName; event_id = [int]$e.Id
+      record_id = [int64]$e.RecordId; source = [string]$e.ProviderName; event_id = [int]$e.Id; win_level = [int]$e.Level
       at = $e.TimeCreated.ToUniversalTime().ToString('o', [Globalization.CultureInfo]::InvariantCulture); message = $message
     })
   }

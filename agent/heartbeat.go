@@ -25,6 +25,7 @@ type HeartbeatPayload struct {
 	DeviceID           int    `json:"device_id,omitempty"`
 	RustDeskID         string `json:"rustdesk_id,omitempty"`
 	RustDeskEncID      string `json:"rustdesk_enc_id,omitempty"`
+	MachineGUID        string `json:"machine_guid,omitempty"`
 	Hostname           string `json:"hostname"`
 	CurrentUser        string `json:"current_user"`
 	UserSource         string `json:"user_source,omitempty"`
@@ -84,6 +85,7 @@ func buildHeartbeatPayload(cfg *Config, inv *Inventory, rustdesk RustDeskInfo, t
 		DeviceID:              cfg.DeviceID,
 		RustDeskID:            rustdeskID,
 		RustDeskEncID:         rustdesk.EncID,
+		MachineGUID:           machineGUID(),
 		Hostname:              inv.Hostname,
 		CurrentUser:           inv.CurrentUser,
 		UserSource:            inv.UserSource,

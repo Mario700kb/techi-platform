@@ -22,7 +22,7 @@ func TestTheHealthScriptOutputIsParsedAndNormalised(t *testing.T) {
    {"record_id":901,"source":"Microsoft-Windows-Kernel-Power","event_id":41,"at":"2026-10-18T20:15:03.1234567Z","message":"The system has rebooted\r\n without cleanly shutting down first."},
    {"record_id":902,"source":"Some-App","event_id":1000,"at":"2026-10-18T20:16:00Z","message":"not ours"},
    {"record_id":903,"source":"disk","event_id":7,"at":"2026-10-17T19:00:00Z","message":"older than 25 hours"},
-   {"record_id":904,"source":"disk","event_id":7,"at":"2026-10-18T21:00:00Z","message":"bad block"}
+   {"record_id":904,"source":"disk","event_id":7,"at":"2026-10-18T21:00:00Z","message":"bad block","win_level":2}
  ]}`
 	h, err := parseDeviceHealth([]byte(out), now)
 	if err != nil {
@@ -48,6 +48,9 @@ func TestTheHealthScriptOutputIsParsedAndNormalised(t *testing.T) {
 	}
 	if h.Events[1].At != "2026-10-18T20:15:03Z" || h.Events[1].Message != "The system has rebooted without cleanly shutting down first." {
 		t.Fatalf("event %+v", h.Events[1])
+	}
+	if h.Events[0].WinLevel == nil || *h.Events[0].WinLevel != 2 || h.Events[1].WinLevel != nil {
+		t.Fatalf("levels %+v %+v", h.Events[0].WinLevel, h.Events[1].WinLevel)
 	}
 	if h.CollectedAt != "2026-10-18T21:59:58Z" {
 		t.Fatalf("collected_at %q", h.CollectedAt)
