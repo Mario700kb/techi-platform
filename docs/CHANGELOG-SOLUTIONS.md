@@ -19,6 +19,12 @@
 - Frontend rebuilt at `1200249` (P1 chip text 72% tone + text colour on 10%
   background, a11y contrast), rollback `pre-prio-contrast-1200249`; guard and
   smoke passed. Disk 2.6 GB free (89%) after the build.
+- Backups, owner's request ("fshije backup"): 53 old database dumps deleted
+  (46 `pre-*.sql.gz`, 7 `postgres-*.sql.gz` incl. the August manual one).
+  Kept, each checked with `gzip -t`: `pre-new-ids-text-20261019-235502`,
+  nightly `postgres-2026-10-18_03-00` and `postgres-2026-10-19_03-00`, every
+  vault-key / rustdesk-keys / config archive, and `/opt/backups/techi-keep`.
+  `/opt/backups/techi` 7.9 GB → 417 MB; disk 10 GB free (57%).
 
 ## [2026-10-20] RS-IDENTITY-FILE-2026-10-20 — Remote Support kept changing ID: the agent made its identity file read-only; agent 2.1.35 (`096892b`, `c1a3ad7`)
 
