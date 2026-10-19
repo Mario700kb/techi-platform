@@ -5,6 +5,58 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-19] ALERT-CENTER-2026-10-19 — alert work queue, AI analysis, Remote Support identity; agent 2.1.34 active (`13b9ac2`, `4a00251`)
+
+**Backend + frontend deployed 22:38–22:40 (Tirana), migrations
+`v0w1x2y3z4a5` and `w1x2y3z4a5b6`; agent 2.1.34 packages active 22:52.**
+- Alert center: event groups with their own rules (NTFS 98 only when it asks
+  for a repair, unexpected shutdown on a PC only twice in 7 days, blue
+  screen / fatal hardware / bad blocks critical, I/O retry from 3 in 24 h),
+  CPU/RAM critical is a warning on a PC, posture alerts only when a
+  protection is switched off, restart pending alerts on servers only; one
+  alert per service and volume; a problem back within a day reopens counted;
+  priority P1–P4, owner, snooze, resolve with a reason, notes, mute rules,
+  bulk, grouping, Findings, Quality and Remote Support IDs views; email /
+  webhook only for P1, reminder after 30 working minutes unowned; site
+  outage as one P1; panel with description, evidence, history, 22 runbooks
+  (PowerShell with risk). AI analysis (Claude) is built and off: no
+  `ANTHROPIC_API_KEY` in `.env`.
+- Remote Support identity: `/api/heartbeat` and `/api/sysinfo` now take
+  RustDesk's own `{id, uuid}` report (memory fast path, batch flush, 3 min
+  grace after a start, two at a time). **Finding after the deploy: no client
+  sends it.** The proxy logs of every host hold no `/api/heartbeat` from
+  RustDesk (only `/api/audit/conn`, from 9 addresses today), so
+  `remote_support_peers` stays empty. The hbbs database (`peer`: id, uuid =
+  MachineGuid, created_at, ip) is the source that covers every client: the
+  machine behind the reported mismatch (`0720021f-…`, 65.21.204.164/.176)
+  registered five IDs today (499953666 at 18:00 UTC, 8996619, 1109051883,
+  1529551896 and 1378477602 in the same second at 19:42), while the
+  platform's 499953668 (device 930 DC) belongs to another MachineGuid
+  (`6ff10fdd-…`, 5 Oct). 64 MachineGuids hold more than one ID in hbbs:
+  cloned machines fighting over IDs. Next step proposed: reconcile from hbbs
+  by MachineGuid (agent 2.1.34 sends it).
+- Agent 2.1.34 (CI 39319002158 / 39319002155): System events of level
+  Critical/Error/Warning only, the probed Remote Support ID kept between
+  probes (the enrollment-time ID was reported in between), the service's own
+  configuration preferred, MachineGuid in the heartbeat. Active: agent binary
+  `3dc2a813…` (package `6995f3c6…`), Endpoint MSI `1ac18437…` (`faca60c4…`),
+  Update Bridge `66ddddc2…` (`bbd6e0f3…`); 2.1.33 kept inactive; Linux amd64
+  stays 2.1.33. `/agent-packages/active-version` answers 2.1.34 and both
+  downloads hash to the CI files. No device was sent an update.
+- The first `alembic upgrade head` (both migrations in one transaction)
+  deadlocked with agent heartbeats on `devices` and rolled back completely;
+  run one revision at a time with `PGOPTIONS='-c lock_timeout=5000'`, both
+  passed at the first attempt. Open alerts given a priority: 490.
+Dump `/opt/backups/techi/pre-alert-center-20261019-223313.sql.gz` (170 MB,
+`gzip -t` OK); rollback `techi-platform-{backend,frontend}:pre-alert-center-a657b35`
+(backend rollback needs `alembic downgrade u9v0w1x2y3z4` first). Backend ready
+8 s after start; 17 slow heartbeats a minute while the fleet reconnected,
+0 from 22:39:57; 0 5xx, 0 tracebacks. Guard and smoke passed, `nginx -t` OK.
+Open alerts after: 480 (P1 2, P2 33); the 240 `critical_events` opened
+before the event groups are re-judged at each device's next health report
+(within 6 h). Pytest 1713, Vitest 430. Disk 909 MB free (97%) — resize or
+cleanup before the next build.
+
 ## [2026-10-19] EXPLORER-CITY-2026-10-19 — country + city row for every city (`979bf1d`)
 
 **Frontend deployed (Tirana, evening).** The owner wants the Explorer to be
