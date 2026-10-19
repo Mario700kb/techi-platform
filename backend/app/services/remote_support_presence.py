@@ -57,6 +57,8 @@ logger = logging.getLogger("techi.remote_support_presence")
 # The agent's own ID report gives way to the client's while the client has
 # reported this recently.
 TRUST_WINDOW = timedelta(minutes=30)
+# The ID server sync runs every 5 minutes and refreshes verified_at every 6 h.
+ID_SERVER_TRUST = timedelta(hours=7)
 # Another device holding the ID is released when silent this long.
 RELEASE_AFTER = timedelta(days=7)
 # In-memory "last seen" is written at most this often per client.
@@ -372,6 +374,7 @@ class RemoteSupportPresence:
 
     def _record_change(self, device: Device, old: Optional[str], peer: RemoteSupportPeer) -> None:
         how = {"machine_guid": "MachineGuid", "same_machine": "the same machine", "id_match": "its ID",
+               "id_server": "the ID server's registration",
                "hostname_ip": "hostname and address",
                "manual": "an operator"}.get(peer.bound_by or "", "its report")
         logger.warning("Remote Support ID of device %s: %s -> %s (the client's own report, bound by %s)",
@@ -383,7 +386,8 @@ class RemoteSupportPresence:
                 device_id=device.id,
                 event_type="remote_support_id_changed",
                 summary=f"Remote Support ID {old or '—'} → {peer.rustdesk_id}",
-                detail=f"Reported by TECHI Remote Support itself (matched by {how}).",
+                detail=(f"Registered by this machine on the ID server ({how})." if peer.bound_by == "id_server"
+                        else f"Reported by TECHI Remote Support itself (matched by {how})."),
                 actor="remote_support",
                 fail_silently=True,
             )
@@ -421,11 +425,19 @@ class RemoteSupportPresence:
     def client_is_authority(device: Device, now: Optional[datetime] = None) -> bool:
         """Whether the client's own recent report decides the device's ID, so
         the agent's (from config files) must not overwrite it."""
-        presence = getattr(device, "rustdesk_presence_at", None)
-        if getattr(device, "rustdesk_id_source", None) != "remote_support" or presence is None:
-            return False
         now = _naive(now or utcnow_naive())
-        return now - _naive(presence) <= TRUST_WINDOW
+        source = getattr(device, "rustdesk_id_source", None)
+        presence = getattr(device, "rustdesk_presence_at", None)
+        if source == "remote_support" and presence is not None:
+            return now - _naive(presence) <= TRUST_WINDOW
+        # The ID server's word (app/services/hbbs_sync.py) holds against an
+        # agent that cannot name its machine (< 2.1.34: it reports the ID it
+        # was enrolled with between probes). An agent that sends its
+        # MachineGuid reads the client fresh and is verified by the sync.
+        verified = getattr(device, "rustdesk_verified_at", None)
+        if source == "id_server" and verified is not None and not getattr(device, "machine_guid", None):
+            return now - _naive(verified) <= ID_SERVER_TRUST
+        return False
 
     # ── operator binding ────────────────────────────────────────────────────
 
@@ -466,17 +478,20 @@ def flush(db: Session) -> int:
 
 
 def presence_summary(db: Session) -> dict:
-    """Numbers for System status: how many devices' IDs the clients confirm."""
+    """Numbers for the Remote Support IDs view."""
     now = utcnow_naive()
     day = now - timedelta(hours=24)
+    week = now - timedelta(days=7)
     live = db.query(Device).filter(Device.deleted_at.is_(None), Device.is_archived.is_(False))
     with_id = live.filter(Device.rustdesk_id.isnot(None)).count()
-    confirmed = live.filter(Device.rustdesk_presence_at >= day, Device.rustdesk_id_source == "remote_support").count()
+    confirmed = live.filter(
+        Device.rustdesk_id_source.in_(("remote_support", "id_server")), Device.rustdesk_verified_at >= day
+    ).count()
     unbound = db.query(RemoteSupportPeer).filter(RemoteSupportPeer.device_id.is_(None),
-                                                 RemoteSupportPeer.last_seen_at >= day).count()
-    noted = db.query(RemoteSupportPeer).filter(RemoteSupportPeer.note.isnot(None),
-                                               RemoteSupportPeer.last_seen_at >= day).count()
+                                                 RemoteSupportPeer.last_seen_at >= week).count()
+    attention = live.filter(or_(Device.rustdesk_conflict_detected.is_(True),
+                                Device.rustdesk_sync_message.like("%cloned machines%"))).count()
     disagree = live.filter(Device.agent_rustdesk_id.isnot(None),
                            or_(Device.rustdesk_id.is_(None), Device.agent_rustdesk_id != Device.rustdesk_id)).count()
     return {"devices_with_id": with_id, "confirmed_24h": confirmed, "unbound_clients_24h": unbound,
-            "attention_24h": noted, "agent_disagrees": disagree}
+            "attention_24h": attention, "agent_disagrees": disagree}

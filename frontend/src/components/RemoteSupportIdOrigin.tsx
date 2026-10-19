@@ -31,10 +31,12 @@ export default function RemoteSupportIdOrigin({
   const presence = device.rustdesk_presence_at ? new Date(device.rustdesk_presence_at).getTime() : null;
   const live = presence != null && Date.now() - presence <= LIVE_MS;
   const confirmed = device.rustdesk_id_source === "remote_support";
+  const serverVerified = device.rustdesk_id_source === "id_server";
   const agentDisagrees =
     confirmed && Boolean(device.agent_rustdesk_id && device.agent_rustdesk_id !== device.rustdesk_id);
 
-  if (device.rustdesk_conflict_detected && device.rustdesk_sync_message) {
+  const cloned = Boolean(device.rustdesk_sync_message?.includes("cloned machines"));
+  if ((device.rustdesk_conflict_detected || cloned) && device.rustdesk_sync_message) {
     return (
       <p className="mt-2 flex items-start gap-1.5 text-[12px]" style={{ color: "var(--th-status-critical)" }}>
         <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-none" aria-hidden="true" />
@@ -54,6 +56,11 @@ export default function RemoteSupportIdOrigin({
           {live
             ? `reported ${timeAgo(device.rustdesk_presence_at)}`
             : `last report ${timeAgo(device.rustdesk_presence_at)}`}
+        </p>
+      ) : serverVerified ? (
+        <p className="flex items-center gap-1.5" style={{ color: "var(--th-status-online)" }}>
+          <BadgeCheck className="h-3.5 w-3.5 flex-none" aria-hidden="true" />
+          Verified by the ID server · registered by this machine
         </p>
       ) : device.rustdesk_manual_override ? (
         <p className="flex items-center gap-1.5" style={{ color: "var(--th-text-muted)" }}>

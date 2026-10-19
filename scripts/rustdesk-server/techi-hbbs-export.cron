@@ -1,0 +1,3 @@
+# Copy of the ID server's peer database for the platform (Remote Support IDs).
+# Install: cp to /etc/cron.d/techi-hbbs-export (root, 0644).
+*/2 * * * * root /usr/bin/python3 /opt/techi/techi-platform/scripts/rustdesk-server/hbbs-export.py

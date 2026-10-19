@@ -83,7 +83,7 @@ export interface Device {
   rustdesk_manual_override: boolean;
   rustdesk_conflict_detected: boolean;
   /** Where rustdesk_id came from: the client itself, the agent, an operator. */
-  rustdesk_id_source?: "remote_support" | "agent" | "manual" | null;
+  rustdesk_id_source?: "remote_support" | "id_server" | "agent" | "manual" | null;
   /** Last time TECHI Remote Support itself reported in (every 15 s). */
   rustdesk_presence_at?: string | null;
   /** The ID the agent last read, kept when it disagrees with the client. */

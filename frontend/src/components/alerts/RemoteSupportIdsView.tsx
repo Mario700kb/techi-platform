@@ -18,11 +18,11 @@ import { Button, EmptyState, Modal } from "../ui";
 const spaced = (id: string | null) => (id ? id.replace(/(\d{3})(?=\d)/g, "$1 ") : "—");
 
 /**
- * Remote Support IDs as the clients themselves report them. Every TECHI
- * Remote Support client tells the platform the ID in its window every 15 s;
- * the platform matches it to the device and corrects a stale ID. Listed here:
- * clients it could not match, and IDs it did not apply (a clone, an ID
- * another device uses, a pinned ID).
+ * Remote Support IDs as the ID server holds them. Every TECHI Remote Support
+ * client registers its ID with the platform's ID server together with its
+ * machine (MachineGuid); the platform matches each device to its machine,
+ * verifies or corrects its ID, and lists cloned machines that keep taking
+ * each other's IDs.
  */
 export default function RemoteSupportIdsView() {
   const { can } = useAuth();
@@ -35,29 +35,29 @@ export default function RemoteSupportIdsView() {
   return (
     <div className="th-ac-view">
       <p className="th-ac-muted">
-        Each TECHI Remote Support client reports the ID in its own window to the platform every 15 seconds. A device
-        whose ID changed is corrected from that report; the agent's reading of configuration files no longer overrides
-        it.
+        Every TECHI Remote Support client registers its ID with the platform's ID server, together with its machine
+        (MachineGuid). The platform checks every device against it every 5 minutes: it verifies the ID, corrects one
+        that changed, and lists cloned machines (copied without sysprep), which take each other's IDs.
       </p>
       {s && (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <div className="th-kpi" style={{ "--kpi-tone": "var(--th-status-online)" } as CSSProperties}>
-            <span className="th-kpi-label">Confirmed by the client</span>
+            <span className="th-kpi-label">Verified by the ID server</span>
             <span className="th-kpi-value">
               {formatCount(s.confirmed_24h)}
               <small className="th-ac-muted"> / {formatCount(s.devices_with_id)}</small>
             </span>
-            <span className="th-kpi-hint">Devices whose ID the client reported in 24 h</span>
+            <span className="th-kpi-hint">Devices whose ID belongs to their machine</span>
           </div>
           <div className="th-kpi" style={{ "--kpi-tone": "var(--th-status-warning)" } as CSSProperties}>
             <span className="th-kpi-label">Not matched</span>
             <span className="th-kpi-value">{formatCount(s.unbound_clients_24h)}</span>
-            <span className="th-kpi-hint">Clients reporting, no device found</span>
+            <span className="th-kpi-hint">IDs registered in 7 days, no device found</span>
           </div>
           <div className="th-kpi" style={{ "--kpi-tone": "var(--th-status-critical)" } as CSSProperties}>
-            <span className="th-kpi-label">Need a look</span>
+            <span className="th-kpi-label">Cloned or in conflict</span>
             <span className="th-kpi-value">{formatCount(s.attention_24h)}</span>
-            <span className="th-kpi-hint">Clones, conflicts, pinned IDs</span>
+            <span className="th-kpi-hint">Devices on cloned machines or sharing an ID</span>
           </div>
           <div className="th-kpi" style={{ "--kpi-tone": "var(--th-status-info)" } as CSSProperties}>
             <span className="th-kpi-label">Agent reads an old ID</span>
@@ -71,13 +71,13 @@ export default function RemoteSupportIdsView() {
           Need a look
         </button>
         <button type="button" aria-pressed={state === "all"} onClick={() => setState("all")}>
-          All clients (7 days)
+          All registered (7 days)
         </button>
       </div>
       {clients.loading && !clients.data ? (
         <div className="th-alerts-skeleton" aria-busy="true" />
       ) : rows.length === 0 ? (
-        <EmptyState icon={<BadgeCheck className="h-5 w-5" />} title="Every reporting client matches its device" />
+        <EmptyState icon={<BadgeCheck className="h-5 w-5" />} title="Every registered ID matches its device" />
       ) : (
         <div className="th-ac-table-wrap">
           <table className="th-ac-table">

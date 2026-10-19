@@ -47,3 +47,22 @@ describe("RemoteSupportIdOrigin", () => {
     expect(screen.getByText(/Two machines share this MachineGuid/)).toBeInTheDocument();
   });
 });
+
+describe("RemoteSupportIdOrigin with the ID server", () => {
+  it("says the ID server verified it, and explains a cloned machine", () => {
+    const { unmount } = render(<RemoteSupportIdOrigin device={{ ...base, rustdesk_id_source: "id_server" }} />);
+    expect(screen.getByText(/Verified by the ID server/)).toBeInTheDocument();
+    unmount();
+    render(
+      <RemoteSupportIdOrigin
+        device={{
+          ...base,
+          rustdesk_id_source: "id_server",
+          rustdesk_sync_message:
+            "5 Remote Support IDs registered by this machine's MachineGuid: cloned machines take each other's IDs.",
+        }}
+      />,
+    );
+    expect(screen.getByText(/cloned machines take each other's IDs/)).toBeInTheDocument();
+  });
+});

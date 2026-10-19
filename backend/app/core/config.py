@@ -117,6 +117,9 @@ class Settings(BaseSettings):
     REMOTE_SUPPORT_PASSWORD_ROTATION_PER_NIGHT: int = 150
     RUSTDESK_DEEP_LINK_PASSWORD_ENABLED: bool = True
     RUSTDESK_SERVER_DB_PATH: str = ""
+    # The ID server's (hbbs) database, mounted read-only: every Remote Support
+    # client's ID and MachineGuid (app/services/hbbs_sync.py). Empty = off.
+    HBBS_DB_PATH: str = ""
     RUSTDESK_RESOLVER_ENABLED: bool = False
     TRUSTED_DOMAIN_AUTO_ENROLLMENT: bool = False
     TRUSTED_DOMAIN_ALLOWLIST: str = ""  # comma-separated domains; empty = any non-WORKGROUP domain

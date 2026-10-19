@@ -165,6 +165,14 @@ def _run_monitor_sweep() -> None:
         logger.exception("Monitor sweep failed")
         db.rollback()
     try:
+        # Remote Support IDs as the ID server holds them.
+        from app.services.hbbs_sync import HbbsSync
+
+        HbbsSync(db).run()
+    except Exception:
+        logger.exception("ID server sync failed")
+        db.rollback()
+    try:
         # A P1 nobody took within 30 minutes of working hours: send it again.
         from app.services.alert_center_service import AlertCenterService
 
