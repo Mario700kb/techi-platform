@@ -271,7 +271,52 @@ const alertCount: AlertCount = {
   by_severity: { critical: 1, warning: 1 },
   by_kind: { device_offline: 1, low_disk: 1 },
   devices_affected: 2,
+  views: { needs_action: 1, mine: 0, open: 2, snoozed: 0 },
+  by_priority: { "1": 1, "3": 1 },
 };
+// The alert work queue (/alerts): the same alerts with priority and wording.
+const QUEUE: Alert[] = [
+  {
+    ...ALERTS[0],
+    priority: 1,
+    title: "Device offline",
+    summary: "Offline for 26 hours",
+    device_role: "server",
+    occurrences: 1,
+    fingerprint: "",
+  },
+  {
+    ...ALERTS[1],
+    priority: 3,
+    title: "Disk C: almost full",
+    summary: "C: has 6% free",
+    value: "94%",
+    device_role: "pc",
+    occurrences: 2,
+    fingerprint: "vol:C:",
+  },
+];
+function alertDetail(id: number) {
+  const alert = QUEUE.find((a) => a.id === id);
+  if (!alert) return null;
+  return {
+    alert,
+    description: `${alert.title} on this ${alert.device_role === "server" ? "server" : "workstation"}. ${alert.summary}.`,
+    facts: { role: alert.device_role, os: "Windows 11 Pro", agent_version: "2.1.35" },
+    evidence: {},
+    history: [alert.created_at],
+    activity: [{ id: 1, at: alert.created_at, actor: null, action: "opened", detail: null }],
+    runbook: {
+      key: alert.kind,
+      why: "The device stopped reporting.",
+      steps: ["Check whether other devices of the same site are offline too."],
+      commands: [{ label: "Agent service state", script: "Get-Service -Name 'TECHI*'", risk: "read_only" }],
+      escalate: null,
+    },
+    analysis: null,
+    ai_enabled: false,
+  };
+}
 const recentActions: RemoteActionWithDevice[] = [];
 export const presence: OperatorPresenceRecord[] = OPERATORS.map((o) => ({
   id: o.id,
@@ -568,6 +613,19 @@ const HANDLERS: Record<string, Handler> = {
   "GET /api/v1/devices/": (route, _state, url) => json(route, devicesPage(url)),
   "GET /api/v1/alerts/": (route) => json(route, ALERTS),
   "GET /api/v1/alerts/count": (route) => json(route, alertCount),
+  "GET /api/v1/alerts/queue": (route, _state, url) => {
+    const view = url.searchParams.get("view") ?? "needs_action";
+    const items = view === "needs_action" ? QUEUE.filter((a) => (a.priority ?? 3) <= 2) : view === "open" ? QUEUE : [];
+    return json(route, { items, total: items.length });
+  },
+  "GET /api/v1/alerts/groups": (route) => json(route, []),
+  "GET /api/v1/alerts/findings": (route) => json(route, { items: [], counts: {} }),
+  "GET /api/v1/alerts/quality": (route) =>
+    json(route, { days: 7, since: iso(60 * 24 * 7), rows: [], totals: { opened: 0, noise_pct: 0, issues: 0 } }),
+  "GET /api/v1/alerts/mutes": (route) => json(route, []),
+  "GET /api/v1/remote-support/identity/summary": (route) =>
+    json(route, { devices_with_id: 5, confirmed_24h: 5, unbound_clients_24h: 0, attention_24h: 0, agent_disagrees: 0 }),
+  "GET /api/v1/remote-support/identity/clients": (route) => json(route, []),
   "GET /api/v1/actions/recent": (route) => json(route, recentActions),
   "GET /api/v1/operators": (route) => json(route, OPERATORS),
   "GET /api/v1/operators/presence": (route) => json(route, presence),
@@ -604,6 +662,11 @@ export async function mockApi(page: Page, initial: Partial<Omit<MockState, "unha
     if (inventory && route.request().method() === "GET") {
       const id = Number(inventory[1]);
       return json(route, id === 1 ? DEVICE_1_INVENTORY : { ...DEVICE_2_INVENTORY, device_id: id });
+    }
+    const oneAlert = url.pathname.match(/^\/api\/v1\/alerts\/(\d+)$/);
+    if (oneAlert && route.request().method() === "GET") {
+      const detail = alertDetail(Number(oneAlert[1]));
+      return detail ? json(route, detail) : json(route, { detail: "Alert not found" }, 404);
     }
     const deviceAlerts = url.pathname.match(/^\/api\/v1\/alerts\/device\/(\d+)$/);
     if (deviceAlerts && route.request().method() === "GET") {

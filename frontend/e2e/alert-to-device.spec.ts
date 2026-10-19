@@ -7,15 +7,18 @@ test.beforeEach(() => {
   test.skip(test.info().project.name !== "desktop", "the drawer is the desktop device view");
 });
 
-test("clicking an alert row opens that device's drawer", async ({ page }) => {
+test("clicking an alert row opens its panel, and its device link opens the device's drawer", async ({ page }) => {
   await page.goto("/alerts");
   const row = page.locator("tr.th-alerts-row").first();
-  const device = (await row.locator(".th-alerts-link").innerText()).trim();
+  await expect(row).toContainText("Device offline");
   await row.locator("td").nth(2).click();
+  const panel = page.getByRole("complementary", { name: "Alert" });
+  await expect(panel.getByRole("heading", { name: "Device offline" })).toBeVisible();
+  await expect(panel.getByText("The device stopped reporting.")).toBeVisible();
+  await panel.getByRole("link", { name: /BH-WH-SCANNER/ }).click();
   await expect(page).toHaveURL(/\/devices/);
   const drawer = page.locator(".th-drawer-panel");
-  await expect(drawer).toBeVisible();
-  await expect(drawer.getByRole("heading", { name: device })).toBeVisible();
+  await expect(drawer.getByRole("heading", { name: "BH-WH-SCANNER" })).toBeVisible();
 });
 
 test("clicking an alert in the bell opens that device's drawer", async ({ page }) => {
@@ -47,6 +50,10 @@ test("an alert opens its device even when it is not on the table's current page"
   await page.goto("/alerts");
   const row = page.locator("tr.th-alerts-row", { hasText: "BH-WH-SCANNER" }).first();
   await row.locator("td").nth(2).click();
+  await page
+    .getByRole("complementary", { name: "Alert" })
+    .getByRole("link", { name: /BH-WH-SCANNER/ })
+    .click();
 
   const drawer = page.locator(".th-drawer-panel");
   await expect(drawer).toBeVisible();

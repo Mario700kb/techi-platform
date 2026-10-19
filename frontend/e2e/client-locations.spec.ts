@@ -116,10 +116,10 @@ test("the Explorer shows a client's cities, sites and their categories, and filt
   const explorer = page.getByRole("complementary", { name: "Device explorer" });
 
   await explorer.getByRole("button", { name: /Northwind Clinic/ }).click();
-  // Tiranë holds two sites, so it gets a city row; Durrës has one, shown by name.
-  const tirana = explorer.getByRole("button", { name: /(^|\s)Tiranë \d+$/ });
+  // Every city has its country + city row (EXPLORER-CITY), its sites below.
+  const tirana = explorer.getByRole("button", { name: /AL Tiranë \d+$/ });
   await expect(tirana).toBeVisible();
-  await expect(explorer.getByRole("button", { name: /Durrës – Dega/ })).toBeVisible();
+  await expect(explorer.getByRole("button", { name: /AL Durrës \d+$/ })).toBeVisible();
   // Category folders now live under each site, not under the client.
   await expect(explorer.getByRole("button", { name: /^Servers/ })).toHaveCount(0);
 
