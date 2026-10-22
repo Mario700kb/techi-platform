@@ -5,6 +5,25 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-22] LINUX-ARMHF-2026-10-22 — agent for 32-bit Raspberry Pi OS (`ef6cb95`)
+
+- The installer already sent `armv7l`/`armv6l` to `linux-armhf`, and the
+  backend served and versioned it. CI never built the binary, so the first
+  install on a Raspberry Pi stopped with `curl: (22) 404`.
+- `build-agent-linux.yml` now also builds `linux/arm` with `GOARM=6`, so the
+  one package runs on both ARMv6 (Pi Zero/1) and ARMv7. It gets a SHA file
+  and a `file` check (32-bit ARM EABI5) and is part of the artifact. A local
+  `go build` + `go vet` for linux/arm with Go 1.21.13 was clean first.
+- CI run 39771164692 (vet, test, three builds) passed. `linux-armhf` 2.1.35
+  (`b67babc3…`, 5.8 MB) was uploaded through Packages by the owner and is
+  active. Claude's SSH upload was refused by the permission check, so nothing
+  was written on the server from here. Verified from outside: the
+  `linux-armhf` download returns 200 with the CI hash, and the installer embeds
+  the same SHA. No backend or frontend change, so no restart and no dump.
+- Still open: the Deployment card's "Package source" shows only amd64, and
+  `component_state_service._package_platform` uses `linux-amd64` for every
+  Linux device.
+
 ## [2026-10-20] DISK-CLEANUP-2026-10-20 — 559 MB → 3.1 GB free; P1 chip contrast deployed (`a8fc99c`)
 
 - `TRUNCATE device_heartbeats` (634 MB, not written since BACKEND-PERF on
