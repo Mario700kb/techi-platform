@@ -5,6 +5,31 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-22] PI-CONNECT-2026-10-22 — A new Raspberry Pi never opens in the terminal (`17feee7`)
+
+**Backend + frontend deployed 22:10–22:11 (Tirana).**
+- Owner: every newly installed Pi opened the Embedded Terminal on Connect
+  instead of Remote Support. Production data showed all four Pis (993, 994,
+  995, 997) on 2.1.38 with `remote_support` and an ID, and connect-methods
+  answering `remote_support` first for every operator. The cause was timing:
+  - the installer started the agent first and installed RustDesk after it,
+    so for minutes the device reported no `remote_support` capability and
+    the terminal was its only (default) method;
+  - a row kept the method list it loaded first, until the page was reloaded;
+  - the main Connect (since `5527ea4`) launched any device default, the
+    terminal included.
+- Fix: the installer installs and configures Remote Support before the agent
+  starts (its first heartbeat carries it and the ID). Every Connect click asks
+  for the list fresh. Connect launches only the operator's saved choice or
+  Remote Support; anything else, the terminal too, comes from the menu. This
+  also undoes the `5527ea4` side effect (servers and MikroTik open the menu
+  again).
+- Dump `/opt/backups/techi/pre-pi-connect-20261022-220311.sql.gz` (162 MB,
+  `gzip -t` OK); rollback `techi-platform-{backend,frontend}:pre-pi-connect-6db3053`;
+  no migration. Frontend built in 94 s (load at most 4.1). Guard and smoke
+  passed, 0 tracebacks; the served installer installs Remote Support before
+  the agent.
+
 ## [2026-10-22] CONNECT-DEFAULT-2026-10-22 — Connect launches the device's default (Remote Support on a Linux desktop); linux-amd64 package re-activated (`5527ea4`)
 
 **Backend + frontend deployed 19:17–19:18 (Tirana).**
