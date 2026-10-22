@@ -176,6 +176,18 @@ def test_remote_support_options_also_go_through_the_rustdesk_cli(monkeypatch):
     assert first_restart < section.index("rs_option custom-rendezvous-server")
     assert section.index("rs_option key") < section.index("systemctl restart rustdesk", first_restart + 1)
     assert "rustdesk --option custom-rendezvous-server 2>/dev/null" in section
+
+
+def test_one_run_is_enough_the_options_are_retried_until_they_hold(monkeypatch):
+    """A fresh install lost an early --option, so the installer had to be run
+    twice. It now waits for RustDesk, sets, restarts and reads back, at least
+    twice and until the ID server is the platform's."""
+    section = _remote_support_section(_script(monkeypatch))
+    assert "for RS_PASS in 1 2 3 4 5; do" in section
+    assert "rs_answers && break" in section
+    assert '[ "${RS_PASS}" -ge 2 ]' in section
+    loop = section[section.index("for RS_PASS"):section.index("done\n  if [ \"${RS_SERVER}\"")]
+    assert loop.index("rs_option key") < loop.index("systemctl restart rustdesk")
     assert "rustdesk --get-id" in section
 
 

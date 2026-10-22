@@ -275,19 +275,31 @@ TOML
   # The same options through RustDesk's own CLI, which stores them the way the
   # installed version expects: the file above alone did not make the Pis
   # register with the platform's ID server ("ID does not exist"). `--option`
-  # hands them to the RUNNING service, so it comes after the start, and a
-  # second restart makes the service register with them.
+  # hands them to the RUNNING service. On a fresh install the service needs
+  # a while (first start makes its keys) and an early `--option` is lost:
+  # the installer had to be run twice. So: wait until RustDesk answers, set,
+  # restart, read the ID server back, and go round again until it is ours.
   rs_option() {{ timeout 15 rustdesk --option "$1" "$2" >/dev/null 2>&1 || true; }}
-  sleep 5
-  rs_option custom-rendezvous-server '{rs_host}'
-  rs_option relay-server '{rs_relay}'
-  rs_option api-server "${{BACKEND}}"
-  rs_option key '{rs_key}'
-  systemctl restart rustdesk || return 1
-  sleep 5
-  RS_SERVER="$(timeout 15 rustdesk --option custom-rendezvous-server 2>/dev/null | tr -d ' ' | tail -n 1)"
+  rs_answers() {{ timeout 10 rustdesk --get-id 2>/dev/null | tr -d ' ' | grep -qE '^[0-9]{{6,}}$'; }}
+  RS_SERVER=""
+  for RS_PASS in 1 2 3 4 5; do
+    for _ in $(seq 1 20); do rs_answers && break; sleep 3; done
+    sleep 3
+    rs_option custom-rendezvous-server '{rs_host}'
+    rs_option relay-server '{rs_relay}'
+    rs_option api-server "${{BACKEND}}"
+    rs_option key '{rs_key}'
+    systemctl restart rustdesk || return 1
+    for _ in $(seq 1 20); do rs_answers && break; sleep 3; done
+    RS_SERVER="$(timeout 15 rustdesk --option custom-rendezvous-server 2>/dev/null | tr -d ' ' | tail -n 1)"
+    # Twice at least: the second pass is what a second run of the installer
+    # used to do, on a service that is surely up.
+    if [ "${{RS_SERVER}}" = '{rs_host}' ] && [ "${{RS_PASS}}" -ge 2 ]; then
+      break
+    fi
+  done
   if [ "${{RS_SERVER}}" != '{rs_host}' ]; then
-    echo "Warning: Remote Support reports ID server '${{RS_SERVER}}', not '{rs_host}'." >&2
+    echo "Warning: Remote Support reports ID server '${{RS_SERVER}}', not '{rs_host}'. Run the installer again." >&2
   fi
   RS_ID="$(timeout 15 rustdesk --get-id 2>/dev/null | tr -d ' ' | grep -E '^[0-9]{{6,}}$' | head -n 1)"
   if [ -n "${{RS_ID}}" ]; then
