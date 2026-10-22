@@ -5,6 +5,24 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-22] LIVE-SALVAGE-2026-10-22 — Live on the Raspberry Pis: one bad value no longer drops a frame (`577d488`)
+
+**Backend deployed 23:18 (Tirana).**
+- Live on the Pis (devices 997, 998) stayed at "connecting…": the agents
+  streamed, but every frame failed validation ("[live] device #997 sent a
+  malformed frame; dropped"), and the log did not say which field.
+- The live hub now salvages a frame: the failing disk or process item, or the
+  failing field, is left out and the rest is shown; a frame with nothing usable
+  left is still dropped. The log names the invalid fields (never the values),
+  once per device and field set.
+- Agent 2.1.39 (in the same commit, not built or released): `round1` turns
+  NaN/±Inf into 0 (converted to int64 they became a huge negative number, e.g.
+  a filesystem with no blocks, 0/0), and such a disk is skipped. The exact
+  field the Pis send out of range is not yet confirmed.
+- Dump `/opt/backups/techi/pre-live-salvage-20261022-231449.sql.gz` (164 MB,
+  `gzip -t` OK); rollback `techi-platform-backend:pre-live-salvage-01e2421`;
+  no migration. Ready 23:18:39; guard and smoke passed, 0 tracebacks.
+
 ## [2026-10-22] INSTALL-RETRY-2026-10-22 — One installer run is enough for Remote Support on a fresh Pi (`cd4393f`)
 
 **Backend deployed 22:55 (Tirana).**
