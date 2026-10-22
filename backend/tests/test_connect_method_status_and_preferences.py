@@ -322,6 +322,12 @@ class TestMockupFidelity:
         assert methods["web_terminal"]["status"] == "ready"
         assert body["preferred_method_id"] == "web_terminal"
 
+    def test_linux_remote_support_is_default_when_present(self, monkeypatch):
+        client, _ = _client(monkeypatch, platform="linux", capabilities={"terminal": "", "remote_support": ""})
+        body = client.get("/devices/3/connect-methods").json()
+        assert [m["id"] for m in body["methods"]][0] == "remote_support"
+        assert body["preferred_method_id"] == "remote_support"
+
     def test_launch_url_never_contains_credential_material(self, monkeypatch):
         client, db = _client(monkeypatch)
         device = db.query(Device).filter(Device.id == 3).one()

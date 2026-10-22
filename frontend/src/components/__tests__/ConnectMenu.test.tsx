@@ -76,7 +76,7 @@ describe("ConnectMenu — Embedded SSH Connect wiring", () => {
     renderMenu();
 
     await waitFor(() => expect(screen.getByText("Connect")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("Connect"));
+    fireEvent.click(screen.getByLabelText("Connect options"));
     await waitFor(() => expect(screen.getByText("Embedded SSH")).toBeInTheDocument());
     fireEvent.click(screen.getByText("Embedded SSH"));
 
@@ -96,7 +96,7 @@ describe("ConnectMenu — Embedded SSH Connect wiring", () => {
     const onOpenTerminal = vi.fn();
     renderMenu(7, { onOpenTerminal });
 
-    fireEvent.click(await screen.findByText("Connect"));
+    fireEvent.click(await screen.findByLabelText("Connect options"));
     fireEvent.click(await screen.findByText("Embedded Terminal"));
 
     await waitFor(() => expect(onOpenTerminal).toHaveBeenCalledTimes(1));
@@ -115,7 +115,7 @@ describe("ConnectMenu — Embedded SSH Connect wiring", () => {
     renderMenu();
 
     await waitFor(() => expect(screen.getByText("Connect")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("Connect"));
+    fireEvent.click(screen.getByLabelText("Connect options"));
     await waitFor(() => expect(screen.getByText("Embedded SSH")).toBeInTheDocument());
     fireEvent.click(screen.getByText("Embedded SSH"));
     await waitFor(() => expect(screen.getByTestId("embedded-ssh-modal")).toBeInTheDocument());
@@ -169,7 +169,7 @@ describe("ConnectMenu — credential-aware status (Section D/E)", () => {
       configured_preference_id: null,
     });
     renderMenu();
-    fireEvent.click(await screen.findByText("Connect"));
+    fireEvent.click(await screen.findByLabelText("Connect options"));
 
     expect(await screen.findByText("Winbox")).toBeInTheDocument();
     expect(screen.getByText("WebFig")).toBeInTheDocument();
@@ -184,7 +184,7 @@ describe("ConnectMenu — credential-aware status (Section D/E)", () => {
       configured_preference_id: null,
     });
     renderMenu();
-    fireEvent.click(await screen.findByText("Connect"));
+    fireEvent.click(await screen.findByLabelText("Connect options"));
     expect(await screen.findByText(/Device credential · Ready/)).toBeInTheDocument();
   });
 
@@ -200,7 +200,7 @@ describe("ConnectMenu — credential-aware status (Section D/E)", () => {
         <ConnectMenu deviceId={7} />
       </MemoryRouter>,
     );
-    fireEvent.click(await screen.findByText("Connect"));
+    fireEvent.click(await screen.findByLabelText("Connect options"));
     fireEvent.click(await screen.findByText("Winbox"));
 
     // The generic launcher must never be hit for a credential_required method.
@@ -236,7 +236,7 @@ describe("ConnectMenu — credential-aware status (Section D/E)", () => {
         configured_preference_id: "webfig",
       });
     renderMenu();
-    fireEvent.click(await screen.findByText("Connect"));
+    fireEvent.click(await screen.findByLabelText("Connect options"));
     const pinButtons = await screen.findAllByTitle("Always use this method");
     fireEvent.click(pinButtons[0]);
 
@@ -266,7 +266,7 @@ describe("ConnectMenu — credential-aware status (Section D/E)", () => {
     // of the actual test-runner OS.
     vi.stubGlobal("navigator", { ...navigator, platform: "MacIntel", userAgent: "Macintosh" });
     renderMenu();
-    fireEvent.click(await screen.findByText("Connect"));
+    fireEvent.click(await screen.findByLabelText("Connect options"));
 
     expect(await screen.findByText("Winbox")).toBeInTheDocument();
     const winboxButton = screen.getByText("Winbox").closest("button");
@@ -296,7 +296,7 @@ describe("ConnectMenu — approved V3 mockup behavior", () => {
     expect(screen.queryByText("Recommended")).not.toBeInTheDocument();
   });
 
-  it("main click with NO saved preference opens the categorized menu once", async () => {
+  it("main click with NO saved preference launches the device's Ready default (no menu)", async () => {
     vi.spyOn(client, "fetchJson").mockResolvedValueOnce({
       platform: "mikrotik",
       methods: [WINBOX_CREDENTIAL_REQUIRED, SSH_METHOD, WEBFIG_READY],
@@ -306,9 +306,24 @@ describe("ConnectMenu — approved V3 mockup behavior", () => {
     renderMenu(7, { hostname: "rb-core-01" });
 
     fireEvent.click(await screen.findByText("Connect"));
+    await waitFor(() => expect(screen.getByTestId("embedded-ssh-modal")).toBeInTheDocument());
+    expect(screen.queryByText("Recommended")).not.toBeInTheDocument();
+  });
+
+  it("main click opens the categorized menu when no default is Ready", async () => {
+    vi.spyOn(client, "fetchJson").mockResolvedValueOnce({
+      platform: "mikrotik",
+      methods: [WINBOX_CREDENTIAL_REQUIRED, SSH_METHOD, WEBFIG_READY],
+      preferred_method_id: "winbox",
+      configured_preference_id: null,
+    });
+    renderMenu(7, { hostname: "rb-core-01" });
+
+    fireEvent.click(await screen.findByText("Connect"));
     expect(await screen.findByText("Connect to rb-core-01")).toBeInTheDocument();
     // Category sections from the approved mockup.
-    expect(screen.getByText("Recommended")).toBeInTheDocument();
+    // Nothing is Ready as a default, so there is no Recommended section.
+    expect(screen.queryByText("Recommended")).not.toBeInTheDocument();
     expect(screen.getByText("Web")).toBeInTheDocument();
     expect(screen.getByText("Desktop Applications")).toBeInTheDocument();
     expect(screen.queryByTestId("embedded-ssh-modal")).not.toBeInTheDocument();
@@ -325,7 +340,7 @@ describe("ConnectMenu — approved V3 mockup behavior", () => {
       .mockResolvedValue({ platform: "mikrotik", device_id: null, method_id: "ssh" });
     renderMenu();
 
-    fireEvent.click(await screen.findByText("Connect"));
+    fireEvent.click(await screen.findByLabelText("Connect options"));
     fireEvent.click(await screen.findByText("Always use this option"));
     fireEvent.click(screen.getByText("Embedded SSH"));
 
@@ -352,7 +367,7 @@ describe("ConnectMenu — approved V3 mockup behavior", () => {
       configured_preference_id: null,
     });
     renderMenu();
-    fireEvent.click(await screen.findByText("Connect"));
+    fireEvent.click(await screen.findByLabelText("Connect options"));
 
     expect(await screen.findByText("Unavailable")).toBeInTheDocument();
     const sshButton = screen.getByText("Embedded SSH").closest("button");
@@ -479,11 +494,46 @@ describe("ConnectMenu — Remote Support on a non-Windows device", () => {
       });
     renderMenu();
 
-    fireEvent.click(await screen.findByText("Connect"));
+    fireEvent.click(await screen.findByLabelText("Connect options"));
     fireEvent.click(await screen.findByText("TECHI Remote Support"));
 
     await waitFor(() => expect(launchConnect).toHaveBeenCalledTimes(1));
     expect(client.fetchJson).toHaveBeenLastCalledWith("/api/v1/remote-support/devices/7/connect-url");
     expect(vi.mocked(launchConnect).mock.calls[0][0]).toBe("techiremotesupport://123456789?password=pw");
+  });
+
+  it("main click launches Remote Support at once when it is the device's default", async () => {
+    vi.spyOn(client, "fetchJson")
+      .mockResolvedValueOnce({
+        platform: "linux",
+        methods: [
+          {
+            ...WEB_TERMINAL_METHOD,
+            id: "remote_support",
+            label: "TECHI Remote Support",
+            surface: "desktop",
+            capability: "remote_support",
+            priority: 5,
+            transport: "RustDesk",
+            category: "desktop_app",
+            embedded: false,
+          },
+          WEB_TERMINAL_METHOD,
+        ],
+        preferred_method_id: "remote_support",
+        configured_preference_id: null,
+      })
+      .mockResolvedValueOnce({
+        device_id: 7,
+        techi_remote_id: "123456789",
+        connect_url: "techiremotesupport://123456789?password=pw",
+      });
+    renderMenu();
+
+    fireEvent.click(await screen.findByText("Connect"));
+
+    await waitFor(() => expect(launchConnect).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(launchConnect).mock.calls[0][0]).toBe("techiremotesupport://123456789?password=pw");
+    expect(screen.queryByText("Connect to")).not.toBeInTheDocument();
   });
 });

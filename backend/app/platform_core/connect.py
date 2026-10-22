@@ -74,13 +74,15 @@ CONNECT_METHODS: Dict[str, Tuple[ConnectMethod, ...]] = {
         ConnectMethod("remote_support", "TECHI Remote Support", SURFACE_DESKTOP, None, 10,
                       transport="RustDesk", category=CATEGORY_DESKTOP_APP),
     ),
+    # A Linux desktop with Remote Support connects with it, as Windows does
+    # (owner's call, 22 Oct); a server without it defaults to the terminal.
     "linux": (
+        ConnectMethod("remote_support", "TECHI Remote Support", SURFACE_DESKTOP, "remote_support", 5,
+                      transport="RustDesk", category=CATEGORY_DESKTOP_APP),
         ConnectMethod("web_terminal", "Embedded Terminal", SURFACE_BROWSER, "terminal", 10,
                       transport="Agent tunnel", category=CATEGORY_AVAILABLE, embedded=True),
         ConnectMethod("ssh", "Embedded SSH", SURFACE_DESKTOP, "terminal", 20, scheme="ssh://",
                       transport="Backend relay · Vault", category=CATEGORY_AVAILABLE, embedded=True),
-        ConnectMethod("remote_support", "TECHI Remote Support", SURFACE_DESKTOP, "remote_support", 30,
-                      transport="RustDesk", category=CATEGORY_DESKTOP_APP),
     ),
     # MikroTik priorities encode the approved defaults: Winbox first (the
     # default for Windows operators), Embedded SSH before WebFig so that a

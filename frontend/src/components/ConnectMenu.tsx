@@ -70,7 +70,9 @@ interface Props {
   onRemoteSupport?: () => void;
   // The main segment's own action (the Windows drawer header: Remote
   // Support); the arrow still opens the method menu. Without it the main
-  // segment launches the saved default method or opens the menu.
+  // segment launches the saved default, else the device's own default
+  // (Remote Support where it has it), and opens the menu only when neither
+  // is Ready.
   onMain?: () => void;
   // Disables the main segment alone (its reason as the tooltip); the arrow
   // stays usable while the device is online.
@@ -164,6 +166,7 @@ export default function ConnectMenu({
   interface LoadedData {
     methods: ConnectMethod[];
     configured: string | null;
+    preferred: string | null;
   }
   const loadPromise = useRef<Promise<LoadedData | null> | null>(null);
 
@@ -178,7 +181,11 @@ export default function ConnectMenu({
         setMethods(list);
         setPreferredMethodId(r?.preferred_method_id ?? null);
         setConfiguredPreferenceId(r?.configured_preference_id ?? null);
-        return { methods: list, configured: r?.configured_preference_id ?? null };
+        return {
+          methods: list,
+          configured: r?.configured_preference_id ?? null,
+          preferred: r?.preferred_method_id ?? null,
+        };
       })
       .catch(() => {
         setMethods([]);
@@ -230,7 +237,7 @@ export default function ConnectMenu({
   }
 
   const ensureLoaded = async (): Promise<LoadedData | null> => {
-    if (methods !== null) return { methods, configured: configuredPreferenceId };
+    if (methods !== null) return { methods, configured: configuredPreferenceId, preferred: preferredMethodId };
     if (loadPromise.current) return loadPromise.current;
     return load();
   };
@@ -379,11 +386,15 @@ export default function ConnectMenu({
       setOpen(false);
       return;
     }
+    // The operator's saved default, else the device's own (Remote Support
+    // where it has it); the menu opens only when neither is ready.
     const loaded = await ensureLoaded();
-    const configured = loaded?.methods.find((m) => m.id === loaded.configured);
-    if (configured && displayStatus(configured, operatorOS) === "ready") {
-      void launch(configured);
-      return;
+    for (const id of [loaded?.configured, loaded?.preferred]) {
+      const m = id ? loaded?.methods.find((x) => x.id === id) : undefined;
+      if (m && displayStatus(m, operatorOS) === "ready") {
+        void launch(m);
+        return;
+      }
     }
     openMenu();
   };
