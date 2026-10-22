@@ -5,6 +5,42 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-22] LINUX-REMOTE-SUPPORT-2026-10-22 — Remote Support on Linux desktops (agent 2.1.36); Connect enabled when offline (`c29e2e2`, `9ae7796`, `e8ac4af`)
+
+**Backend + frontend deployed 14:23–14:24 (Tirana); `linux-armhf` 2.1.36
+active 14:25.**
+- Agent 2.1.36 (Linux only): reports the Remote Support ID from root's
+  `RustDesk.toml`, the `rustdesk` unit state and the `remote_support`
+  capability. It applies the per-device password with `rustdesk --password`,
+  and `restart_rustdesk` restarts the unit. Windows code is unchanged; the
+  version moved because `agent/VERSION` is shared.
+- Linux installer: on a desktop (graphical.target or a running display
+  manager) it installs upstream RustDesk 1.4.6 (`.deb` per architecture,
+  GitHub's SHA-256 enforced). It writes the platform's ID server, relay, key
+  and api-server into `RustDesk2.toml` and restarts `rustdesk`. Servers
+  without a desktop and ARMv6 get the terminal only. A Remote Support failure
+  never fails the agent install. It warns when the desktop is on Wayland,
+  because unattended access needs X11.
+- Connect menu: `remote_support` launches connect-url itself, as Windows rows
+  do. Connect is no longer disabled for offline devices (owner's request;
+  reverses `d489db7`). The ID, conflict and permission gates stay.
+- Package: `linux-armhf` 2.1.36 from CI 39775003667 (`d4c33dd8…`), active;
+  2.1.35 (`b67babc3…`) kept inactive. Manifest backup
+  `manifest.json.bak-pre-linux-armhf-2136-20261022-142537`. No other
+  architecture was uploaded.
+- Dump `/opt/backups/techi/pre-linux-rs-20261022-140158.sql.gz` (147 MB,
+  `gzip -t` OK); rollback `techi-platform-{backend,frontend}:pre-linux-rs-e5dec72`;
+  no migration. Guard and smoke passed, 0 5xx.
+- **Incident during the build:** while the frontend image built (after the
+  backend image), the host stopped answering web, API and SSH from about
+  14:05 to 14:18. Load reached 53 on 1 vCPU with 164 MB RAM free (node build
+  ~370 MB next to uvicorn ~410 MB). Nothing had been restarted yet, and it
+  recovered on its own. The build finished at ~14:22 and the restarts
+  followed on a calm host (load ~5). Next time, build the frontend image off
+  the server or with the host otherwise idle.
+- Frontend CI failed on Prettier only (3 files); fixed in `e8ac4af`, which
+  differs from the deployed `9ae7796` build only in formatting.
+
 ## [2026-10-22] LINUX-ARMHF-2026-10-22 — agent for 32-bit Raspberry Pi OS (`ef6cb95`)
 
 - The installer already sent `armv7l`/`armv6l` to `linux-armhf`, and the
