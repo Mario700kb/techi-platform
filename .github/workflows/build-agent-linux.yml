@@ -20,7 +20,7 @@ on:
 
 jobs:
   build-linux:
-    name: Build Linux agent (amd64 + arm64)
+    name: Build Linux agent (amd64 + arm64 + armhf)
     runs-on: ubuntu-latest
 
     steps:
@@ -60,9 +60,9 @@ jobs:
         working-directory: agent
         run: go test ./... -count=1
 
-      # Cross-compilation targets both architectures in the fleet: amd64 for
-      # the servers, arm64 because the package manifest already carries a
-      # linux-arm64 agent.
+      # Cross-compilation targets every architecture the installer maps:
+      # amd64 for the servers, arm64 for 64-bit ARM, armhf for 32-bit
+      # Raspberry Pi OS.
       - name: Build linux/amd64
         working-directory: agent
         env:
@@ -87,6 +87,22 @@ jobs:
             -trimpath \
             -o "techi-agent-linux-arm64.bin" .
 
+      # armhf = 32-bit ARM. GOARM=6 because the installer sends both armv6l
+      # (Pi Zero / Pi 1) and armv7l (Pi 2-4 on 32-bit OS) to this one
+      # package; an ARMv7 build would die with "illegal instruction" on v6.
+      - name: Build linux/armhf
+        working-directory: agent
+        env:
+          GOOS: linux
+          GOARCH: arm
+          GOARM: '6'
+          CGO_ENABLED: 0
+        run: |
+          go build \
+            -ldflags="-s -w -X main.AgentVersion=${{ steps.version.outputs.version }}" \
+            -trimpath \
+            -o "techi-agent-linux-armhf.bin" .
+
       # The checksum is the artifact's identity: the package manifest records a
       # sha256 per binary, and PROJECT_STATE requires the deployed agent to be
       # traceable to a build.
@@ -95,7 +111,8 @@ jobs:
         run: |
           sha256sum techi-agent-linux-amd64.bin > techi-agent-linux-amd64.bin.sha256
           sha256sum techi-agent-linux-arm64.bin > techi-agent-linux-arm64.bin.sha256
-          cat techi-agent-linux-amd64.bin.sha256 techi-agent-linux-arm64.bin.sha256
+          sha256sum techi-agent-linux-armhf.bin > techi-agent-linux-armhf.bin.sha256
+          cat techi-agent-linux-amd64.bin.sha256 techi-agent-linux-arm64.bin.sha256 techi-agent-linux-armhf.bin.sha256
 
       # Fail loudly rather than shipping a binary that is not what it claims:
       # a stripped Go binary for the wrong architecture is easy to miss by eye.
@@ -104,6 +121,7 @@ jobs:
         run: |
           file techi-agent-linux-amd64.bin | tee /dev/stderr | grep -q "x86-64"
           file techi-agent-linux-arm64.bin | tee /dev/stderr | grep -q "ARM aarch64"
+          file techi-agent-linux-armhf.bin | tee /dev/stderr | grep -q "32-bit LSB.*ARM, EABI5"
 
       - name: Confirm no Windows artifact was produced
         working-directory: agent
@@ -123,5 +141,7 @@ jobs:
             agent/techi-agent-linux-amd64.bin.sha256
             agent/techi-agent-linux-arm64.bin
             agent/techi-agent-linux-arm64.bin.sha256
+            agent/techi-agent-linux-armhf.bin
+            agent/techi-agent-linux-armhf.bin.sha256
           retention-days: 30
           if-no-files-found: error
