@@ -171,3 +171,11 @@ def test_remote_support_only_on_a_desktop_and_never_fails_the_install(monkeypatc
     assert 'if [ "$(uname -m)" = "armv6l" ]; then' in section
     assert "exit 1" not in section
     assert section.rstrip().endswith("exit 0")
+
+
+def test_an_installed_remote_support_is_kept_whatever_its_version(monkeypatch):
+    """A Pi with RustDesk 1.5.0 already on it: apt refuses the 1.4.6 downgrade,
+    so the installer must keep it and only write the ID server options."""
+    section = _remote_support_section(_script(monkeypatch))
+    assert "dpkg-query -W -f='${Status} ${Version}' rustdesk" in section
+    assert "already installed - keeping it." in section

@@ -234,8 +234,11 @@ has_desktop() {{
 }}
 
 install_remote_support() {{
-  if [ "$(dpkg-query -W -f='${{Version}}' rustdesk 2>/dev/null || true)" = "${{RS_VERSION}}" ]; then
-    echo "TECHI Remote Support ${{RS_VERSION}} already installed."
+  # An installed RustDesk is kept whatever its version (apt refuses to go
+  # back to 1.4.6 from a newer one); it only gets pointed at the platform.
+  RS_INSTALLED="$(dpkg-query -W -f='${{Status}} ${{Version}}' rustdesk 2>/dev/null || true)"
+  if [ "${{RS_INSTALLED#install ok installed }}" != "${{RS_INSTALLED}}" ]; then
+    echo "TECHI Remote Support ${{RS_INSTALLED#install ok installed }} already installed - keeping it."
   else
     RS_TMP="$(mktemp -d /tmp/techi-rs-XXXXXX)" || return 1
     chmod 755 "${{RS_TMP}}"
