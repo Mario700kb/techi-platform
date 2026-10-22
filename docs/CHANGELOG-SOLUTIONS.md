@@ -5,6 +5,32 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-22] CONNECT-DEFAULT-2026-10-22 — Connect launches the device's default (Remote Support on a Linux desktop); linux-amd64 package re-activated (`5527ea4`)
+
+**Backend + frontend deployed 19:17–19:18 (Tirana).**
+- Owner's request: on a new Raspberry Pi the main Connect opened the method
+  menu. It launched only an operator-saved default. It now launches the
+  saved default, else the device's own default (`preferred_method_id`), and
+  opens the menu only when neither is Ready. The menu stays on the drawer's
+  arrow ("Always use this option" still pins a method).
+- On Linux, `remote_support` (priority 5) comes before the Embedded Terminal,
+  so a desktop with Remote Support connects with it. A server without it
+  opens the terminal directly; MikroTik opens its Ready default directly.
+- Dump `/opt/backups/techi/pre-connect-default-20261022-191049.sql.gz`
+  (158 MB, `gzip -t` OK); rollback
+  `techi-platform-{backend,frontend}:pre-connect-default-8f8b817`; no
+  migration. The frontend image was built in 100 s with the host otherwise
+  idle (load at most 3.2, no stall). Guard and smoke passed, 0 tracebacks.
+- **linux-amd64 had no active package** since 14:25–14:33 that day. 2.1.33
+  was active in the 14:25:37 manifest backup and inactive in the 14:33:54
+  one, while the armhf 2.1.36/2.1.37 packages were being handled. It was most
+  likely the ⏻ toggle on the wrong row; activation writes no audit record.
+  The Linux installer's download and the Deployment page's
+  `/packages/latest?platform=linux-amd64` answered 404 meanwhile.
+  Re-activated 19:10 on the owner's OK (backup
+  `manifest.json.bak-pre-linux-amd64-reactivate-*`); latest 200, download
+  hash `140ad79a…`.
+
 ## [2026-10-22] LINUX-RS-ID-2026-10-22 — Linux agent reports the running client's Remote Support ID (agent 2.1.37, 2.1.38); table rows show Connect alone (`11aa80e`, `a06ccc7`, `14581f8`)
 
 **`linux-armhf` 2.1.37 active ~14:50; 2.1.38 active 18:50 (Tirana). Frontend
