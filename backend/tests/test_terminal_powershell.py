@@ -98,6 +98,24 @@ def test_a_windows_device_without_the_new_agent_has_no_console(monkeypatch):
     assert r.status_code == 400
 
 
+def test_a_linux_device_opens_a_root_terminal_only_after_the_code(monkeypatch):
+    client, db = _client(monkeypatch, capabilities={"terminal": "", "remote_support": ""}, platform="linux")
+    assert client.post("/devices/924/terminal/sessions", json={"engine": "bash"}).status_code == 403
+    r = client.post("/devices/924/terminal/sessions", json={"engine": "powershell", "mfa_code": "123456"})
+    assert r.status_code == 200, r.text
+    # Never PowerShell on Linux, whatever was asked.
+    assert db.get(TerminalSession, r.json()["session_id"]).engine == "bash"
+    assert _denials(db) == ["mfa_invalid"]
+
+
+def test_a_linux_operator_without_two_factor_gets_no_root_terminal(monkeypatch):
+    client, _ = _client(monkeypatch, capabilities={"terminal": ""}, platform="linux", mfa_enabled=False)
+    r = client.post("/devices/924/terminal/sessions", json={"engine": "bash", "mfa_code": "123456"})
+    assert r.status_code == 403
+    assert r.json()["detail"]["code"] == "mfa_not_enabled"
+    assert "root terminal" in r.json()["detail"]["detail"]
+
+
 # ── recording ───────────────────────────────────────────────────────────────
 
 SESSION = "0123456789abcdef0123456789abcdef"
@@ -115,6 +133,14 @@ def test_the_recording_holds_the_console_output_as_asciicast(recordings):
     assert [json.loads(line)[1:] for line in lines[1:]] == [
         ["o", "PS C:\\Windows\\system32> "], ["o", "Get-Service\r\n"], ["r", "160x40"],
     ]
+
+
+def test_a_linux_root_terminal_is_recorded_as_a_shell(recordings):
+    recorder = TerminalRecorder(SESSION, title="Terminal on pickuprc02 by denis", shell="bash")
+    recorder.output("root@pickuprc02:~# ")
+    recorder.close()
+    header = json.loads((recordings / f"{SESSION}.cast").read_text(encoding="utf-8").splitlines()[0])
+    assert header["env"]["SHELL"] == "bash" and header["title"] == "Terminal on pickuprc02 by denis"
 
 
 def test_a_recording_stops_at_its_size_cap(recordings, monkeypatch):

@@ -347,17 +347,20 @@ export default function Devices() {
   // window instead of opening a duplicate session.
   const openDeviceTerminal = useCallback((device: Device) => {
     const name = deviceDisplayName(device);
-    const url = `/terminal/${device.id}?name=${encodeURIComponent(name)}`;
+    // Linux: the root console, opened with a two-factor code like PowerShell.
+    const engine = /^linux/i.test(device.platform || "") ? "engine=bash&" : "";
+    const url = `/terminal/${device.id}?${engine}name=${encodeURIComponent(name)}`;
     const features = "width=1024,height=640,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes";
     const win = window.open(url, `techi-terminal-${device.id}`, features);
     if (win) {
       win.focus();
       return;
     }
-    // Popup blocked: fall back to the drawer's Terminal tab so the click still
-    // does something rather than silently failing.
+    // Popup blocked: fall back to the drawer's Terminal tab (Linux: the
+    // Maintenance console) so the click still does something rather than
+    // silently failing.
     window.clearTimeout(drawerCloseTimerRef.current);
-    setDrawerInitialTab("terminal");
+    setDrawerInitialTab(/^linux/i.test(device.platform || "") ? "management" : "terminal");
     setDrawerDeviceId(device.id);
     setDrawerOpen(true);
   }, []);
@@ -1144,6 +1147,7 @@ export default function Devices() {
             canOperate={can("operator")}
             isFavorite={drawerDevice ? favorites.has(drawerDevice.id) : false}
             onToggleFavorite={toggleFavorite}
+            initialTab={drawerInitialTab}
           />
         ))}
     </section>

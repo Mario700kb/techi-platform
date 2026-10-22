@@ -142,7 +142,8 @@ function mergeDeviceEvent(device: Device, event: DeviceRealtimeEvent | null): De
 function openTerminalWindow(device: Device): boolean {
   const name = deviceDisplayName(device);
   const win = window.open(
-    `/terminal/${device.id}?name=${encodeURIComponent(name)}`,
+    // Linux: the root console, opened with a two-factor code like PowerShell.
+    `/terminal/${device.id}?${/^linux/i.test(device.platform || "") ? "engine=bash&" : ""}name=${encodeURIComponent(name)}`,
     `techi-terminal-${device.id}`,
     "width=1024,height=640,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes",
   );

@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { Suspense, lazy } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { getDevice, type Device } from "../api/devices";
-import type { TerminalSession } from "../api/terminal";
-import { PowerShellCodeForm } from "../components/PowerShellStepUp";
+import type { ConsoleKind, TerminalSession } from "../api/terminal";
+import { consoleCopy, PowerShellCodeForm } from "../components/PowerShellStepUp";
 import { takePowerShellPrefill } from "../utils/powershellPrefill";
 import PowerShellConsole from "../components/powershell/PowerShellConsole";
 
@@ -20,8 +20,9 @@ const DeviceTerminal = lazy(() => import("../components/DeviceTerminal"));
  * Deliberately chrome-free: no sidebar, no topbar. The window IS the terminal,
  * and the terminal fills it.
  *
- * `?engine=powershell` (Windows, from the drawer's Maintenance tab): the
- * administrator PowerShell. A console ticket is single-use, so this window
+ * `?engine=powershell` (Windows) or `?engine=bash` (Linux), from the drawer's
+ * Maintenance tab or Connect: the administrator console — PowerShell as
+ * SYSTEM, or the root shell. A console ticket is single-use, so this window
  * opens its own session — after its own two-factor code — rather than taking
  * over one the drawer holds.
  */
@@ -30,24 +31,37 @@ export default function TerminalWindow() {
   const [params] = useSearchParams();
   const deviceId = Number(id);
   const name = params.get("name") || `Device #${deviceId}`;
-  const powershell = params.get("engine") === "powershell";
+  const engine = params.get("engine");
+  // Client, signed-in user and OS for the header and side panel; best-effort.
+  // Without `engine` it also tells whether this is a Linux device: its shell
+  // is the root console too (an old link must not open one without the code).
+  const [device, setDevice] = useState<Device | null>(null);
+  const [deviceLoaded, setDeviceLoaded] = useState(false);
+  const kind: ConsoleKind | null =
+    engine === "powershell"
+      ? "powershell"
+      : engine === "bash" || /^linux/i.test(device?.platform || "")
+        ? "linux"
+        : null;
+  const powershell = kind === "powershell";
+  const adminConsole = kind !== null;
+  const copy = consoleCopy(kind ?? "powershell");
   // "Open in PowerShell" from an alert leaves the command for this window.
   const [prefill] = useState(() =>
     powershell && params.get("prefill") === "1" && Number(id) > 0 ? takePowerShellPrefill(Number(id)) : null,
   );
   const [session, setSession] = useState<TerminalSession | null>(null);
-  // Client, signed-in user and OS for the header and side panel; best-effort.
-  const [device, setDevice] = useState<Device | null>(null);
   useEffect(() => {
-    if (!powershell || !Number.isFinite(deviceId) || deviceId <= 0) return;
+    if (!Number.isFinite(deviceId) || deviceId <= 0) return;
     let cancelled = false;
     getDevice(deviceId)
       .then((d) => !cancelled && setDevice(d))
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => !cancelled && setDeviceLoaded(true));
     return () => {
       cancelled = true;
     };
-  }, [deviceId, powershell]);
+  }, [deviceId]);
 
   useEffect(() => {
     const previous = document.title;
@@ -62,8 +76,10 @@ export default function TerminalWindow() {
   }
 
   const fallback = <div className="py-8 text-center text-sm th-text-muted">Loading terminal…</div>;
+  // No engine asked: wait to know the platform before opening anything.
+  if (!engine && !deviceLoaded) return <div className="flex h-screen items-center justify-center">{fallback}</div>;
 
-  if (powershell) {
+  if (adminConsole) {
     return (
       <div className="fixed inset-0 overflow-hidden th-bg max-[860px]:overflow-y-auto">
         {session ? (
@@ -79,21 +95,22 @@ export default function TerminalWindow() {
             onEnd={() => undefined}
             onNewSession={() => setSession(null)}
             initialCommand={prefill}
+            kind={kind}
           />
         ) : (
           <div className="flex h-full flex-col">
             <div className="flex items-center gap-3 border-b th-border px-4 py-3">
               <div className="min-w-0 truncate text-[14px] font-semibold th-text">
-                {name} · PowerShell (Administrator)
+                {name} · {powershell ? "PowerShell (Administrator)" : "Terminal (root)"}
               </div>
               <div className="ml-auto flex-none text-[12px] th-text-muted">
-                Two-factor code needed · runs as SYSTEM · recorded
+                Two-factor code needed · runs as {powershell ? "SYSTEM" : "root"} · recorded
               </div>
             </div>
             <div className="flex min-h-0 flex-1 items-center justify-center p-6">
               <div className="th-drawer-card w-full max-w-sm">
-                <p className="mb-3 text-[14px] font-semibold th-text">Open PowerShell as administrator</p>
-                <PowerShellCodeForm deviceId={deviceId} formId="ps-window" onOpened={setSession} />
+                <p className="mb-3 text-[14px] font-semibold th-text">{copy.title}</p>
+                <PowerShellCodeForm deviceId={deviceId} formId="ps-window" onOpened={setSession} kind={kind} />
               </div>
             </div>
           </div>

@@ -114,6 +114,8 @@ interface DeviceDrawerProps {
   canOperate?: boolean;
   isFavorite?: boolean;
   onToggleFavorite?: (deviceId: number) => void;
+  /** Tab to open on (e.g. "management" for a Linux console from Connect). */
+  initialTab?: string;
 }
 
 /** Recently resolved alerts shown before "Show N more". */
@@ -271,6 +273,7 @@ export default function DeviceDrawer({
   canOperate = false,
   isFavorite = false,
   onToggleFavorite,
+  initialTab,
 }: DeviceDrawerProps) {
   useNow();
   const { user, hasPermission, can } = useAuth();
@@ -456,8 +459,8 @@ export default function DeviceDrawer({
   }, [isOpen, onClose]);
 
   useEffect(() => {
-    setActiveTab("overview");
-  }, [device.id]);
+    setActiveTab(initialTab && drawerTabs.some((t) => t.id === initialTab) ? (initialTab as DrawerTab) : "overview");
+  }, [device.id, initialTab]);
 
   const { reload: reloadInventory } = inventoryQuery;
   const loadInventory = useCallback(() => {
@@ -626,19 +629,29 @@ export default function DeviceDrawer({
       }
     : null;
 
+  const isWindows = !device.platform || /^windows/i.test(device.platform);
+  // Linux has the Windows drawer too: its root shell lives in Maintenance, as
+  // the administrator console, where PowerShell is on Windows.
+  const isLinux = /^linux/i.test(device.platform || "");
+  const terminalCapable = Boolean(device.capabilities && "terminal" in device.capabilities);
   // Capability-driven Terminal tab: only when FEATURE_TERMINAL is on AND the
   // device reports the terminal capability. Inserted after Remote Support so the
-  // Connect-oriented tabs sit together; Windows (no terminal cap) never sees it.
-  const hasTerminal =
-    platformFeatures.FEATURE_TERMINAL && Boolean(device.capabilities && "terminal" in device.capabilities);
+  // Connect-oriented tabs sit together; Windows (no terminal cap) and Linux
+  // (its console is in Maintenance) never see it.
+  const hasTerminal = platformFeatures.FEATURE_TERMINAL && terminalCapable && !isLinux;
   const visibleDrawerTabs = hasTerminal
     ? [...drawerTabs.slice(0, 3), { id: "terminal" as DrawerTab, label: "Terminal" }, ...drawerTabs.slice(3)]
     : drawerTabs;
-  // Administrator PowerShell (Windows, agent 2.1.29+): admin/owner only, behind
-  // the same platform flag as the terminal. The backend enforces both again.
-  const isWindows = !device.platform || /^windows/i.test(device.platform);
-  const showPowerShell = isWindows && platformFeatures.FEATURE_TERMINAL && can("admin");
-  const powerShellCapable = Boolean(device.capabilities && "powershell" in device.capabilities);
+  // Administrator console — PowerShell (Windows, agent 2.1.29+) or the root
+  // shell (Linux): admin/owner only, behind the same platform flag as the
+  // terminal, opened with a two-factor code. The backend enforces all again.
+  const showPowerShell = (isWindows || isLinux) && platformFeatures.FEATURE_TERMINAL && can("admin");
+  const powerShellCapable = isLinux
+    ? terminalCapable
+    : Boolean(device.capabilities && "powershell" in device.capabilities);
+  // Agent actions a Linux agent answers "not supported" to.
+  const linuxUnsupported = new Set<ActionType>(["apply_power_policy", "reopen_rustdesk", "repair_config_rustdesk"]);
+  const supported = (type: ActionType) => !(isLinux && linuxUnsupported.has(type));
 
   return (
     <>
@@ -821,7 +834,13 @@ export default function DeviceDrawer({
                   mainDisabledReason={canConnectRs ? null : connectRsTitle}
                   mainHint={connectRsTitle}
                   onRemoteSupport={() => void connectRemoteSupport()}
-                  onOpenTerminal={hasTerminal ? () => setActiveTab("terminal") : undefined}
+                  onOpenTerminal={
+                    hasTerminal
+                      ? () => setActiveTab("terminal")
+                      : isLinux && showPowerShell
+                        ? () => setActiveTab("management")
+                        : undefined
+                  }
                 />
               </div>
             ) : (
@@ -1634,6 +1653,7 @@ export default function DeviceDrawer({
                     }) => {
                       const allowed = hasPermission(perm);
                       if (destructive && !allowed) return null;
+                      if (!supported(type)) return null;
                       return (
                         <DrawerActionTile
                           type={type}
@@ -1770,6 +1790,7 @@ export default function DeviceDrawer({
                 capable={powerShellCapable}
                 active={isOpen && activeTab === "management"}
                 offline={offline}
+                kind={isLinux ? "linux" : "powershell"}
               />
             )}
           </div>
@@ -2282,7 +2303,7 @@ export default function DeviceDrawer({
                         />
                       )}
                       {/* Reopen */}
-                      {hasPermission("remote_support_manage") && (
+                      {hasPermission("remote_support_manage") && supported("reopen_rustdesk") && (
                         <DrawerActionTile
                           type="reopen_rustdesk"
                           label="Reopen app"
@@ -2307,7 +2328,7 @@ export default function DeviceDrawer({
                         />
                       )}
                       {/* Reinstall — destructive, triggers existing confirmation modal */}
-                      {hasPermission("reinstall_remote_support") && (
+                      {hasPermission("reinstall_remote_support") && !isLinux && (
                         <DrawerActionTile
                           type="reinstall_rustdesk"
                           label="Reinstall"
@@ -2343,7 +2364,7 @@ const ACTION_META: Partial<Record<ActionType, { icon: typeof Activity; hint: str
   sync_rustdesk: { icon: Fingerprint, hint: "Re-check and repair the ID" },
   reopen_rustdesk: { icon: AppWindow, hint: "Reopen the Remote Support app" },
   repair_config_rustdesk: { icon: Wrench, hint: "Rewrite the server configuration" },
-  restart_device: { icon: Power, hint: "Reboot Windows now" },
+  restart_device: { icon: Power, hint: "Reboot the device now" },
   reinstall_rustdesk: { icon: Download, hint: "Remove and install again" },
 };
 

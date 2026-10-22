@@ -56,8 +56,8 @@ _require_admin = require_min_role(OperatorRole.ADMIN.value)
 
 class TerminalSessionCreate(BaseModel):
     engine: str = "bash"
-    # Administrator PowerShell (Windows): a current two-factor code, asked for
-    # every time a session is opened.
+    # Administrator PowerShell (Windows) and the root terminal (Linux): a
+    # current two-factor code, asked for every time a session is opened.
     mfa_code: Optional[str] = None
 
 
@@ -77,9 +77,13 @@ def _ws_base() -> str:
     return base
 
 
-def _is_windows(device) -> bool:
+def _platform_id(device) -> str:
     descriptor = resolve_platform(device.platform)
-    return (descriptor.id if descriptor is not None else "windows") == "windows"
+    return descriptor.id if descriptor is not None else "windows"
+
+
+def _is_windows(device) -> bool:
+    return _platform_id(device) == "windows"
 
 
 def _has_terminal_capability(device) -> bool:
@@ -90,9 +94,15 @@ def _has_terminal_capability(device) -> bool:
     return "terminal" in caps or (_is_windows(device) and "powershell" in caps)
 
 
-def _require_powershell_step_up(db: Session, operator: Operator, device_id: int, code: Optional[str]) -> None:
-    """A console with full rights on a Windows device: the operator proves it
-    is them again with a two-factor code, whatever their session says."""
+_CONSOLE_NAME = {"powershell": "an administrator PowerShell", "bash": "a root terminal", "sh": "a root terminal"}
+
+
+def _require_console_step_up(
+    db: Session, operator: Operator, device_id: int, code: Optional[str], engine: str = "powershell",
+) -> None:
+    """A console with full rights on the device (PowerShell as SYSTEM on
+    Windows, a root shell on Linux): the operator proves it is them again with
+    a two-factor code, whatever their session says."""
     from app.services.mfa_service import MfaService
 
     reason = None
@@ -103,10 +113,11 @@ def _require_powershell_step_up(db: Session, operator: Operator, device_id: int,
     if reason is None:
         return
     audit_log(db, operator=operator, action=AuditAction.TERMINAL_SESSION_DENIED, entity_type="device",
-              entity_id=device_id, details={"reason": reason, "engine": "powershell"})
+              entity_id=device_id, details={"reason": reason, "engine": engine})
+    console = _CONSOLE_NAME.get(engine, "a console")
     detail = (
-        "Turn on two-factor authentication to open an administrator PowerShell."
-        if reason == "mfa_not_enabled" else "Enter a current two-factor code to open an administrator PowerShell."
+        f"Turn on two-factor authentication to open {console}."
+        if reason == "mfa_not_enabled" else f"Enter a current two-factor code to open {console}."
     )
     raise HTTPException(status_code=403, detail={"code": reason, "detail": detail})
 
@@ -146,11 +157,17 @@ def create_terminal_session(
         raise HTTPException(status_code=403, detail="Terminal is not yet enabled for this device (rollout scope)")
 
     engine = payload.engine
-    if _is_windows(device):
+    platform_id = _platform_id(device)
+    if platform_id == "windows":
         # Whatever the caller asked for, a Windows device opens PowerShell —
         # and only after the two-factor check.
         engine = "powershell"
-        _require_powershell_step_up(db, operator, device_id, payload.mfa_code)
+        _require_console_step_up(db, operator, device_id, payload.mfa_code, engine)
+    elif platform_id == "linux":
+        # The Linux console is a root shell: the same two-factor step and
+        # recording as the Windows administrator PowerShell.
+        engine = engine if engine in ("bash", "sh") else "bash"
+        _require_console_step_up(db, operator, device_id, payload.mfa_code, engine)
 
     svc = TerminalService(db)
     session, operator_ticket, agent_ticket = svc.create_session(
@@ -273,7 +290,7 @@ def get_terminal_recording(
     db: Session = Depends(get_db),
     operator: Operator = Depends(_require_admin),
 ):
-    """The asciicast recording of an administrator PowerShell session."""
+    """The asciicast recording of an administrator console session (PowerShell or the Linux root shell)."""
     from fastapi.responses import FileResponse
 
     from app.models.terminal_session import TerminalSession

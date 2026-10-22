@@ -1,11 +1,16 @@
 import { lazy, Suspense, useState } from "react";
 import { Download, ExternalLink, PlaySquare, RotateCcw, Terminal as TerminalIcon } from "lucide-react";
-import { listConsoleSessions, type ConsoleSessionSummary, type TerminalSession } from "../api/terminal";
+import {
+  listConsoleSessions,
+  type ConsoleKind,
+  type ConsoleSessionSummary,
+  type TerminalSession,
+} from "../api/terminal";
 import { formatDuration } from "../api/monitoring";
 import { useCachedQuery } from "../hooks/useCachedQuery";
 import { formatLocalDateTime, parseUTC, timeAgo } from "../utils/time";
 import { downloadConsoleRecording } from "./consoleDownload";
-import { POWERSHELL_TERMS, PowerShellOpenModal } from "./PowerShellStepUp";
+import { consoleCopy, PowerShellOpenModal } from "./PowerShellStepUp";
 import PowerShellConsole from "./powershell/PowerShellConsole";
 import { Button } from "./ui";
 
@@ -40,9 +45,10 @@ export function endReason(s: ConsoleSessionSummary): string {
 }
 
 /**
- * Maintenance tab, Windows: the administrator PowerShell (opened with a fresh
- * two-factor code, recorded, closed by the platform after 15 min idle or 60
- * min) and the device's console history with replay and download.
+ * Maintenance tab: the administrator console — PowerShell on Windows, the
+ * root terminal on Linux — opened with a fresh two-factor code, recorded,
+ * closed by the platform after 15 min idle or 60 min, and the device's
+ * console history with replay and download.
  */
 export default function DevicePowerShellPanel({
   deviceId,
@@ -53,6 +59,7 @@ export default function DevicePowerShellPanel({
   capable,
   active,
   offline,
+  kind = "powershell",
 }: {
   deviceId: number;
   deviceName: string;
@@ -65,7 +72,11 @@ export default function DevicePowerShellPanel({
   /** The Maintenance tab is showing; history loads on first show. */
   active: boolean;
   offline: boolean;
+  /** PowerShell as SYSTEM (Windows) or the root shell (Linux). */
+  kind?: ConsoleKind;
 }) {
+  const linux = kind === "linux";
+  const copy = consoleCopy(kind);
   const [askCode, setAskCode] = useState(false);
   const [session, setSession] = useState<TerminalSession | null>(null);
   const [endedText, setEndedText] = useState("");
@@ -100,8 +111,8 @@ export default function DevicePowerShellPanel({
 
   const openOwnWindow = () => {
     window.open(
-      `/terminal/${deviceId}?engine=powershell&name=${encodeURIComponent(deviceName)}`,
-      `techi-powershell-${deviceId}`,
+      `/terminal/${deviceId}?engine=${linux ? "bash" : "powershell"}&name=${encodeURIComponent(deviceName)}`,
+      `techi-${linux ? "terminal" : "powershell"}-${deviceId}`,
       "popup,width=1100,height=720",
     );
   };
@@ -109,9 +120,9 @@ export default function DevicePowerShellPanel({
   const sessions = history.data ?? [];
 
   return (
-    <section className="mb-4" aria-label="PowerShell">
+    <section className="mb-4" aria-label={copy.name}>
       <div className="mb-2 flex items-center justify-between gap-2">
-        <p className="premium-kicker">PowerShell · Administrator</p>
+        <p className="premium-kicker">{linux ? "Terminal · root" : "PowerShell · Administrator"}</p>
         {capable && !session && (
           <button
             type="button"
@@ -128,7 +139,9 @@ export default function DevicePowerShellPanel({
       {!capable ? (
         <div className="th-drawer-card">
           <p className="text-[13px]" style={{ color: "var(--th-text-muted)" }}>
-            Needs agent 2.1.29 on Windows 10 1809 / Server 2019 or newer.
+            {linux
+              ? "Needs the TECHI agent with the terminal capability on this device."
+              : "Needs agent 2.1.29 on Windows 10 1809 / Server 2019 or newer."}
           </p>
         </div>
       ) : session ? (
@@ -144,6 +157,7 @@ export default function DevicePowerShellPanel({
           onEnd={endSession}
           onNewSession={() => setAskCode(true)}
           onClosed={() => void reloadHistory()}
+          kind={kind}
         />
       ) : (
         <div className="th-drawer-card">
@@ -156,7 +170,7 @@ export default function DevicePowerShellPanel({
                 Administrator console
               </p>
               <ul className="mt-1 space-y-0.5">
-                {POWERSHELL_TERMS.map(({ text }) => (
+                {copy.terms.map(({ text }) => (
                   <li key={text} className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>
                     {text}
                   </li>
@@ -171,7 +185,7 @@ export default function DevicePowerShellPanel({
               title={offline ? "The device is offline" : undefined}
             >
               <TerminalIcon className="h-4 w-4" />
-              Open PowerShell
+              {copy.action}
             </Button>
           </div>
           {endedText && (
@@ -282,6 +296,7 @@ export default function DevicePowerShellPanel({
           deviceName={deviceName}
           onOpened={onOpened}
           onClose={() => setAskCode(false)}
+          kind={kind}
         />
       )}
       {replay && (

@@ -1,6 +1,11 @@
 import { FormEvent, useState } from "react";
 import { Lock, ShieldCheck, Terminal as TerminalIcon, Timer } from "lucide-react";
-import { createPowerShellSession, PowerShellStepUpError, type TerminalSession } from "../api/terminal";
+import {
+  createPowerShellSession,
+  PowerShellStepUpError,
+  type ConsoleKind,
+  type TerminalSession,
+} from "../api/terminal";
 import { Button, Modal } from "./ui";
 
 /** What the operator is agreeing to, in three short lines. */
@@ -10,18 +15,37 @@ export const POWERSHELL_TERMS = [
   { icon: Timer, text: "Closes after 15 min idle (60 min at most)" },
 ] as const;
 
-export function stepUpMessage(err: unknown): string {
+export const LINUX_TERMS = [
+  { icon: ShieldCheck, text: "Runs as root, with full rights on the device" },
+  { icon: Lock, text: "Everything the console shows is recorded" },
+  { icon: Timer, text: "Closes after 15 min idle (60 min at most)" },
+] as const;
+
+/** The console's name, terms and button for each kind. */
+export function consoleCopy(kind: ConsoleKind) {
+  return kind === "linux"
+    ? { name: "Terminal", title: "Open the root terminal", action: "Open terminal", terms: LINUX_TERMS }
+    : {
+        name: "PowerShell",
+        title: "Open PowerShell as administrator",
+        action: "Open PowerShell",
+        terms: POWERSHELL_TERMS,
+      };
+}
+
+export function stepUpMessage(err: unknown, kind: ConsoleKind = "powershell"): string {
   if (err instanceof PowerShellStepUpError) {
     return err.code === "mfa_not_enabled"
       ? "Two-factor is off for your account. Turn it on in Settings → Security, then try again."
       : "Wrong or expired code. Enter the current code from your app.";
   }
-  return err instanceof Error && err.message ? err.message : "Could not open PowerShell.";
+  return err instanceof Error && err.message ? err.message : `Could not open ${consoleCopy(kind).name}.`;
 }
 
 /**
- * The two-factor step before an administrator PowerShell: asked every time,
- * whatever the operator's session says. Resolves with the new session.
+ * The two-factor step before an administrator console (PowerShell on Windows,
+ * the root terminal on Linux): asked every time, whatever the operator's
+ * session says. Resolves with the new session.
  */
 export function PowerShellCodeForm({
   deviceId,
@@ -29,13 +53,16 @@ export function PowerShellCodeForm({
   onOpened,
   onBusy,
   showSubmit = true,
+  kind = "powershell",
 }: {
   deviceId: number;
   formId: string;
   onOpened: (session: TerminalSession) => void;
   onBusy?: (busy: boolean) => void;
   showSubmit?: boolean;
+  kind?: ConsoleKind;
 }) {
+  const copy = consoleCopy(kind);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,10 +74,10 @@ export function PowerShellCodeForm({
     onBusy?.(true);
     setError(null);
     try {
-      const session = await createPowerShellSession(deviceId, code);
+      const session = await createPowerShellSession(deviceId, code, kind);
       onOpened(session);
     } catch (err) {
-      setError(stepUpMessage(err));
+      setError(stepUpMessage(err, kind));
       setCode("");
     } finally {
       setBusy(false);
@@ -61,7 +88,7 @@ export function PowerShellCodeForm({
   return (
     <form id={formId} onSubmit={(e) => void submit(e)} className="space-y-4">
       <ul className="space-y-2">
-        {POWERSHELL_TERMS.map(({ icon: Icon, text }) => (
+        {copy.terms.map(({ icon: Icon, text }) => (
           <li
             key={text}
             className="flex items-center gap-2.5 text-[13px]"
@@ -95,7 +122,7 @@ export function PowerShellCodeForm({
       {showSubmit && (
         <Button type="submit" className="w-full" disabled={busy || code.length !== 6}>
           <TerminalIcon className="h-4 w-4" />
-          {busy ? "Checking…" : "Open PowerShell"}
+          {busy ? "Checking…" : copy.action}
         </Button>
       )}
     </form>
@@ -108,17 +135,20 @@ export function PowerShellOpenModal({
   deviceName,
   onOpened,
   onClose,
+  kind = "powershell",
 }: {
   deviceId: number;
   deviceName: string;
   onOpened: (session: TerminalSession) => void;
   onClose: () => void;
+  kind?: ConsoleKind;
 }) {
   const [busy, setBusy] = useState(false);
   const formId = `ps-open-${deviceId}`;
+  const copy = consoleCopy(kind);
   return (
     <Modal
-      title="Open PowerShell as administrator"
+      title={copy.title}
       subtitle={deviceName}
       icon={TerminalIcon}
       tone="warning"
@@ -131,12 +161,19 @@ export function PowerShellOpenModal({
             Cancel
           </Button>
           <Button type="submit" form={formId} size="sm" disabled={busy}>
-            {busy ? "Checking…" : "Open PowerShell"}
+            {busy ? "Checking…" : copy.action}
           </Button>
         </>
       }
     >
-      <PowerShellCodeForm deviceId={deviceId} formId={formId} onOpened={onOpened} onBusy={setBusy} showSubmit={false} />
+      <PowerShellCodeForm
+        deviceId={deviceId}
+        formId={formId}
+        onOpened={onOpened}
+        onBusy={setBusy}
+        showSubmit={false}
+        kind={kind}
+      />
     </Modal>
   );
 }

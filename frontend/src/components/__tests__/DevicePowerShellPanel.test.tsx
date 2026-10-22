@@ -59,7 +59,7 @@ const SESSION = {
   expires_in_seconds: 60,
 };
 
-function renderPanel(capable = true) {
+function renderPanel(capable = true, kind: "powershell" | "linux" = "powershell") {
   return render(
     <DevicePowerShellPanel
       deviceId={9}
@@ -69,6 +69,7 @@ function renderPanel(capable = true) {
       capable={capable}
       active
       offline={false}
+      kind={kind}
     />,
   );
 }
@@ -105,7 +106,7 @@ describe("DevicePowerShellPanel", () => {
     expect(input).toHaveValue("123456");
     fireEvent.click(within(dialog).getByRole("button", { name: "Open PowerShell" }));
     expect(await within(dialog).findByRole("alert")).toHaveTextContent("Wrong or expired code");
-    expect(createSession).toHaveBeenCalledWith(9, "123456");
+    expect(createSession).toHaveBeenCalledWith(9, "123456", "powershell");
 
     fireEvent.change(input, { target: { value: "654321" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Open PowerShell" }));
@@ -127,6 +128,23 @@ describe("DevicePowerShellPanel", () => {
     fireEvent.click(within(console).getByRole("button", { name: "End session" }));
     expect(screen.queryByTestId("fake-terminal")).toBeNull();
     expect(screen.getByRole("button", { name: /Open PowerShell/ })).toBeInTheDocument();
+  });
+
+  it("on Linux opens the root terminal with the same two-factor step, without PowerShell scripts", async () => {
+    createSession.mockResolvedValueOnce(SESSION);
+    renderPanel(true, "linux");
+    expect(screen.getByText("Terminal · root")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Open terminal/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Runs as root, with full rights on the device")).toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText("Two-factor code"), { target: { value: "123456" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Open terminal" }));
+    expect(await screen.findByTestId("fake-terminal")).toHaveTextContent("new-1");
+    expect(createSession).toHaveBeenCalledWith(9, "123456", "linux");
+    const console = screen.getByTestId("powershell-console");
+    expect(within(console).getByText("Mario-Lenovo · Terminal (root)")).toBeInTheDocument();
+    expect(within(console).getByText("Northwind Clinic · #9 · runs as root over the live channel")).toBeInTheDocument();
+    expect(within(console).queryByText(/Saved scripts/i)).toBeNull();
   });
 
   it("lists console history with replay and download", async () => {

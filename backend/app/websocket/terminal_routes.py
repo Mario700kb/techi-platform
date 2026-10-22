@@ -136,12 +136,17 @@ async def operator_terminal_ws(websocket: WebSocket, session_id: str, ticket: st
 
 
 async def _start_recording(db, svc, session) -> None:
-    """An administrator PowerShell session is recorded from the moment the
-    device's console connects, before its first byte reaches the operator."""
+    """An administrator console (PowerShell on Windows, the root shell on
+    Linux) is recorded from the moment the device's console connects, before
+    its first byte reaches the operator."""
     from app.services.terminal_recording import TerminalRecorder
 
     host, _ = _device_context(db, session.device_id)
-    recorder = TerminalRecorder(session.id, title=f"PowerShell on {host} by {session.operator_username or 'operator'}")
+    shell = "powershell" if session.engine == "powershell" else session.engine
+    name = "PowerShell" if shell == "powershell" else "Terminal"
+    recorder = TerminalRecorder(
+        session.id, title=f"{name} on {host} by {session.operator_username or 'operator'}", shell=shell,
+    )
     if recorder.path is not None:
         session.recording_path = str(recorder.path)
         db.commit()
@@ -163,7 +168,7 @@ async def agent_terminal_ws(websocket: WebSocket, session_id: str, ticket: str =
             return
         await websocket.accept()
         logger.info("terminal agent WS attached: session_id=%s device_id=%s", session_id, session.device_id)
-        if session.engine == "powershell":
+        if session.engine in ("powershell", "bash", "sh"):
             await _start_recording(db, svc, session)
         pair = await terminal_relay.attach_agent(session_id, websocket)
         if pair.operator is not None:

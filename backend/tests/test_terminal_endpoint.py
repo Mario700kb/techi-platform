@@ -18,6 +18,7 @@ from app.db.session import get_db
 from app.models.audit_log import AuditLog
 from app.models.device import Device, DeviceStatus, DeviceType
 from app.models.operator import OperatorRole
+from app.services.mfa_service import MfaService
 
 
 def _client(
@@ -38,6 +39,8 @@ def _client(
     monkeypatch.setattr(settings, "FEATURE_TERMINAL_ALLOWED_DEVICE_IDS", devices)
     monkeypatch.setattr(settings, "FEATURE_TERMINAL_ALLOWED_GROUPS", groups)
     monkeypatch.setattr(settings, "FEATURE_TERMINAL_ALLOWED_CLIENTS", clients)
+    # A Linux console is a root shell: it opens with a current two-factor code.
+    monkeypatch.setattr(MfaService, "verify", lambda self, operator, code: "totp" if code == "123456" else None)
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(bind=engine)
     db = sessionmaker(bind=engine)()
@@ -49,7 +52,7 @@ def _client(
     db.commit()
     app = FastAPI()
     app.include_router(terminal_endpoint.router)
-    operator = SimpleNamespace(id=1, username="mario", role=OperatorRole.ADMIN.value)
+    operator = SimpleNamespace(id=1, username="mario", role=OperatorRole.ADMIN.value, mfa_enabled=True)
     app.dependency_overrides[get_db] = lambda: db
     app.dependency_overrides[get_current_operator] = lambda: operator
     return TestClient(app), db
@@ -62,19 +65,19 @@ def _client_only(*args, **kwargs):
 
 def test_404_when_flag_off(monkeypatch):
     client = _client_only(monkeypatch, flag_on=False, capabilities={"terminal": ""})
-    r = client.post("/devices/7/terminal/sessions", json={"engine": "bash"})
+    r = client.post("/devices/7/terminal/sessions", json={"engine": "bash", "mfa_code": "123456"})
     assert r.status_code == 404
 
 
 def test_400_when_device_lacks_terminal_capability(monkeypatch):
     client = _client_only(monkeypatch, flag_on=True, capabilities={"docker": "26.1"})
-    r = client.post("/devices/7/terminal/sessions", json={"engine": "bash"})
+    r = client.post("/devices/7/terminal/sessions", json={"engine": "bash", "mfa_code": "123456"})
     assert r.status_code == 400
 
 
 def test_creates_session_and_returns_ws_path(monkeypatch):
     client, db = _client(monkeypatch, flag_on=True, capabilities={"terminal": "", "bash": ""})
-    r = client.post("/devices/7/terminal/sessions", json={"engine": "bash"})
+    r = client.post("/devices/7/terminal/sessions", json={"engine": "bash", "mfa_code": "123456"})
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["session_id"]
@@ -100,25 +103,25 @@ def test_creates_session_and_returns_ws_path(monkeypatch):
 
 def test_unknown_device_404(monkeypatch):
     client = _client_only(monkeypatch, flag_on=True, capabilities={"terminal": ""})
-    r = client.post("/devices/999/terminal/sessions", json={"engine": "bash"})
+    r = client.post("/devices/999/terminal/sessions", json={"engine": "bash", "mfa_code": "123456"})
     assert r.status_code == 404
 
 
 def test_403_scope_none_denies_everyone(monkeypatch):
     client = _client_only(monkeypatch, flag_on=True, capabilities={"terminal": ""}, scope="none", devices="7")
-    r = client.post("/devices/7/terminal/sessions", json={"engine": "bash"})
+    r = client.post("/devices/7/terminal/sessions", json={"engine": "bash", "mfa_code": "123456"})
     assert r.status_code == 403
 
 
 def test_403_scope_device_not_allowlisted(monkeypatch):
     client = _client_only(monkeypatch, flag_on=True, capabilities={"terminal": ""}, scope="device", devices="42")
-    r = client.post("/devices/7/terminal/sessions", json={"engine": "bash"})
+    r = client.post("/devices/7/terminal/sessions", json={"engine": "bash", "mfa_code": "123456"})
     assert r.status_code == 403
 
 
 def test_200_scope_device_allowlisted(monkeypatch):
     client = _client_only(monkeypatch, flag_on=True, capabilities={"terminal": ""}, scope="device", devices="7,42")
-    r = client.post("/devices/7/terminal/sessions", json={"engine": "bash"})
+    r = client.post("/devices/7/terminal/sessions", json={"engine": "bash", "mfa_code": "123456"})
     assert r.status_code == 200
 
 
@@ -127,7 +130,7 @@ def test_200_scope_group_allowlisted(monkeypatch):
         monkeypatch, flag_on=True, capabilities={"terminal": ""},
         scope="group", groups="5", device_group_id=5,
     )
-    r = client.post("/devices/7/terminal/sessions", json={"engine": "bash"})
+    r = client.post("/devices/7/terminal/sessions", json={"engine": "bash", "mfa_code": "123456"})
     assert r.status_code == 200
 
 
@@ -136,7 +139,7 @@ def test_403_scope_group_not_allowlisted(monkeypatch):
         monkeypatch, flag_on=True, capabilities={"terminal": ""},
         scope="group", groups="5", device_group_id=6,
     )
-    r = client.post("/devices/7/terminal/sessions", json={"engine": "bash"})
+    r = client.post("/devices/7/terminal/sessions", json={"engine": "bash", "mfa_code": "123456"})
     assert r.status_code == 403
 
 
@@ -145,7 +148,7 @@ def test_200_scope_client_allowlisted(monkeypatch):
         monkeypatch, flag_on=True, capabilities={"terminal": ""},
         scope="client", clients="100", device_client_id=100,
     )
-    r = client.post("/devices/7/terminal/sessions", json={"engine": "bash"})
+    r = client.post("/devices/7/terminal/sessions", json={"engine": "bash", "mfa_code": "123456"})
     assert r.status_code == 200
 
 
@@ -154,19 +157,19 @@ def test_403_scope_client_not_allowlisted(monkeypatch):
         monkeypatch, flag_on=True, capabilities={"terminal": ""},
         scope="client", clients="100", device_client_id=101,
     )
-    r = client.post("/devices/7/terminal/sessions", json={"engine": "bash"})
+    r = client.post("/devices/7/terminal/sessions", json={"engine": "bash", "mfa_code": "123456"})
     assert r.status_code == 403
 
 
 def test_200_scope_fleet_allows_any_device(monkeypatch):
     client = _client_only(monkeypatch, flag_on=True, capabilities={"terminal": ""}, scope="fleet")
-    r = client.post("/devices/7/terminal/sessions", json={"engine": "bash"})
+    r = client.post("/devices/7/terminal/sessions", json={"engine": "bash", "mfa_code": "123456"})
     assert r.status_code == 200
 
 
 def test_403_is_audited_with_denial_reason(monkeypatch):
     client, db = _client(monkeypatch, flag_on=True, capabilities={"terminal": ""}, scope="none")
-    r = client.post("/devices/7/terminal/sessions", json={"engine": "bash"})
+    r = client.post("/devices/7/terminal/sessions", json={"engine": "bash", "mfa_code": "123456"})
     assert r.status_code == 403
     rows = db.query(AuditLog).filter(AuditLog.action == "terminal_session_denied").all()
     assert len(rows) == 1

@@ -33,12 +33,20 @@ export class PowerShellStepUpError extends Error {
   }
 }
 
-export async function createPowerShellSession(deviceId: number, mfaCode: string): Promise<TerminalSession> {
+// The administrator console of a device: PowerShell as SYSTEM on Windows,
+// a root shell on Linux. Both open only with a current two-factor code.
+export type ConsoleKind = "powershell" | "linux";
+
+export async function createPowerShellSession(
+  deviceId: number,
+  mfaCode: string,
+  kind: ConsoleKind = "powershell",
+): Promise<TerminalSession> {
   try {
     return await fetchJson<TerminalSession>(`/api/v1/devices/${deviceId}/terminal/sessions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ engine: "powershell", mfa_code: mfaCode }),
+      body: JSON.stringify({ engine: kind === "linux" ? "bash" : "powershell", mfa_code: mfaCode }),
     });
   } catch (err) {
     if (err instanceof ApiError && (err.code === "mfa_not_enabled" || err.code === "mfa_invalid")) {

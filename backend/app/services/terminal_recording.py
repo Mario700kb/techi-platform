@@ -35,7 +35,7 @@ def recording_path(session_id: str) -> Optional[Path]:
 
 
 class TerminalRecorder:
-    def __init__(self, session_id: str, title: str, width: int = 120, height: int = 30):
+    def __init__(self, session_id: str, title: str, width: int = 120, height: int = 30, shell: str = "powershell"):
         self.session_id = session_id
         self.path = recording_path(session_id)
         self._started = time.monotonic()
@@ -50,7 +50,7 @@ class TerminalRecorder:
             self._write({
                 "version": 2, "width": width, "height": height,
                 "timestamp": int(datetime.now(timezone.utc).timestamp()),
-                "title": title[:200], "env": {"SHELL": "powershell", "TERM": "xterm-256color"},
+                "title": title[:200], "env": {"SHELL": shell, "TERM": "xterm-256color"},
             })
         except OSError:
             logger.exception("terminal recording: cannot open %s", self.path)

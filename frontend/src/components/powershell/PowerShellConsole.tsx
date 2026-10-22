@@ -1,6 +1,12 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Download, Loader2, Maximize2, Minimize2, RotateCcw, Terminal as TerminalIcon } from "lucide-react";
-import { listConsoleScripts, runConsoleScript, type ConsoleScript, type TerminalSession } from "../../api/terminal";
+import {
+  listConsoleScripts,
+  runConsoleScript,
+  type ConsoleKind,
+  type ConsoleScript,
+  type TerminalSession,
+} from "../../api/terminal";
 import { useCachedQuery } from "../../hooks/useCachedQuery";
 import { useSessionStore } from "../../store/sessionStore";
 import type { TerminalHandle } from "../DeviceTerminal";
@@ -49,13 +55,16 @@ export interface PowerShellConsoleProps {
   onClosed?: () => void;
   /** A command brought from an alert: typed into the command bar, not run. */
   initialCommand?: string | null;
+  /** PowerShell as SYSTEM (Windows) or the root shell (Linux). */
+  kind?: ConsoleKind;
 }
 
 /**
- * The administrator PowerShell: header (who, what, recording, idle countdown),
- * the console with a command bar, and the session side panel (details, saved
- * scripts, this session's commands). One component for the own window and
- * the device drawer.
+ * The administrator console — PowerShell on Windows, the root shell on Linux:
+ * header (who, what, recording, idle countdown), the console with a command
+ * bar, and the session side panel (details, saved scripts — PowerShell only —
+ * and this session's commands). One component for the own window and the
+ * device drawer.
  */
 export default function PowerShellConsole({
   deviceId,
@@ -69,8 +78,10 @@ export default function PowerShellConsole({
   onNewSession,
   onClosed,
   initialCommand,
+  kind = "powershell",
 }: PowerShellConsoleProps) {
   const { user } = useSessionStore();
+  const linux = kind === "linux";
   const compact = layout === "drawer";
   const [state, setState] = useState<ConsoleState>("connecting");
   const [endedText, setEndedText] = useState("");
@@ -132,7 +143,8 @@ export default function PowerShellConsole({
     onEnd();
   };
 
-  const scripts = useCachedQuery<ConsoleScript[]>("mem.console.scripts", listConsoleScripts);
+  // Saved scripts are PowerShell; a Linux console has none.
+  const scripts = useCachedQuery<ConsoleScript[]>(linux ? null : "mem.console.scripts", listConsoleScripts);
   const setScripts = scripts.setData;
 
   const commands = visibleCommands(log);
@@ -176,7 +188,11 @@ export default function PowerShellConsole({
     );
   };
 
-  const subtitle = [clientName, `#${deviceId}`, "runs as NT AUTHORITY\\SYSTEM over the live channel"]
+  const subtitle = [
+    clientName,
+    `#${deviceId}`,
+    linux ? "runs as root over the live channel" : "runs as NT AUTHORITY\\SYSTEM over the live channel",
+  ]
     .filter(Boolean)
     .join(" · ");
 
@@ -202,7 +218,11 @@ export default function PowerShellConsole({
       End session
     </button>
   );
-  const title = <h2 className="ps-title min-w-0 flex-1">{deviceName} · PowerShell (Administrator)</h2>;
+  const title = (
+    <h2 className="ps-title min-w-0 flex-1">
+      {deviceName} · {linux ? "Terminal (root)" : "PowerShell (Administrator)"}
+    </h2>
+  );
   const sub = (
     <p className="ps-subtitle min-w-0 flex-1" title={subtitle}>
       {subtitle}
@@ -325,6 +345,7 @@ export default function PowerShellConsole({
     commands: commands.length,
     failed,
     signedInUser: signedInUser || null,
+    kind,
   };
   const saved = (className: string) => (
     <SavedScripts
@@ -351,9 +372,9 @@ export default function PowerShellConsole({
             )}
             {work}
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-3">
+          <div className={`mt-3 grid gap-3 ${linux ? "grid-cols-1" : "grid-cols-2"}`}>
             <SessionDetails facts={facts} className="ps-card" />
-            {saved("ps-card")}
+            {!linux && saved("ps-card")}
           </div>
           <SessionCommands commands={commands} className="ps-card mt-3" listClassName="max-h-[220px]" />
         </>
@@ -369,7 +390,7 @@ export default function PowerShellConsole({
             {work}
             <aside className="ps-side" aria-label="Session panel">
               <SessionDetails facts={facts} />
-              {saved("")}
+              {!linux && saved("")}
               <SessionCommands commands={commands} className="min-h-[160px] flex-1" />
             </aside>
           </div>
