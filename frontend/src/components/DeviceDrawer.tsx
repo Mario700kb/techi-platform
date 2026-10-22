@@ -56,7 +56,6 @@ import {
   freshnessTone,
   humanize,
   isDeviceOffline,
-  OFFLINE_CONNECT_REASON,
   remoteSupportStatus,
   TERMS,
   TONE,
@@ -381,19 +380,16 @@ export default function DeviceDrawer({
   // archive hint follow the device as it ages, between events.
   const freshness = deviceFreshness(device);
   const canConnectRs =
-    !offline &&
     isValidRustDeskId(device.rustdesk_id) &&
     !device.rustdesk_conflict_detected &&
     hasPermission("remote_support_connect");
   const connectRsTitle = !hasPermission("remote_support_connect")
     ? "Permission required: remote_support_connect"
-    : offline
-      ? OFFLINE_CONNECT_REASON
-      : device.rustdesk_conflict_detected
-        ? `${TERMS.remoteSupportId} conflict detected`
-        : isValidRustDeskId(device.rustdesk_id)
-          ? `Open ${TERMS.remoteSupport}`
-          : `${TERMS.remoteSupportId} not resolved yet`;
+    : device.rustdesk_conflict_detected
+      ? `${TERMS.remoteSupportId} conflict detected`
+      : isValidRustDeskId(device.rustdesk_id)
+        ? `Open ${TERMS.remoteSupport}`
+        : `${TERMS.remoteSupportId} not resolved yet`;
   const connectRemoteSupport = async () => {
     try {
       const res = await getConnectUrl(device.id);
@@ -828,7 +824,6 @@ export default function DeviceDrawer({
                 <ConnectMenu
                   deviceId={device.id}
                   hostname={device.hostname}
-                  disabledReason={offline ? OFFLINE_CONNECT_REASON : null}
                   onMain={() => void connectRemoteSupport()}
                   mainDisabledReason={canConnectRs ? null : connectRsTitle}
                   mainHint={connectRsTitle}

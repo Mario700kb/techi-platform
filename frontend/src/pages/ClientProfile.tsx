@@ -88,8 +88,6 @@ import {
   freshnessTone,
   hasStructuralConnectMethod,
   humanize,
-  isDeviceOffline,
-  OFFLINE_CONNECT_REASON,
   TERMS,
   TONE,
 } from "../utils/deviceStatus";
@@ -1213,7 +1211,7 @@ function DevicesTab({
 /**
  * The row's Connect, as on the Devices page: Windows opens Remote Support
  * directly; other platforms get the split Connect menu (SSH, Winbox, WebFig,
- * terminal). Disabled while the device is offline; stale stays connectable.
+ * terminal). Enabled whether the device is online or offline.
  */
 function DeviceConnect({
   device,
@@ -1230,12 +1228,9 @@ function DeviceConnect({
 }) {
   const [launching, setLaunching] = useState(false);
   const isWindows = !device.platform || device.platform.toLowerCase() === "windows";
-  const offline = isDeviceOffline(device);
-  const canConnect =
-    !offline &&
-    (isWindows
-      ? isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected
-      : hasStructuralConnectMethod(device));
+  const canConnect = isWindows
+    ? isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected
+    : hasStructuralConnectMethod(device);
 
   if (!isWindows && platformCore) {
     return (
@@ -1247,7 +1242,6 @@ function DeviceConnect({
           hostname={device.hostname}
           initialState={status?.state ?? (canConnect ? null : "unavailable")}
           initialStateReason={status?.reason ?? (canConnect ? null : "No Connect method available for this device yet")}
-          disabledReason={offline ? OFFLINE_CONNECT_REASON : null}
           onOpenTerminal={() => {
             // Popup blocked: the drawer still gets the operator to the device.
             if (!openTerminalWindow(device)) onOpenDevice(device);
@@ -1264,15 +1258,13 @@ function DeviceConnect({
       disabled={!canConnect || launching}
       aria-label={`Connect to ${deviceDisplayName(device)}`}
       title={
-        offline
-          ? OFFLINE_CONNECT_REASON
-          : isWindows
-            ? device.rustdesk_conflict_detected
-              ? "Remote Support ID conflict"
-              : canConnect
-                ? "Open TECHI Remote Support"
-                : `${TERMS.remoteSupportId} not resolved yet`
-            : "Open device to connect (SSH/Winbox/WebFig/Terminal)"
+        isWindows
+          ? device.rustdesk_conflict_detected
+            ? "Remote Support ID conflict"
+            : canConnect
+              ? "Open TECHI Remote Support"
+              : `${TERMS.remoteSupportId} not resolved yet`
+          : "Open device to connect (SSH/Winbox/WebFig/Terminal)"
       }
       onClick={
         isWindows

@@ -43,7 +43,7 @@ import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel"
 import { timeAgo } from "../utils/time";
 import { DeviceStatusChip } from "../components/DeviceStatusChip";
 import { Button, EmptyState } from "../components/ui";
-import { DEVICE_PATCH_EVENTS, isDeviceOffline, TERMS, TONE } from "../utils/deviceStatus";
+import { DEVICE_PATCH_EVENTS, TERMS, TONE } from "../utils/deviceStatus";
 import DeviceLivePanel from "../components/DeviceLivePanel";
 import { useDeviceLive } from "../hooks/useDeviceLive";
 import { AccordionSection } from "../components/mobile/AccordionSection";
@@ -260,8 +260,7 @@ export default function DeviceDetailsMobile() {
 
   const displayName = deviceDisplayName(device);
   const hostnameSubtitle = deviceHostnameSubtitle(device);
-  const canConnect =
-    !isDeviceOffline(device) && isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected;
+  const canConnect = isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected;
   const criticalCount = deviceAlerts.openAlerts.filter((a) => a.severity === "critical").length;
   const warningCount = deviceAlerts.openAlerts.length - criticalCount;
   const typeLabel = deviceTypeLabel(device);

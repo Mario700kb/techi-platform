@@ -16,7 +16,7 @@ import { useNow } from "../hooks/useNow";
 import { deviceFreshness } from "../utils/devicePresence";
 import { DeviceStatusChip } from "./DeviceStatusChip";
 import { useTabIndicator } from "../hooks/useTabIndicator";
-import { freshnessTone, humanize, isDeviceOffline, OFFLINE_CONNECT_REASON, TERMS, TONE } from "../utils/deviceStatus";
+import { freshnessTone, humanize, TERMS, TONE } from "../utils/deviceStatus";
 import { deviceSite } from "../utils/location";
 import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel";
 import { formatDateTime, timeAgo } from "../utils/time";
@@ -405,7 +405,6 @@ function RegistryDeviceDrawer({
                     canManageLocations={canManageLocations}
                     onDeviceUpdated={onDeviceUpdated}
                     onOpenTerminal={openTerminal}
-                    onRemoteSupport={meta.remote_support ? () => setTab("remote_support") : undefined}
                     active={isOpen}
                     onOpenMonitoring={agentPlatform ? () => setTab("monitoring") : undefined}
                   />
@@ -422,7 +421,6 @@ function RegistryDeviceDrawer({
                       <ConnectMenu
                         deviceId={device.id}
                         hostname={device.hostname}
-                        disabledReason={isDeviceOffline(device) ? OFFLINE_CONNECT_REASON : null}
                         onOpenTerminal={openTerminal}
                       />
                     </div>
@@ -674,7 +672,6 @@ function Overview({
   canManageLocations,
   onDeviceUpdated,
   onOpenTerminal,
-  onRemoteSupport,
   active,
   onOpenMonitoring,
 }: {
@@ -690,7 +687,6 @@ function Overview({
   canManageLocations: boolean;
   onDeviceUpdated?: (device: Device) => void;
   onOpenTerminal?: () => void;
-  onRemoteSupport?: () => void;
   active: boolean;
   onOpenMonitoring?: () => void;
 }) {
@@ -720,9 +716,7 @@ function Overview({
           <ConnectMenu
             deviceId={device.id}
             hostname={device.hostname}
-            disabledReason={isDeviceOffline(device) ? OFFLINE_CONNECT_REASON : null}
             onOpenTerminal={onOpenTerminal}
-            onRemoteSupport={onRemoteSupport}
           />
         </div>
       </section>

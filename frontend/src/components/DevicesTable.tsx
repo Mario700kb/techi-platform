@@ -51,8 +51,6 @@ import { parseUTC, tiranaInputToUtcIso, utcToTiranaInput } from "../utils/time";
 import { formatCount } from "../utils/number";
 import {
   hasStructuralConnectMethod,
-  isDeviceOffline,
-  OFFLINE_CONNECT_REASON,
   TERMS,
   TONE,
 } from "../utils/deviceStatus";
@@ -1110,12 +1108,9 @@ const DevicesTable = memo(function DevicesTable({
           <div className="th-mdev-list">
             {displayDevices.map((device) => {
               const isWindowsDevice = !device.platform || device.platform.toLowerCase() === "windows";
-              const offline = isDeviceOffline(device);
-              const canConnect =
-                !offline &&
-                (isWindowsDevice
-                  ? isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected
-                  : hasStructuralConnectMethod(device));
+              const canConnect = isWindowsDevice
+                ? isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected
+                : hasStructuralConnectMethod(device);
               return (
                 <DeviceMobileCard
                   key={device.id}
@@ -1145,13 +1140,11 @@ const DevicesTable = memo(function DevicesTable({
                       : async () => navigate(`/devices/${device.id}`)
                   }
                   connectTitle={
-                    offline
-                      ? OFFLINE_CONNECT_REASON
-                      : isWindowsDevice
-                        ? undefined
-                        : canConnect
-                          ? "Open device to connect (SSH/Winbox/WebFig/Terminal)"
-                          : "No Connect method available for this device yet"
+                    isWindowsDevice
+                      ? undefined
+                      : canConnect
+                        ? "Open device to connect (SSH/Winbox/WebFig/Terminal)"
+                        : "No Connect method available for this device yet"
                   }
                 />
               );
@@ -1337,12 +1330,9 @@ const DevicesTable = memo(function DevicesTable({
                 <tbody>
                   {displayDevices.map((device, rowIndex) => {
                     const isWindowsDevice = !device.platform || device.platform.toLowerCase() === "windows";
-                    const offline = isDeviceOffline(device);
-                    const canConnect =
-                      !offline &&
-                      (isWindowsDevice
-                        ? isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected
-                        : hasStructuralConnectMethod(device));
+                    const canConnect = isWindowsDevice
+                      ? isValidRustDeskId(device.rustdesk_id) && !device.rustdesk_conflict_detected
+                      : hasStructuralConnectMethod(device);
                     const devAlerts = alertsMap[device.id];
                     const offlineBadge = offlineReasonBadge(
                       device,
@@ -1558,17 +1548,15 @@ const DevicesTable = memo(function DevicesTable({
                                     : () => onDeviceSelect?.(device)
                                 }
                                 title={
-                                  offline
-                                    ? OFFLINE_CONNECT_REASON
-                                    : isWindowsDevice
-                                      ? device.rustdesk_conflict_detected
-                                        ? "Remote Support ID conflict"
-                                        : canConnect
-                                          ? "Open TECHI Remote Support"
-                                          : `${TERMS.remoteSupportId} not resolved yet`
+                                  isWindowsDevice
+                                    ? device.rustdesk_conflict_detected
+                                      ? "Remote Support ID conflict"
                                       : canConnect
-                                        ? "Open device to connect (SSH/Winbox/WebFig/Terminal)"
-                                        : "No Connect method available for this device yet"
+                                        ? "Open TECHI Remote Support"
+                                        : `${TERMS.remoteSupportId} not resolved yet`
+                                    : canConnect
+                                      ? "Open device to connect (SSH/Winbox/WebFig/Terminal)"
+                                      : "No Connect method available for this device yet"
                                 }
                                 disabled={!canConnect}
                               />
@@ -1583,7 +1571,6 @@ const DevicesTable = memo(function DevicesTable({
                                   connectStatusMap[device.id]?.reason ??
                                   (canConnect ? null : "No Connect method available for this device yet")
                                 }
-                                disabledReason={offline ? OFFLINE_CONNECT_REASON : null}
                                 onOpenTerminal={onOpenDeviceTerminal ? () => onOpenDeviceTerminal(device) : undefined}
                               />
                             )}
