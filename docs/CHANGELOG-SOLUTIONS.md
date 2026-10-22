@@ -5,6 +5,32 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-22] LINUX-DRAWER-2026-10-22 — Linux devices get the Windows drawer, with the root terminal where PowerShell is (`e5b224f`)
+
+**Backend + frontend deployed 22:44–22:45 (Tirana).**
+- Owner's request: a Linux device (the Raspberry Pis) looks and works like a
+  Windows one, with the Linux terminal in place of PowerShell. Owner chose
+  the PowerShell security for it.
+- Linux opens in the classic DeviceDrawer (`utils/drawerChoice`). The
+  Software tab shows its packages, services and processes; the registry
+  drawer's interfaces/logs/docker tabs were placeholders.
+- Maintenance: "Terminal · root", the administrator console component with
+  `kind="linux"` (runs as root, no saved PowerShell scripts), own window
+  `/terminal/:id?engine=bash`, console history with replay and download. No
+  separate Terminal tab on Linux; Connect ▸ Embedded Terminal opens the
+  console. A `/terminal/:id` window without `engine` looks the device up first.
+- Backend: a Linux terminal session needs a current two-factor code
+  (`_require_console_step_up`, audited denials), and bash sessions are
+  recorded (asciicast, `SHELL=bash`). Operators without two-factor can no
+  longer open a Linux shell.
+- Actions a Linux agent does not support (power policy, reopen / repair /
+  reinstall Remote Support) are not offered on Linux.
+- Dump `/opt/backups/techi/pre-linux-drawer-20261022-223818.sql.gz` (163 MB,
+  `gzip -t` OK); rollback `techi-platform-{backend,frontend}:pre-linux-drawer-6ff4868`;
+  no migration. Frontend built in 97 s (one SSH poll timed out at load 3.7,
+  recovered at once). Guard and smoke passed, 0 tracebacks. Not yet checked
+  in a browser.
+
 ## [2026-10-22] RS-OPTION-RUNNING-2026-10-22 — Linux installer hands the Remote Support options to the running service (`26d1e8c`)
 
 **Backend deployed 22:17 (Tirana).**
