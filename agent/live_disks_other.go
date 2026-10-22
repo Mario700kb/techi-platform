@@ -3,6 +3,7 @@
 package main
 
 import (
+	"math"
 	"strings"
 
 	"github.com/shirou/gopsutil/v3/disk"
@@ -33,7 +34,7 @@ func liveDiskMounts() []string {
 
 func liveDiskUsage(mount string) (liveDisk, bool) {
 	usage, err := disk.Usage(mount)
-	if err != nil || usage.Total == 0 {
+	if err != nil || usage.Total == 0 || math.IsNaN(usage.UsedPercent) {
 		return liveDisk{}, false
 	}
 	return liveDisk{

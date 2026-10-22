@@ -13,6 +13,7 @@ package main
 import (
 	"encoding/json"
 	"log"
+	"math"
 	"runtime"
 	"sort"
 	"sync"
@@ -228,7 +229,13 @@ func clampPercent(v float64) float64 {
 	return v
 }
 
+// round1 rounds to one decimal. NaN and ±Inf (a filesystem with no blocks
+// gives 0/0) become 0: converted to int64 they turned into a huge negative
+// number, the platform refused the frame and Live never moved on the Pis.
 func round1(v float64) float64 {
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return 0
+	}
 	return float64(int64(v*10+0.5)) / 10
 }
 

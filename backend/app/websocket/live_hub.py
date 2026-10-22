@@ -55,6 +55,8 @@ class DeviceLiveHub:
         self._viewers: Dict[int, Dict[int, _Viewer]] = {}
         self._last_frame_at: Dict[int, float] = {}
         self._lock = asyncio.Lock()
+        # (device, invalid fields) already logged: a bad value repeats every frame.
+        self._logged_bad: set = set()
 
     async def add_viewer(self, device_id: int, websocket: WebSocket) -> _Viewer:
         viewer = _Viewer(websocket)
@@ -103,15 +105,77 @@ class DeviceLiveHub:
         last = self._last_frame_at.get(device_id)
         if last is not None and now - last < LIVE_MIN_FRAME_GAP_SECONDS:
             return 0
-        try:
-            snapshot = LiveSnapshot.model_validate(data)
-        except ValidationError:
-            logger.info("[live] device #%d sent a malformed frame; dropped", device_id)
+        snapshot = self._validate(device_id, data)
+        if snapshot is None:
             return 0
         self._last_frame_at[device_id] = now
         payload = {"type": "live", "device_id": device_id, "data": snapshot.model_dump(exclude_none=True)}
         results = await asyncio.gather(*(viewer.send(payload) for viewer in viewers))
         return sum(1 for ok in results if ok)
+
+
+    def _validate(self, device_id: int, data: Any) -> Optional[LiveSnapshot]:
+        """The frame as a snapshot. One bad value (a disk or process the agent
+        could not measure, sent as a huge negative number) no longer costs the
+        whole frame: that item or field is left out and the rest is shown.
+        A frame with nothing usable left is dropped."""
+        try:
+            return LiveSnapshot.model_validate(data)
+        except ValidationError as exc:
+            salvaged = _salvage(data, exc)
+            fields = sorted({_field_name(e.get("loc") or ()) for e in exc.errors()})
+        snapshot = None
+        if salvaged is not None:
+            try:
+                snapshot = LiveSnapshot.model_validate(salvaged)
+            except ValidationError:
+                snapshot = None
+        if snapshot is not None and not _has_content(snapshot):
+            snapshot = None
+        # Which fields, never their values; once per device and field set.
+        key = (device_id, tuple(fields))
+        if key not in self._logged_bad:
+            self._logged_bad.add(key)
+            logger.info(
+                "[live] device #%d sent invalid %s; %s",
+                device_id, ", ".join(fields) or "frame", "left out" if snapshot is not None else "frame dropped",
+            )
+        return snapshot
+
+
+def _field_name(loc) -> str:
+    if not loc:
+        return "frame"
+    if len(loc) >= 3 and isinstance(loc[1], int):
+        return f"{loc[0]}[].{loc[2]}"
+    return str(loc[0])
+
+
+def _salvage(data: Any, exc: ValidationError) -> Optional[Dict[str, Any]]:
+    """The frame without what failed: list items by index, other fields whole."""
+    if not isinstance(data, dict):
+        return None
+    out = dict(data)
+    drop_items: Dict[str, set] = {}
+    for error in exc.errors():
+        loc = error.get("loc") or ()
+        if not loc:
+            return None
+        field = loc[0]
+        if len(loc) >= 2 and isinstance(loc[1], int) and isinstance(out.get(field), list):
+            drop_items.setdefault(field, set()).add(loc[1])
+        else:
+            out.pop(field, None)
+    for field, indexes in drop_items.items():
+        if isinstance(out.get(field), list):
+            out[field] = [item for i, item in enumerate(out[field]) if i not in indexes]
+    return out
+
+
+def _has_content(snapshot: LiveSnapshot) -> bool:
+    dumped = snapshot.model_dump(exclude_none=True)
+    dumped.pop("at", None)
+    return any(value not in ([], "") for value in dumped.values())
 
 
 def parse_agent_message(text: str) -> Optional[Dict[str, Any]]:

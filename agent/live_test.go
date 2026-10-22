@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"strings"
 	"sync"
 	"testing"
@@ -176,5 +177,16 @@ func TestThePatchCountLeavesOutWhatWindowsInstallsOnItsOwn(t *testing.T) {
 		if !strings.Contains(windowsPendingUpdatesScript, want) {
 			t.Fatalf("patch count script lacks %q", want)
 		}
+	}
+}
+
+func TestRound1NeverTurnsNaNOrInfIntoAHugeNegative(t *testing.T) {
+	for _, v := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
+		if got := round1(v); got != 0 {
+			t.Errorf("round1(%v) = %v, want 0", v, got)
+		}
+	}
+	if got := round1(12.345); got != 12.3 {
+		t.Errorf("round1(12.345) = %v", got)
 	}
 }

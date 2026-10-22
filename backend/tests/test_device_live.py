@@ -111,6 +111,33 @@ def test_a_malformed_frame_is_dropped(bad):
     assert viewer.sent == []
 
 
+def test_one_bad_disk_or_process_does_not_cost_the_whole_frame(caplog):
+    """A Raspberry Pi sent a disk it could not measure as a huge negative
+    number; every frame was dropped and Live never moved. Now only that item
+    is left out, and the log names the field (never the value)."""
+    hub = DeviceLiveHub()
+    viewer = _FakeWS()
+    bad = {
+        **FRAME,
+        "disks": [FRAME["disks"][0], {"mount": "/boot", "used_percent": -922337203685477580.8, "free_gb": 0, "total_gb": 0.5}],
+        "processes": [{"pid": 7, "name": "x", "cpu_percent": -1, "memory_mb": 1}, FRAME["processes"][0]],
+        "net_rx_kbps": -5,
+    }
+
+    async def scenario():
+        await hub.add_viewer(924, viewer)
+        return await hub.publish(924, bad)
+
+    with caplog.at_level("INFO", logger="app.websocket.live_hub"):
+        assert asyncio.run(scenario()) == 1
+    assert "disks[].used_percent" in caplog.text and "processes[].cpu_percent" in caplog.text
+    assert "-922337203685477580" not in caplog.text
+    data = viewer.sent[0]["data"]
+    assert [d["mount"] for d in data["disks"]] == ["C:"]
+    assert [p["pid"] for p in data["processes"]] == [4321]
+    assert "net_rx_kbps" not in data and data["cpu_percent"] == 37.5
+
+
 def test_only_the_last_viewer_leaving_ends_the_view():
     hub = DeviceLiveHub()
     a, b = _FakeWS(), _FakeWS()
