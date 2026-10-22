@@ -52,14 +52,7 @@ import {
 } from "../api/devices";
 import { formatDateTime, formatLocalDateTime, parseUTC, timeAgo } from "../utils/time";
 import { deviceTypeLabel, headerGroup } from "../utils/deviceBadges";
-import {
-  freshnessTone,
-  humanize,
-  isDeviceOffline,
-  remoteSupportStatus,
-  TERMS,
-  TONE,
-} from "../utils/deviceStatus";
+import { freshnessTone, humanize, isDeviceOffline, remoteSupportStatus, TERMS, TONE } from "../utils/deviceStatus";
 import { isValidRustDeskId, buildRustDeskFallbackUrlFromTechiUrl, launchConnect } from "../services/rustdeskLaunch";
 import {
   actionTypeLabel,

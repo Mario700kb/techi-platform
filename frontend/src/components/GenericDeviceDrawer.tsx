@@ -418,11 +418,7 @@ function RegistryDeviceDrawer({
                       <p className="mb-3 text-[13px]" style={{ color: "var(--th-text-secondary)" }}>
                         Connect using this platform's native methods.
                       </p>
-                      <ConnectMenu
-                        deviceId={device.id}
-                        hostname={device.hostname}
-                        onOpenTerminal={openTerminal}
-                      />
+                      <ConnectMenu deviceId={device.id} hostname={device.hostname} onOpenTerminal={openTerminal} />
                     </div>
                   </section>
                 </div>
@@ -713,11 +709,7 @@ function Overview({
               </p>
             </div>
           </div>
-          <ConnectMenu
-            deviceId={device.id}
-            hostname={device.hostname}
-            onOpenTerminal={onOpenTerminal}
-          />
+          <ConnectMenu deviceId={device.id} hostname={device.hostname} onOpenTerminal={onOpenTerminal} />
         </div>
       </section>
 

@@ -49,11 +49,7 @@ import BulkAgentUpdatePlan, { useSelfUpdatePreview } from "./BulkAgentUpdatePlan
 import { sendBulkCommand } from "../api/agentCommands";
 import { parseUTC, tiranaInputToUtcIso, utcToTiranaInput } from "../utils/time";
 import { formatCount } from "../utils/number";
-import {
-  hasStructuralConnectMethod,
-  TERMS,
-  TONE,
-} from "../utils/deviceStatus";
+import { hasStructuralConnectMethod, TERMS, TONE } from "../utils/deviceStatus";
 import {
   ActionIndicator,
   ActiveActionEntry,
