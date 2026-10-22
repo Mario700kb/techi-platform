@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"log"
 	"os"
 	"os/exec"
@@ -196,7 +197,13 @@ func localRustDeskIDFromCLI(installPath string) string {
 		return ""
 	case <-done:
 	}
-	scanner := bufio.NewScanner(strings.NewReader(out.String()))
+	return firstNumericRustDeskID(out.String())
+}
+
+// firstNumericRustDeskID returns the first line of --get-id output that is a
+// usable numeric ID.
+func firstNumericRustDeskID(output string) string {
+	scanner := bufio.NewScanner(strings.NewReader(output))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
@@ -307,6 +314,17 @@ func discoverRustDeskPortable(info RustDeskInfo) RustDeskInfo {
 	}
 
 	id, encID := readRustDeskFromKnownFiles()
+	if id == "" && installPath != "" {
+		// RustDesk 1.5 keeps only enc_id in its identity file; the running
+		// service tells the plain ID. Probed until one is known, then rarely.
+		if shouldProbeRustDeskID(cachedCLIRustDeskID()) {
+			recordRustDeskIDProbe()
+			if fresh := portableRustDeskIDFromCLI(installPath); fresh != "" {
+				rememberCLIRustDeskID(fresh)
+			}
+		}
+		id = cachedCLIRustDeskID()
+	}
 	if id != "" {
 		info.ID = id
 	}
@@ -314,6 +332,18 @@ func discoverRustDeskPortable(info RustDeskInfo) RustDeskInfo {
 		info.EncID = encID
 	}
 	return info
+}
+
+// portableRustDeskIDFromCLI runs `rustdesk --get-id` under a context deadline
+// (killProcessTree, used on Windows, is taskkill).
+func portableRustDeskIDFromCLI(path string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, path, "--get-id").Output()
+	if err != nil {
+		return ""
+	}
+	return firstNumericRustDeskID(string(out))
 }
 
 // portableRustDeskStatus: on Linux Remote Support is the upstream package,

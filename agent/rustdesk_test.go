@@ -195,3 +195,15 @@ func TestReadRustDeskFieldsFromUpstreamLinuxIdentityFile(t *testing.T) {
 		t.Fatalf("got id=%q enc_id=%q", id, encID)
 	}
 }
+
+func TestFirstNumericRustDeskIDFromGetIDOutput(t *testing.T) {
+	if got := firstNumericRustDeskID("188101430\n"); got != "188101430" {
+		t.Errorf("got %q", got)
+	}
+	if got := firstNumericRustDeskID("\nsome warning\n1 881 014 30\n"); got != "188101430" {
+		t.Errorf("got %q", got)
+	}
+	if got := firstNumericRustDeskID("No --server process found\n"); got != "" {
+		t.Errorf("got %q", got)
+	}
+}
