@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestNormalizeRustDeskIDStripsSpaces(t *testing.T) {
@@ -205,5 +206,57 @@ func TestFirstNumericRustDeskIDFromGetIDOutput(t *testing.T) {
 	}
 	if got := firstNumericRustDeskID("No --server process found\n"); got != "" {
 		t.Errorf("got %q", got)
+	}
+}
+
+func TestChooseRustDeskIDPrefersRunningClientOverStaleFile(t *testing.T) {
+	// Linux: --get-id (fresh or cached) wins over a plain id left in RustDesk.toml.
+	if got := chooseRustDeskID("188101430", "", "", "512345678", ""); got != "188101430" {
+		t.Errorf("fresh: got %q", got)
+	}
+	if got := chooseRustDeskID("", "188101430", "", "512345678", ""); got != "188101430" {
+		t.Errorf("cached: got %q", got)
+	}
+	if got := chooseRustDeskID("", "", "", "512345678", "100200300"); got != "512345678" {
+		t.Errorf("file fallback: got %q", got)
+	}
+}
+
+func TestShouldProbePortableRustDeskIDThrottlesFailures(t *testing.T) {
+	cliProbeMu.Lock()
+	savedID, savedAt := cliProbeID, cliProbeIDAt
+	cliProbeMu.Unlock()
+	defer func() {
+		cliProbeMu.Lock()
+		cliProbeID, cliProbeIDAt = savedID, savedAt
+		cliProbeMu.Unlock()
+	}()
+
+	set := func(id string, ago time.Duration) {
+		cliProbeMu.Lock()
+		cliProbeID = id
+		if ago < 0 {
+			cliProbeIDAt = time.Time{}
+		} else {
+			cliProbeIDAt = time.Now().Add(-ago)
+		}
+		cliProbeMu.Unlock()
+	}
+	cases := []struct {
+		id   string
+		ago  time.Duration
+		want bool
+	}{
+		{"", -1, true},                         // never probed
+		{"", time.Minute, false},               // failed just now
+		{"", cliRetryInterval, true},           // failed a while ago
+		{"188101430", 10 * time.Minute, false}, // known, recent
+		{"188101430", cliProbeInterval, true},  // known, due for a re-read
+	}
+	for _, c := range cases {
+		set(c.id, c.ago)
+		if got := shouldProbePortableRustDeskID(); got != c.want {
+			t.Errorf("id=%q ago=%v: got %v want %v", c.id, c.ago, got, c.want)
+		}
 	}
 }

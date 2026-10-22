@@ -22,6 +22,9 @@ import (
 // value there's no need to re-probe more than occasionally.
 const cliProbeInterval = 30 * time.Minute
 
+// cliRetryInterval: how soon a portable --get-id that found no ID is retried.
+const cliRetryInterval = 5 * time.Minute
+
 var (
 	cliProbeMu      sync.Mutex
 	cliProbeVersion string
@@ -82,6 +85,21 @@ func shouldProbeRustDeskID(currentID string) bool {
 	}
 	cliProbeMu.Lock()
 	defer cliProbeMu.Unlock()
+	return time.Since(cliProbeIDAt) >= cliProbeInterval
+}
+
+// shouldProbePortableRustDeskID: `rustdesk --get-id` is cheap on Linux, but a
+// client that is not running answers nothing, so a failed probe is retried
+// every few minutes rather than on every heartbeat.
+func shouldProbePortableRustDeskID() bool {
+	cliProbeMu.Lock()
+	defer cliProbeMu.Unlock()
+	if cliProbeIDAt.IsZero() {
+		return true
+	}
+	if !isUsableRustDeskID(cliProbeID) {
+		return time.Since(cliProbeIDAt) >= cliRetryInterval
+	}
 	return time.Since(cliProbeIDAt) >= cliProbeInterval
 }
 
@@ -313,19 +331,18 @@ func discoverRustDeskPortable(info RustDeskInfo) RustDeskInfo {
 		info.Status = "not_installed"
 	}
 
-	id, encID := readRustDeskFromKnownFiles()
-	if id == "" && installPath != "" {
-		// RustDesk 1.5 keeps only enc_id in its identity file; the running
-		// service tells the plain ID. Probed until one is known, then rarely.
-		if shouldProbeRustDeskID(cachedCLIRustDeskID()) {
-			recordRustDeskIDProbe()
-			if fresh := portableRustDeskIDFromCLI(installPath); fresh != "" {
-				rememberCLIRustDeskID(fresh)
-			}
+	fileID, encID := readRustDeskFromKnownFiles()
+	freshCLI := ""
+	if installPath != "" && shouldProbePortableRustDeskID() {
+		// The running client's word comes first, as on Windows: RustDesk 1.5
+		// keeps only enc_id in its identity file, and a plain id left there
+		// can be one the ID server no longer knows ("ID does not exist").
+		recordRustDeskIDProbe()
+		if freshCLI = portableRustDeskIDFromCLI(installPath); freshCLI != "" {
+			rememberCLIRustDeskID(freshCLI)
 		}
-		id = cachedCLIRustDeskID()
 	}
-	if id != "" {
+	if id := chooseRustDeskID(freshCLI, cachedCLIRustDeskID(), "", fileID, info.ID); id != "" {
 		info.ID = id
 	}
 	if encID != "" {
