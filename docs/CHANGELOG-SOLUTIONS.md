@@ -5,6 +5,33 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-22] LINUX-RS-ID-2026-10-22 — Linux agent reports the running client's Remote Support ID (agent 2.1.37, 2.1.38); table rows show Connect alone (`11aa80e`, `a06ccc7`, `14581f8`)
+
+**`linux-armhf` 2.1.37 active ~14:50; 2.1.38 active 18:50 (Tirana). Frontend
+`14581f8` deployed by the owner ~18:26.**
+- 2.1.37 (`11aa80e`, CI 39779128629, `50dbe022…`): RustDesk 1.5 keeps only
+  `enc_id` in root's `RustDesk.toml`, so the Pi (device 993) reported no ID and
+  Connect answered 422. When the file has no plain ID, the agent asks
+  `rustdesk --get-id`.
+- 2.1.38 (`a06ccc7`, CI 39815650242, `dde88e88…`, package `ec684f8f…`): the
+  file was still read first, so a plain ID left there that the ID server no
+  longer knows was reported for good. `pickuprc01` showed "ID does not exist"
+  with an ID entered by hand. The running client's answer now comes first, as
+  on Windows (`chooseRustDeskID`); the file and the enrolled ID are fallbacks.
+  A known ID is re-read every 30 min, a failed probe every 5 min. The push did
+  not start CI; the workflow was dispatched by hand. Only `linux-armhf` was
+  registered; 2.1.37/2.1.36/2.1.35 kept inactive. Manifest backup
+  `manifest.json.bak-pre-linux-armhf-2138-20261022-184510`. Download verified
+  inside the backend (200, CI hash).
+- A heartbeat from the device's own agent already replaces a hand-entered ID
+  when it reports a valid one held by no other device, so no backend change
+  was needed.
+- Frontend `14581f8`: the chevron that opened the Connect method menu is gone
+  from table rows (Device Catalog, client profile). The device drawer keeps the
+  split button. Rollback `techi-platform-frontend:pre-row-connect-df27fc7`.
+- Not deployed: installer fix `2502fcd` (keep an installed RustDesk whatever
+  its version), which needs a backend rebuild.
+
 ## [2026-10-22] LINUX-REMOTE-SUPPORT-2026-10-22 — Remote Support on Linux desktops (agent 2.1.36); Connect enabled when offline (`c29e2e2`, `9ae7796`, `e8ac4af`)
 
 **Backend + frontend deployed 14:23–14:24 (Tirana); `linux-armhf` 2.1.36
