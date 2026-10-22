@@ -270,17 +270,25 @@ api-server = '${{BACKEND}}'
 key = '{rs_key}'
 TOML
   fi
+  systemctl enable rustdesk >/dev/null 2>&1 || true
+  systemctl restart rustdesk || return 1
   # The same options through RustDesk's own CLI, which stores them the way the
-  # installed version expects (the file above is its internal format, and a
-  # RustDesk installed before TECHI may not read it the same way).
+  # installed version expects: the file above alone did not make the Pis
+  # register with the platform's ID server ("ID does not exist"). `--option`
+  # hands them to the RUNNING service, so it comes after the start, and a
+  # second restart makes the service register with them.
   rs_option() {{ timeout 15 rustdesk --option "$1" "$2" >/dev/null 2>&1 || true; }}
+  sleep 5
   rs_option custom-rendezvous-server '{rs_host}'
   rs_option relay-server '{rs_relay}'
   rs_option api-server "${{BACKEND}}"
   rs_option key '{rs_key}'
-  systemctl enable rustdesk >/dev/null 2>&1 || true
   systemctl restart rustdesk || return 1
-  sleep 3
+  sleep 5
+  RS_SERVER="$(timeout 15 rustdesk --option custom-rendezvous-server 2>/dev/null | tr -d ' ' | tail -n 1)"
+  if [ "${{RS_SERVER}}" != '{rs_host}' ]; then
+    echo "Warning: Remote Support reports ID server '${{RS_SERVER}}', not '{rs_host}'." >&2
+  fi
   RS_ID="$(timeout 15 rustdesk --get-id 2>/dev/null | tr -d ' ' | grep -E '^[0-9]{{6,}}$' | head -n 1)"
   if [ -n "${{RS_ID}}" ]; then
     echo "TECHI Remote Support installed. ID: ${{RS_ID}}"
