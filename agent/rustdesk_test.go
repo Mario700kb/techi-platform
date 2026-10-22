@@ -181,3 +181,17 @@ func TestReadRustDeskFieldsFromTECHIProgramDataPath(t *testing.T) {
 		t.Errorf("expected ID '1234567890' from TECHI ProgramData config, got %q", id)
 	}
 }
+
+// The upstream Linux package (installed for Remote Support on Linux desktops)
+// keeps its identity in root's RustDesk.toml with single-quoted values.
+func TestReadRustDeskFieldsFromUpstreamLinuxIdentityFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "RustDesk.toml")
+	content := "enc_id = '00abcDEF=='\npassword = ''\nsalt = 'xyz'\nkey_pair = [[1, 2], [3, 4]]\nkey_confirmed = true\nid = '1234567890'\n"
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	id, encID := readRustDeskFieldsFromFile(path)
+	if id != "1234567890" || encID != "00abcDEF==" {
+		t.Fatalf("got id=%q enc_id=%q", id, encID)
+	}
+}

@@ -42,6 +42,9 @@ func (linuxPlatform) Capabilities() []string {
 	if dockerAvailable() {
 		caps = append(caps, "docker")
 	}
+	if linuxRustDeskBinary() != "" {
+		caps = append(caps, "remote_support")
+	}
 	return caps
 }
 

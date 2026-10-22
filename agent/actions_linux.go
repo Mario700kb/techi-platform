@@ -11,8 +11,8 @@ import (
 )
 
 // Linux action handlers. Actions that only make sense on Windows (RustDesk
-// management, PowerShell, power policy, protocol registration) return a clear
-// "not supported on Linux" error so the operator sees why rather than a
+// installation and repair, PowerShell, power policy, protocol registration)
+// return a clear "not supported on Linux" error so the operator sees why rather than a
 // silent failure. Real system actions use systemd.
 
 const linuxServiceName = "techi-agent"
@@ -71,8 +71,14 @@ func handleRebootPC(ctx context.Context, _ map[string]interface{}) actionResult 
 
 // --- Windows-only actions: explicit "not supported" on Linux ---
 
-func handleRestartRustDesk(_ context.Context, _ *Config) actionResult {
-	return notSupportedOnLinux("restart_rustdesk")
+func handleRestartRustDesk(ctx context.Context, _ *Config) actionResult {
+	if linuxRustDeskBinary() == "" {
+		return actionResult{err: fmt.Errorf("restart_rustdesk: TECHI Remote Support is not installed")}
+	}
+	if !hasSystemd() {
+		return actionResult{err: fmt.Errorf("restart_rustdesk: systemd not available")}
+	}
+	return runLinuxCommand(ctx, "systemctl", "restart", linuxRustDeskUnit)
 }
 
 func handleReinstallRustDesk(_ context.Context, _ *Config, _ map[string]interface{}) actionResult {

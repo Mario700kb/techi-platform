@@ -300,7 +300,7 @@ func discoverRustDeskPortable(info RustDeskInfo) RustDeskInfo {
 		info.InstallStatus = "installed"
 		info.InstallPath = installPath
 		info.Version = rustDeskVersion(installPath)
-		info.Status = "unknown"
+		info.Status = portableRustDeskStatus()
 	} else {
 		info.InstallStatus = "not_installed"
 		info.Status = "not_installed"
@@ -314,6 +314,22 @@ func discoverRustDeskPortable(info RustDeskInfo) RustDeskInfo {
 		info.EncID = encID
 	}
 	return info
+}
+
+// portableRustDeskStatus: on Linux Remote Support is the upstream package,
+// run by the systemd unit "rustdesk"; elsewhere its state is not known.
+func portableRustDeskStatus() string {
+	if runtime.GOOS != "linux" {
+		return "unknown"
+	}
+	out, _ := exec.Command("systemctl", "is-active", "rustdesk").Output()
+	switch strings.TrimSpace(string(out)) {
+	case "active":
+		return "running"
+	case "inactive", "failed":
+		return "stopped"
+	}
+	return "unknown"
 }
 
 func firstExistingPath(paths []string) string {
@@ -894,6 +910,8 @@ func rustDeskConfigCandidates() []string {
 		filepath.Join(home, ".config", "TECHI Remote Support", "TECHI Remote Support.toml"),
 		filepath.Join(home, "Library", "Application Support", "TECHI Remote Support", "TECHI Remote Support2.toml"),
 		filepath.Join(home, "Library", "Application Support", "TECHI Remote Support", "TECHI Remote Support.toml"),
+		// Upstream RustDesk on Linux: its service runs as root.
+		filepath.Join("/root", ".config", "rustdesk", "RustDesk.toml"),
 	}
 	for _, pattern := range []string{
 		filepath.Join(os.Getenv("SystemDrive")+string(os.PathSeparator), "Users", "*", "AppData", "Roaming", "TECHI Remote Support", "config", "TECHI Remote Support2.toml"),

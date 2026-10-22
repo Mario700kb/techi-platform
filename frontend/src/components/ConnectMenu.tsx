@@ -11,7 +11,8 @@ import {
   resetConnectPreference,
   setConnectPreference,
 } from "../api/connect";
-import { clickProtocolUrl } from "../services/rustdeskLaunch";
+import { getConnectUrl } from "../api/remoteSupport";
+import { buildRustDeskFallbackUrlFromTechiUrl, clickProtocolUrl, launchConnect } from "../services/rustdeskLaunch";
 import { detectOperatorOS } from "../utils/operatorOs";
 import { ConnectButton } from "./ui";
 
@@ -39,8 +40,9 @@ const EmbeddedSSHModal = lazy(() => import("./EmbeddedSSHModal"));
 // - Launch targets: "ssh" → Embedded SSH terminal (external OS SSH client
 //   stays a secondary link inside that modal); "web_terminal" → the Embedded
 //   Terminal (onOpenTerminal callback — Drawer Terminal tab);
-//   "remote_support" → onRemoteSupport callback (the existing RustDesk
-//   flow / Remote Support tab); everything else → the generic audited
+//   "remote_support" → onRemoteSupport callback when given, otherwise the
+//   same RustDesk launch Windows rows use (connect-url → TECHI Remote
+//   Support, upstream RustDesk as fallback); everything else → the generic audited
 //   launcher (`/connect-methods/{id}/launch`).
 // - Listens for CONNECT_REFRESH_EVENT so credential/preference changes are
 //   reflected immediately, with no manual refresh.
@@ -303,8 +305,18 @@ export default function ConnectMenu({
       return;
     }
     if (m.id === "remote_support") {
-      if (onRemoteSupport) onRemoteSupport();
-      else setNote("TECHI Remote Support has its own Connect flow (see the Remote Support tab).");
+      if (onRemoteSupport) {
+        onRemoteSupport();
+        return;
+      }
+      try {
+        const res = await getConnectUrl(deviceId);
+        launchConnect(res.connect_url, buildRustDeskFallbackUrlFromTechiUrl(res.connect_url), () =>
+          setNote("Opening the Remote Support app instead"),
+        );
+      } catch (e) {
+        setNote(e instanceof Error ? e.message : "Connect failed");
+      }
       return;
     }
     // Embedded SSH Connect: default action for "ssh" is the embedded

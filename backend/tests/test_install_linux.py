@@ -139,3 +139,35 @@ def test_previous_binary_is_backed_up(monkeypatch):
     body = _script(monkeypatch)
     assert 'BACKUP="${BIN_PATH}.bak-' in body
     assert "restoring previous binary" in body
+
+
+# ── TECHI Remote Support on Linux desktops ──────────────────────────────── #
+
+
+def _remote_support_section(body: str) -> str:
+    return body[body.index("# --- TECHI Remote Support"):]
+
+
+def test_remote_support_package_is_pinned_per_architecture(monkeypatch):
+    body = _script(monkeypatch)
+    for arch, (deb, sha) in install_endpoint.RUSTDESK_LINUX_DEBS.items():
+        assert f'{arch}) RS_DEB="{deb}"; RS_SHA256="{sha}" ;;' in body
+    assert "Remote Support checksum mismatch - not installing it." in body
+
+
+def test_remote_support_points_at_the_platform_id_server(monkeypatch):
+    section = _remote_support_section(_script(monkeypatch))
+    assert f"custom-rendezvous-server = '{settings.RUSTDESK_SERVER_HOST}'" in section
+    assert f"relay-server = '{settings.RUSTDESK_RELAY_HOST}'" in section
+    assert f"key = '{settings.RUSTDESK_PUBLIC_KEY}'" in section
+    assert "api-server = '${BACKEND}'" in section
+
+
+def test_remote_support_only_on_a_desktop_and_never_fails_the_install(monkeypatch):
+    """A server without a desktop keeps the terminal only, and a Remote Support
+    failure must not turn an installed agent into a failed run."""
+    section = _remote_support_section(_script(monkeypatch))
+    assert "elif ! has_desktop; then" in section
+    assert 'if [ "$(uname -m)" = "armv6l" ]; then' in section
+    assert "exit 1" not in section
+    assert section.rstrip().endswith("exit 0")

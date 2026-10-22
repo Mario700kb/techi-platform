@@ -50,6 +50,25 @@ def _linux_checksums() -> str:
     return "\n".join(lines)
 
 
+# TECHI Remote Support on Linux is upstream RustDesk, pinned to the version the
+# Windows fleet runs and checked against the SHA-256 GitHub publishes for each
+# asset. There is no armv6 build: a Pi Zero/1 gets the terminal only.
+RUSTDESK_LINUX_VERSION = "1.4.6"
+RUSTDESK_LINUX_DEBS = {
+    "amd64": ("rustdesk-1.4.6-x86_64.deb", "0da46d7a7b252282ded5323f74319a10c1fa7271001d3b297b3def415c8c8f04"),
+    "arm64": ("rustdesk-1.4.6-aarch64.deb", "d767b042c53a169f4bc6273d884a238fc44501a9fda2095fb05820dfc538b34c"),
+    "armhf": ("rustdesk-1.4.6-armv7-sciter.deb", "c573774c7bd47b80d816f453c080e1f0eb22901f8fb868d69359f088c049451d"),
+}
+
+
+def _rustdesk_debs() -> str:
+    """A shell `case` mapping each architecture to its RustDesk .deb and SHA-256."""
+    return "\n".join(
+        f'    {arch}) RS_DEB="{deb}"; RS_SHA256="{sha}" ;;'
+        for arch, (deb, sha) in RUSTDESK_LINUX_DEBS.items()
+    )
+
+
 @router.get("/linux", response_class=PlainTextResponse)
 def linux_installer(token: str = Query(..., min_length=1)) -> PlainTextResponse:
     if not feature_enabled("FEATURE_LINUX"):
@@ -59,6 +78,10 @@ def linux_installer(token: str = Query(..., min_length=1)) -> PlainTextResponse:
     ws = _ws_base(base)
     checksums = _linux_checksums()
     heartbeat = _agent_cfg.get_heartbeat_interval("linux")
+    rustdesk_debs = _rustdesk_debs()
+    rs_host = settings.RUSTDESK_SERVER_HOST
+    rs_relay = settings.RUSTDESK_RELAY_HOST
+    rs_key = settings.RUSTDESK_PUBLIC_KEY
     # The token is echoed into the script the operator generated; it is not a
     # secret to the backend. Keep it out of logs by not logging the query.
     script = f"""#!/usr/bin/env bash
@@ -189,6 +212,91 @@ fi
 
 echo "TECHI agent installed. Check status: systemctl status techi-agent"
 [ -n "${{BACKUP}}" ] && echo "Previous binary kept at ${{BACKUP}}"
+
+# --- TECHI Remote Support -------------------------------------------------
+# Remote Support shares the screen, so only a machine with a desktop gets it;
+# a server keeps the terminal. Re-running keeps its ID: only the package and
+# the ID server options are put back. A failure here never undoes the agent.
+RS_VERSION="{RUSTDESK_LINUX_VERSION}"
+RS_DEB=""
+RS_SHA256=""
+case "${{ARCH}}" in
+{rustdesk_debs}
+esac
+RS_OPTIONS="/root/.config/rustdesk/RustDesk2.toml"
+
+has_desktop() {{
+  [ "$(systemctl get-default 2>/dev/null)" = "graphical.target" ] && return 0
+  for dm in lightdm gdm gdm3 sddm lxdm xdm; do
+    systemctl is-active --quiet "${{dm}}" 2>/dev/null && return 0
+  done
+  return 1
+}}
+
+install_remote_support() {{
+  if [ "$(dpkg-query -W -f='${{Version}}' rustdesk 2>/dev/null || true)" = "${{RS_VERSION}}" ]; then
+    echo "TECHI Remote Support ${{RS_VERSION}} already installed."
+  else
+    RS_TMP="$(mktemp -d /tmp/techi-rs-XXXXXX)" || return 1
+    chmod 755 "${{RS_TMP}}"
+    echo "Downloading TECHI Remote Support ${{RS_VERSION}} (${{RS_DEB}})..."
+    fetch "https://github.com/rustdesk/rustdesk/releases/download/${{RS_VERSION}}/${{RS_DEB}}" "${{RS_TMP}}/${{RS_DEB}}" || return 1
+    if [ "$(sha256sum "${{RS_TMP}}/${{RS_DEB}}" | awk '{{print $1}}')" != "${{RS_SHA256}}" ]; then
+      echo "Remote Support checksum mismatch - not installing it." >&2
+      rm -rf "${{RS_TMP}}"
+      return 1
+    fi
+    chmod 644 "${{RS_TMP}}/${{RS_DEB}}"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y "${{RS_TMP}}/${{RS_DEB}}" \\
+      || {{ apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y "${{RS_TMP}}/${{RS_DEB}}"; }} \\
+      || {{ rm -rf "${{RS_TMP}}"; return 1; }}
+    rm -rf "${{RS_TMP}}"
+  fi
+
+  # The platform's own ID server, and the platform as api-server so every
+  # session is reported, exactly as on Windows. Only these keys are replaced.
+  systemctl stop rustdesk 2>/dev/null || true
+  mkdir -p "$(dirname "${{RS_OPTIONS}}")"
+  if [ -f "${{RS_OPTIONS}}" ] && grep -q '^\\[options\\]' "${{RS_OPTIONS}}"; then
+    sed -i -e '/^custom-rendezvous-server *=/d' -e '/^relay-server *=/d' \\
+      -e '/^api-server *=/d' -e '/^key *=/d' "${{RS_OPTIONS}}"
+    sed -i -e "/^\\[options\\]/a custom-rendezvous-server = '{rs_host}'" \\
+      -e "/^\\[options\\]/a relay-server = '{rs_relay}'" \\
+      -e "/^\\[options\\]/a api-server = '${{BACKEND}}'" \\
+      -e "/^\\[options\\]/a key = '{rs_key}'" "${{RS_OPTIONS}}"
+  else
+    cat > "${{RS_OPTIONS}}" <<TOML
+rendezvous_server = ''
+nat_type = 1
+serial = 0
+
+[options]
+custom-rendezvous-server = '{rs_host}'
+relay-server = '{rs_relay}'
+api-server = '${{BACKEND}}'
+key = '{rs_key}'
+TOML
+  fi
+  systemctl enable rustdesk >/dev/null 2>&1 || true
+  systemctl restart rustdesk || return 1
+  echo "TECHI Remote Support installed; the agent reports its ID with the next heartbeat."
+
+  # Unattended access needs X11; on Wayland every session waits for a click.
+  if ls /run/user/*/wayland-[0-9] >/dev/null 2>&1; then
+    echo "Note: this desktop runs on Wayland. Remote Support needs X11 for unattended access." >&2
+    echo "  Raspberry Pi OS: sudo raspi-config -> Advanced Options -> Wayland -> X11, then reboot." >&2
+  fi
+}}
+
+if [ "$(uname -m)" = "armv6l" ]; then
+  echo "TECHI Remote Support: no build for ARMv6 - terminal only."
+elif ! has_desktop; then
+  echo "TECHI Remote Support: no desktop on this machine - terminal only."
+elif ! command -v apt-get >/dev/null 2>&1 || ! command -v sha256sum >/dev/null 2>&1; then
+  echo "TECHI Remote Support: needs apt-get and sha256sum - skipped."
+elif ! install_remote_support; then
+  echo "TECHI Remote Support could not be installed; the agent is installed and works without it." >&2
+fi
 exit 0
 """
     return PlainTextResponse(content=script, media_type="text/x-shellscript")

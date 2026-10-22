@@ -5,6 +5,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import ConnectMenu, { groupConnectMethods } from "../ConnectMenu";
 import type { ConnectMethod } from "../../api/connect";
 import * as client from "../../api/client";
+import { launchConnect } from "../../services/rustdeskLaunch";
+
+vi.mock("../../services/rustdeskLaunch", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../services/rustdeskLaunch")>()),
+  launchConnect: vi.fn(),
+}));
 
 vi.mock("../EmbeddedSSHModal", () => ({
   default: ({ onClose }: { onClose: () => void }) => (
@@ -436,5 +442,48 @@ describe("ConnectMenu — offline device", () => {
 
     fireEvent.click(arrow);
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("ConnectMenu — Remote Support on a non-Windows device", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.mocked(launchConnect).mockReset();
+  });
+
+  it("launches TECHI Remote Support itself when no Remote Support callback is given", async () => {
+    vi.spyOn(client, "fetchJson")
+      .mockResolvedValueOnce({
+        platform: "linux",
+        methods: [
+          WEB_TERMINAL_METHOD,
+          {
+            ...WEB_TERMINAL_METHOD,
+            id: "remote_support",
+            label: "TECHI Remote Support",
+            surface: "desktop",
+            capability: "remote_support",
+            priority: 30,
+            transport: "RustDesk",
+            category: "desktop_app",
+            embedded: false,
+          },
+        ],
+        preferred_method_id: "web_terminal",
+        configured_preference_id: null,
+      })
+      .mockResolvedValueOnce({
+        device_id: 7,
+        techi_remote_id: "123456789",
+        connect_url: "techiremotesupport://123456789?password=pw",
+      });
+    renderMenu();
+
+    fireEvent.click(await screen.findByText("Connect"));
+    fireEvent.click(await screen.findByText("TECHI Remote Support"));
+
+    await waitFor(() => expect(launchConnect).toHaveBeenCalledTimes(1));
+    expect(client.fetchJson).toHaveBeenLastCalledWith("/api/v1/remote-support/devices/7/connect-url");
+    expect(vi.mocked(launchConnect).mock.calls[0][0]).toBe("techiremotesupport://123456789?password=pw");
   });
 });
