@@ -29,8 +29,16 @@
 - Frontend `14581f8`: the chevron that opened the Connect method menu is gone
   from table rows (Device Catalog, client profile). The device drawer keeps the
   split button. Rollback `techi-platform-frontend:pre-row-connect-df27fc7`.
-- Not deployed: installer fix `2502fcd` (keep an installed RustDesk whatever
-  its version), which needs a backend rebuild.
+- Backend `86fcaac` deployed 18:58 (no migration; dump
+  `pre-installer-rs-option-20261022-185457.sql.gz`, 157 MB, `gzip -t` OK;
+  rollback `techi-platform-backend:pre-installer-rs-option-f4f99f5`). It
+  carries `2502fcd` (the installer keeps an installed RustDesk whatever its
+  version) and `86fcaac`: the four ID server options (`custom-rendezvous-server`,
+  `relay-server`, `api-server`, `key`) also go through `rustdesk --option`
+  before the restart, because a RustDesk installed before TECHI (`pickuprc01`)
+  may not take `RustDesk2.toml` as written. The run ends with the ID from
+  `--get-id`. Ready in 10 s; guard and smoke passed; 0 5xx; the served
+  installer carries the four `rs_option` lines.
 
 ## [2026-10-22] LINUX-REMOTE-SUPPORT-2026-10-22 — Remote Support on Linux desktops (agent 2.1.36); Connect enabled when offline (`c29e2e2`, `9ae7796`, `e8ac4af`)
 
