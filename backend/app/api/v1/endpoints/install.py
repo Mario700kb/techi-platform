@@ -280,9 +280,23 @@ api-server = '${{BACKEND}}'
 key = '{rs_key}'
 TOML
   fi
+  # The same options through RustDesk's own CLI, which stores them the way the
+  # installed version expects (the file above is its internal format, and a
+  # RustDesk installed before TECHI may not read it the same way).
+  rs_option() {{ timeout 15 rustdesk --option "$1" "$2" >/dev/null 2>&1 || true; }}
+  rs_option custom-rendezvous-server '{rs_host}'
+  rs_option relay-server '{rs_relay}'
+  rs_option api-server "${{BACKEND}}"
+  rs_option key '{rs_key}'
   systemctl enable rustdesk >/dev/null 2>&1 || true
   systemctl restart rustdesk || return 1
-  echo "TECHI Remote Support installed; the agent reports its ID with the next heartbeat."
+  sleep 3
+  RS_ID="$(timeout 15 rustdesk --get-id 2>/dev/null | tr -d ' ' | grep -E '^[0-9]{{6,}}$' | head -n 1)"
+  if [ -n "${{RS_ID}}" ]; then
+    echo "TECHI Remote Support installed. ID: ${{RS_ID}}"
+  else
+    echo "TECHI Remote Support installed; the agent reports its ID with the next heartbeat."
+  fi
 
   # Unattended access needs X11; on Wayland every session waits for a click.
   if ls /run/user/*/wayland-[0-9] >/dev/null 2>&1; then

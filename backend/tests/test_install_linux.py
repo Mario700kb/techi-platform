@@ -163,6 +163,18 @@ def test_remote_support_points_at_the_platform_id_server(monkeypatch):
     assert "api-server = '${BACKEND}'" in section
 
 
+def test_remote_support_options_also_go_through_the_rustdesk_cli(monkeypatch):
+    """A RustDesk installed before TECHI may not take the file as written;
+    `rustdesk --option` stores the options its own way, before the restart."""
+    section = _remote_support_section(_script(monkeypatch))
+    assert f"rs_option custom-rendezvous-server '{settings.RUSTDESK_SERVER_HOST}'" in section
+    assert f"rs_option relay-server '{settings.RUSTDESK_RELAY_HOST}'" in section
+    assert 'rs_option api-server "${BACKEND}"' in section
+    assert f"rs_option key '{settings.RUSTDESK_PUBLIC_KEY}'" in section
+    assert section.index("rs_option key") < section.index("systemctl restart rustdesk")
+    assert "rustdesk --get-id" in section
+
+
 def test_remote_support_only_on_a_desktop_and_never_fails_the_install(monkeypatch):
     """A server without a desktop keeps the terminal only, and a Remote Support
     failure must not turn an installed agent into a failed run."""
