@@ -5,6 +5,24 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-22] RS-OPTION-RUNNING-2026-10-22 — Linux installer hands the Remote Support options to the running service (`26d1e8c`)
+
+**Backend deployed 22:17 (Tirana).**
+- `pickuptoptani02` (device 997, enrolled 21:53 with the 18:58 installer) gave
+  "ID does not exist": its ID `193097463` never reached the platform's ID
+  server (no hbbs registration from its address that day). `pickuprc01`
+  registered at 18:51 only after the options were set by hand with the service
+  running. The installer had written `RustDesk2.toml` and run
+  `rustdesk --option` while the service was stopped.
+- Now `--option` runs after the service has started, the service is restarted
+  to register with them, and the installer warns when the ID server it reads
+  back (`rustdesk --option custom-rendezvous-server`) is not the platform's.
+- Device 997 still needs the options once (Terminal tab, as root).
+- Dump `/opt/backups/techi/pre-rs-option-running-20261022-221428.sql.gz`
+  (163 MB, `gzip -t` OK); rollback
+  `techi-platform-backend:pre-rs-option-running-2b29366`; no migration.
+  Guard and smoke passed, 0 tracebacks.
+
 ## [2026-10-22] PI-CONNECT-2026-10-22 — A new Raspberry Pi never opens in the terminal (`17feee7`)
 
 **Backend + frontend deployed 22:10–22:11 (Tirana).**
