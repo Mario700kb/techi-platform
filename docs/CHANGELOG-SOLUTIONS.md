@@ -5,6 +5,25 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-22] INSTALL-RETRY-2026-10-22 — One installer run is enough for Remote Support on a fresh Pi (`cd4393f`)
+
+**Backend deployed 22:55 (Tirana).**
+- `pickuppg01` (device 998) needed the installer twice: its agent enrolled at
+  22:37:40, its RustDesk ID reached the ID server only at 22:39:30, after the
+  second run. On a fresh install the service takes a while to start (first
+  start makes its keys), and the `rustdesk --option` sent 5 s after the
+  restart was lost.
+- The installer now waits until RustDesk answers (`--get-id`), sets the
+  options, restarts, waits again and reads the ID server back, at least twice
+  and up to five times until it is the platform's; it asks for another run
+  only if it never is. Checked with a simulated RustDesk that drops options
+  sent before it is ready.
+- Dump `/opt/backups/techi/pre-install-retry-20261022-225106.sql.gz` (164 MB,
+  `gzip -t` OK); rollback `techi-platform-backend:pre-install-retry-20c1c28`;
+  no migration. The first restart step never ran (SSH timed out in the
+  banner exchange); the container was checked (still the old image) and the
+  step run again. Ready 22:55:06, guard and smoke passed, 0 tracebacks.
+
 ## [2026-10-22] LINUX-DRAWER-2026-10-22 — Linux devices get the Windows drawer, with the root terminal where PowerShell is (`e5b224f`)
 
 **Backend + frontend deployed 22:44–22:45 (Tirana).**
