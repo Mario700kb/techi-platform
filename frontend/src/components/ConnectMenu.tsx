@@ -70,9 +70,8 @@ interface Props {
   onRemoteSupport?: () => void;
   // The main segment's own action (the Windows drawer header: Remote
   // Support); the arrow still opens the method menu. Without it the main
-  // segment launches the saved default, else the device's own default
-  // (Remote Support where it has it), and opens the menu only when neither
-  // is Ready.
+  // segment launches the saved default, else Remote Support, and opens the
+  // menu otherwise (it never opens a terminal on its own).
   onMain?: () => void;
   // Disables the main segment alone (its reason as the tooltip); the arrow
   // stays usable while the device is online.
@@ -166,7 +165,6 @@ export default function ConnectMenu({
   interface LoadedData {
     methods: ConnectMethod[];
     configured: string | null;
-    preferred: string | null;
   }
   const loadPromise = useRef<Promise<LoadedData | null> | null>(null);
 
@@ -184,7 +182,6 @@ export default function ConnectMenu({
         return {
           methods: list,
           configured: r?.configured_preference_id ?? null,
-          preferred: r?.preferred_method_id ?? null,
         };
       })
       .catch(() => {
@@ -237,7 +234,7 @@ export default function ConnectMenu({
   }
 
   const ensureLoaded = async (): Promise<LoadedData | null> => {
-    if (methods !== null) return { methods, configured: configuredPreferenceId, preferred: preferredMethodId };
+    if (methods !== null) return { methods, configured: configuredPreferenceId };
     if (loadPromise.current) return loadPromise.current;
     return load();
   };
@@ -386,10 +383,12 @@ export default function ConnectMenu({
       setOpen(false);
       return;
     }
-    // The operator's saved default, else the device's own (Remote Support
-    // where it has it); the menu opens only when neither is ready.
-    const loaded = await ensureLoaded();
-    for (const id of [loaded?.configured, loaded?.preferred]) {
+    // Asked fresh on every click: a row loaded while a new device was still
+    // installing Remote Support must not keep its old list. The operator's
+    // saved choice, else Remote Support; anything else (the terminal too)
+    // only from the menu, so Connect never opens a terminal on its own.
+    const loaded = await load();
+    for (const id of [loaded?.configured, "remote_support"]) {
       const m = id ? loaded?.methods.find((x) => x.id === id) : undefined;
       if (m && displayStatus(m, operatorOS) === "ready") {
         void launch(m);

@@ -281,7 +281,7 @@ describe("ConnectMenu — approved V3 mockup behavior", () => {
   });
 
   it("main click launches the operator's SAVED Ready default immediately (no menu)", async () => {
-    vi.spyOn(client, "fetchJson").mockResolvedValueOnce({
+    vi.spyOn(client, "fetchJson").mockResolvedValue({
       platform: "linux",
       methods: [SSH_METHOD, WEB_TERMINAL_METHOD],
       preferred_method_id: "ssh",
@@ -296,22 +296,24 @@ describe("ConnectMenu — approved V3 mockup behavior", () => {
     expect(screen.queryByText("Recommended")).not.toBeInTheDocument();
   });
 
-  it("main click with NO saved preference launches the device's Ready default (no menu)", async () => {
-    vi.spyOn(client, "fetchJson").mockResolvedValueOnce({
-      platform: "mikrotik",
-      methods: [WINBOX_CREDENTIAL_REQUIRED, SSH_METHOD, WEBFIG_READY],
-      preferred_method_id: "ssh",
+  it("main click never opens the terminal on its own: without a saved choice or Remote Support it opens the menu", async () => {
+    vi.spyOn(client, "fetchJson").mockResolvedValue({
+      platform: "linux",
+      methods: [WEB_TERMINAL_METHOD, SSH_METHOD],
+      preferred_method_id: "web_terminal",
       configured_preference_id: null,
     });
-    renderMenu(7, { hostname: "rb-core-01" });
+    const onOpenTerminal = vi.fn();
+    renderMenu(7, { hostname: "pi-new", onOpenTerminal });
 
     fireEvent.click(await screen.findByText("Connect"));
-    await waitFor(() => expect(screen.getByTestId("embedded-ssh-modal")).toBeInTheDocument());
-    expect(screen.queryByText("Recommended")).not.toBeInTheDocument();
+    expect(await screen.findByText("Connect to pi-new")).toBeInTheDocument();
+    expect(onOpenTerminal).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("embedded-ssh-modal")).not.toBeInTheDocument();
   });
 
   it("main click opens the categorized menu when no default is Ready", async () => {
-    vi.spyOn(client, "fetchJson").mockResolvedValueOnce({
+    vi.spyOn(client, "fetchJson").mockResolvedValue({
       platform: "mikrotik",
       methods: [WINBOX_CREDENTIAL_REQUIRED, SSH_METHOD, WEBFIG_READY],
       preferred_method_id: "winbox",
@@ -502,38 +504,45 @@ describe("ConnectMenu — Remote Support on a non-Windows device", () => {
     expect(vi.mocked(launchConnect).mock.calls[0][0]).toBe("techiremotesupport://123456789?password=pw");
   });
 
-  it("main click launches Remote Support at once when it is the device's default", async () => {
-    vi.spyOn(client, "fetchJson")
-      .mockResolvedValueOnce({
+  it("main click launches Remote Support at once, from a list asked fresh on the click", async () => {
+    const RS = {
+      ...WEB_TERMINAL_METHOD,
+      id: "remote_support",
+      label: "TECHI Remote Support",
+      surface: "desktop",
+      capability: "remote_support",
+      priority: 5,
+      transport: "RustDesk",
+      category: "desktop_app",
+      embedded: false,
+    };
+    // A new Pi: the first list (loaded while RustDesk was still installing)
+    // has only the terminal; by the time of the click it has Remote Support.
+    let listCalls = 0;
+    vi.spyOn(client, "fetchJson").mockImplementation(async (url: string) => {
+      if (url.includes("/remote-support/devices/")) {
+        return {
+          device_id: 7,
+          techi_remote_id: "123456789",
+          connect_url: "techiremotesupport://123456789?password=pw",
+        };
+      }
+      listCalls += 1;
+      return {
         platform: "linux",
-        methods: [
-          {
-            ...WEB_TERMINAL_METHOD,
-            id: "remote_support",
-            label: "TECHI Remote Support",
-            surface: "desktop",
-            capability: "remote_support",
-            priority: 5,
-            transport: "RustDesk",
-            category: "desktop_app",
-            embedded: false,
-          },
-          WEB_TERMINAL_METHOD,
-        ],
-        preferred_method_id: "remote_support",
+        methods: listCalls === 1 ? [WEB_TERMINAL_METHOD] : [RS, WEB_TERMINAL_METHOD],
+        preferred_method_id: listCalls === 1 ? "web_terminal" : "remote_support",
         configured_preference_id: null,
-      })
-      .mockResolvedValueOnce({
-        device_id: 7,
-        techi_remote_id: "123456789",
-        connect_url: "techiremotesupport://123456789?password=pw",
-      });
-    renderMenu();
+      };
+    });
+    const onOpenTerminal = vi.fn();
+    renderMenu(7, { onOpenTerminal });
+    await waitFor(() => expect(listCalls).toBe(1));
 
     fireEvent.click(await screen.findByText("Connect"));
 
     await waitFor(() => expect(launchConnect).toHaveBeenCalledTimes(1));
     expect(vi.mocked(launchConnect).mock.calls[0][0]).toBe("techiremotesupport://123456789?password=pw");
-    expect(screen.queryByText("Connect to")).not.toBeInTheDocument();
+    expect(onOpenTerminal).not.toHaveBeenCalled();
   });
 });

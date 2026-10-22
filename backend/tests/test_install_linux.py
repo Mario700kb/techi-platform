@@ -191,3 +191,11 @@ def test_an_installed_remote_support_is_kept_whatever_its_version(monkeypatch):
     section = _remote_support_section(_script(monkeypatch))
     assert "dpkg-query -W -f='${Status} ${Version}' rustdesk" in section
     assert "already installed - keeping it." in section
+
+
+def test_remote_support_is_installed_before_the_agent_starts(monkeypatch):
+    """The first heartbeat must already carry Remote Support and its ID, so
+    Connect on a new desktop never offers only the terminal."""
+    body = _script(monkeypatch)
+    assert body.index("elif ! install_remote_support; then") < body.index("Installing systemd service and enrolling...")
+    assert body.rstrip().endswith("exit 0")

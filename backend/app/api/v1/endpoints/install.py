@@ -200,23 +200,13 @@ JSON
   chmod 600 "${{CONFIG_PATH}}"
 fi
 
-# The token is only passed when this host still has to enrol. Passing it
-# otherwise would bake it into the systemd unit for no reason.
-if [ "${{ENROLLED}}" = "1" ]; then
-  echo "Already enrolled - installing service without an enrollment token."
-  "${{BIN_PATH}}" install --config "${{CONFIG_PATH}}"
-else
-  echo "Installing systemd service and enrolling..."
-  "${{BIN_PATH}}" install --config "${{CONFIG_PATH}}" --enrollment-token "${{TOKEN}}"
-fi
-
-echo "TECHI agent installed. Check status: systemctl status techi-agent"
-[ -n "${{BACKUP}}" ] && echo "Previous binary kept at ${{BACKUP}}"
-
 # --- TECHI Remote Support -------------------------------------------------
 # Remote Support shares the screen, so only a machine with a desktop gets it;
 # a server keeps the terminal. Re-running keeps its ID: only the package and
 # the ID server options are put back. A failure here never undoes the agent.
+# It runs BEFORE the agent starts, so the device's first heartbeat already
+# carries Remote Support and its ID: Connect never meets a desktop that shows
+# only the terminal while RustDesk is still being installed.
 RS_VERSION="{RUSTDESK_LINUX_VERSION}"
 RS_DEB=""
 RS_SHA256=""
@@ -295,7 +285,7 @@ TOML
   if [ -n "${{RS_ID}}" ]; then
     echo "TECHI Remote Support installed. ID: ${{RS_ID}}"
   else
-    echo "TECHI Remote Support installed; the agent reports its ID with the next heartbeat."
+    echo "TECHI Remote Support installed; the agent reports its ID with its first heartbeat."
   fi
 
   # Unattended access needs X11; on Wayland every session waits for a click.
@@ -314,6 +304,19 @@ elif ! command -v apt-get >/dev/null 2>&1 || ! command -v sha256sum >/dev/null 2
 elif ! install_remote_support; then
   echo "TECHI Remote Support could not be installed; the agent is installed and works without it." >&2
 fi
+# The token is only passed when this host still has to enrol. Passing it
+# otherwise would bake it into the systemd unit for no reason.
+if [ "${{ENROLLED}}" = "1" ]; then
+  echo "Already enrolled - installing service without an enrollment token."
+  "${{BIN_PATH}}" install --config "${{CONFIG_PATH}}"
+else
+  echo "Installing systemd service and enrolling..."
+  "${{BIN_PATH}}" install --config "${{CONFIG_PATH}}" --enrollment-token "${{TOKEN}}"
+fi
+
+echo "TECHI agent installed. Check status: systemctl status techi-agent"
+[ -n "${{BACKUP}}" ] && echo "Previous binary kept at ${{BACKUP}}"
+
 exit 0
 """
     return PlainTextResponse(content=script, media_type="text/x-shellscript")
