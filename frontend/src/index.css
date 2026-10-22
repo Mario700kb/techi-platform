@@ -6899,7 +6899,7 @@ span.th-inv-mono {
   display: inline-flex;
   align-items: stretch;
 }
-.th-connect-group > .th-connect:first-child {
+.th-connect-group > .th-connect:first-child:not(:last-child) {
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
 }

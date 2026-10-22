@@ -587,20 +587,23 @@ export default function ConnectMenu({
           <ExternalLink className="th-connect-icon" />
           Connect
         </button>
-        <button
-          type="button"
-          aria-label="Connect options"
-          aria-haspopup="menu"
-          aria-expanded={open}
-          onClick={() => void onArrowClick()}
-          disabled={!!disabledReason}
-          title={disabledReason ?? undefined}
-          className="th-connect th-connect-arrow"
-          data-size={isRow ? "sm" : "md"}
-          data-tone={connectTone}
-        >
-          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
-        </button>
+        {/* The method menu lives in the device drawer; a table row shows Connect alone. */}
+        {!isRow && (
+          <button
+            type="button"
+            aria-label="Connect options"
+            aria-haspopup="menu"
+            aria-expanded={open}
+            onClick={() => void onArrowClick()}
+            disabled={!!disabledReason}
+            title={disabledReason ?? undefined}
+            className="th-connect th-connect-arrow"
+            data-size={isRow ? "sm" : "md"}
+            data-tone={connectTone}
+          >
+            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
+          </button>
+        )}
       </div>
 
       {open && !disabledReason && menuBody}
