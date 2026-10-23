@@ -20,6 +20,7 @@ export default function CommandBar({
   onInterrupt,
   compact = false,
   initialValue = "",
+  placeholder = "Type a command · Enter runs · Shift+Enter new line · ↑↓ history · Ctrl+C stops",
 }: {
   /** This session's commands, oldest first. */
   history: string[];
@@ -29,6 +30,7 @@ export default function CommandBar({
   compact?: boolean;
   /** Typed in, not run: a command brought from an alert, read before Enter. */
   initialValue?: string;
+  placeholder?: string;
 }) {
   const [value, setValue] = useState(initialValue);
   // Position while walking the history; null = editing a new command.
@@ -123,7 +125,7 @@ export default function CommandBar({
           if (cursor !== null) setCursor(null);
         }}
         onKeyDown={onKeyDown}
-        placeholder="Type a command · Enter runs · Shift+Enter new line · ↑↓ history · Ctrl+C stops"
+        placeholder={placeholder}
         className="th-input ps-command-input min-w-0 flex-1 resize-none rounded-md border px-2.5 py-1.5 font-mono text-[12.5px] leading-5"
       />
       <button

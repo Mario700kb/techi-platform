@@ -5,6 +5,9 @@ export interface TerminalSession {
   operator_ws_path: string; // wss://…/ws/terminal/{id}?ticket=…
   operator_ticket: string;
   expires_in_seconds: number;
+  /** "command": Windows without a pseudo console (Server 2012 R2 / 2016);
+   *  each command runs on its own, no socket. */
+  mode?: "console" | "command";
 }
 
 // Create a Web Terminal session for a device (Platform Expansion Phase 5).
@@ -66,6 +69,51 @@ export interface ConsoleSessionSummary {
   ended_at: string | null;
   disconnect_reason: string | null;
   recording_bytes: number | null;
+  mode?: "agent" | "command";
+}
+
+// ── PowerShell in command mode ─────────────────────────────────────────
+// Windows without a pseudo console: a command at a time, as a run_powershell
+// action; the folder the last one ended in is sent with the next.
+
+export interface CommandModeResult {
+  action_id: number;
+  status: string;
+  done: boolean;
+  output: string;
+  stderr: string | null;
+  error: string | null;
+  failed: boolean | null;
+  duration_ms: number | null;
+  cwd: string | null;
+  truncated: boolean;
+}
+
+export async function runCommandModeCommand(
+  deviceId: number,
+  sessionId: string,
+  command: string,
+  cwd: string | null,
+): Promise<{ action_id: number }> {
+  return fetchJson(`/api/v1/devices/${deviceId}/terminal/sessions/${sessionId}/commands`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ command, cwd, timeout_seconds: 300 }),
+  });
+}
+
+export async function getCommandModeResult(
+  deviceId: number,
+  sessionId: string,
+  actionId: number,
+): Promise<CommandModeResult> {
+  return fetchJson<CommandModeResult>(
+    `/api/v1/devices/${deviceId}/terminal/sessions/${sessionId}/commands/${actionId}`,
+  );
+}
+
+export async function closeCommandModeSession(deviceId: number, sessionId: string): Promise<void> {
+  await fetchJson<void>(`/api/v1/devices/${deviceId}/terminal/sessions/${sessionId}/close`, { method: "POST" });
 }
 
 export async function listConsoleSessions(deviceId: number, limit = 20): Promise<ConsoleSessionSummary[]> {

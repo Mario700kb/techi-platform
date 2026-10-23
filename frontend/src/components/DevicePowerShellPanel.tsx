@@ -57,6 +57,7 @@ export default function DevicePowerShellPanel({
   currentUser,
   osCaption,
   capable,
+  commandMode = false,
   active,
   offline,
   kind = "powershell",
@@ -69,6 +70,8 @@ export default function DevicePowerShellPanel({
   osCaption?: string | null;
   /** The device reports the "powershell" capability (agent 2.1.29+). */
   capable: boolean;
+  /** Windows without a pseudo console: the console runs a command at a time. */
+  commandMode?: boolean;
   /** The Maintenance tab is showing; history loads on first show. */
   active: boolean;
   offline: boolean;
@@ -175,6 +178,12 @@ export default function DevicePowerShellPanel({
                     {text}
                   </li>
                 ))}
+                {commandMode && (
+                  <li className="text-[12px]" style={{ color: "var(--th-status-info)" }}>
+                    Command mode: this Windows has no pseudo console, so each command runs on its own (no prompts, no
+                    Tab completion); the folder is kept between commands
+                  </li>
+                )}
               </ul>
             </div>
             <Button

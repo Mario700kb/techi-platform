@@ -17,7 +17,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.auth import (
@@ -66,6 +66,9 @@ class TerminalSessionResponse(BaseModel):
     operator_ws_path: str
     operator_ticket: str
     expires_in_seconds: int
+    # "console": the live console over a socket. "command": Windows without a
+    # pseudo console (Server 2012 R2 / 2016); each command runs on its own.
+    mode: str = "console"
 
 
 def _ws_base() -> str:
@@ -84,6 +87,12 @@ def _platform_id(device) -> str:
 
 def _is_windows(device) -> bool:
     return _platform_id(device) == "windows"
+
+
+def _command_mode_device(device) -> bool:
+    """A Windows agent without a pseudo console: PowerShell in command mode."""
+    caps = device.capabilities if isinstance(device.capabilities, dict) else {}
+    return _is_windows(device) and "powershell" not in caps and bool(getattr(device, "agent_id", None))
 
 
 def _has_terminal_capability(device) -> bool:
@@ -139,7 +148,8 @@ def create_terminal_session(
     device = DeviceRepository(db).get(device_id)
     if device is None:
         raise HTTPException(status_code=404, detail="Device not found")
-    if not _has_terminal_capability(device):
+    command_mode = _command_mode_device(device)
+    if not _has_terminal_capability(device) and not command_mode:
         raise HTTPException(status_code=400, detail="Device does not report the terminal capability")
     if not is_device_in_rollout("FEATURE_TERMINAL", device):
         logger.info(
@@ -170,6 +180,8 @@ def create_terminal_session(
         _require_console_step_up(db, operator, device_id, payload.mfa_code, engine)
 
     svc = TerminalService(db)
+    if command_mode:
+        return _open_command_mode(db, svc, device, operator)
     session, operator_ticket, agent_ticket = svc.create_session(
         device_id=device_id,
         operator_id=operator.id,
@@ -238,6 +250,126 @@ def create_terminal_session(
     )
 
 
+# ── PowerShell in command mode (app/services/powershell_command_mode.py) ──
+
+def _open_command_mode(db: Session, svc: TerminalService, device, operator: Operator) -> TerminalSessionResponse:
+    from app.models.device import DeviceStatus
+    from app.services import powershell_command_mode as cmd
+
+    if device.status != DeviceStatus.ONLINE:
+        raise HTTPException(status_code=409, detail="The device is offline: PowerShell needs it online")
+    cmd.close_stale(db, device.id)
+    session, _, _ = svc.create_session(
+        device_id=device.id, operator_id=operator.id, operator_username=operator.username, engine="powershell",
+    )
+    cmd.open_session(db, session, operator_username=operator.username,
+                     device_name=(device.display_name or "").strip() or device.hostname or f"Device #{device.id}",
+                     os_caption=device.os_caption)
+    logger.info("terminal session opened: session_id=%s device_id=%s operator=%s engine=powershell mode=command",
+                session.id, device.id, operator.username)
+    audit_log(db, operator=operator, action=AuditAction.TERMINAL_SESSION_OPENED, entity_type="terminal_session",
+              entity_id=None, details={"session_id": session.id, "device_id": device.id, "engine": "powershell",
+                                       "mode": "command"})
+    return TerminalSessionResponse(session_id=session.id, operator_ws_path="", operator_ticket="",
+                                   expires_in_seconds=cmd.SESSION_MAX_SECONDS, mode="command")
+
+
+class CommandModeRun(BaseModel):
+    command: str = Field(min_length=1, max_length=20000)
+    # The folder the previous command ended in; the next one starts there.
+    cwd: Optional[str] = Field(default=None, max_length=1024)
+    timeout_seconds: int = Field(default=120, ge=5, le=300)
+
+
+class CommandModeQueued(BaseModel):
+    action_id: int
+
+
+class CommandModeResult(BaseModel):
+    action_id: int
+    status: str
+    done: bool
+    output: str = ""
+    stderr: Optional[str] = None
+    error: Optional[str] = None
+    failed: Optional[bool] = None
+    duration_ms: Optional[int] = None
+    cwd: Optional[str] = None
+    truncated: bool = False
+
+
+def _command_mode_call(fn):
+    from app.services.powershell_command_mode import CommandModeError
+
+    try:
+        return fn()
+    except CommandModeError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail)
+
+
+@router.post("/devices/{device_id}/terminal/sessions/{session_id}/commands", response_model=CommandModeQueued)
+def run_command_mode(
+    device_id: int,
+    session_id: str,
+    payload: CommandModeRun,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(_require_admin),
+):
+    """One command in the caller's command-mode session: queued as a
+    run_powershell action and pushed over the live channel."""
+    from app.services import powershell_command_mode as cmd
+
+    def go():
+        session = cmd.get_session(db, device_id, session_id, operator.id)
+        action = cmd.run_command(db, session, command=payload.command, cwd=payload.cwd,
+                                 timeout_seconds=payload.timeout_seconds, operator_username=operator.username)
+        return CommandModeQueued(action_id=action.id)
+
+    return _command_mode_call(go)
+
+
+@router.get("/devices/{device_id}/terminal/sessions/{session_id}/commands/{action_id}",
+            response_model=CommandModeResult)
+def command_mode_result(
+    device_id: int,
+    session_id: str,
+    action_id: int,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(_require_admin),
+):
+    from app.models.terminal_session import TerminalSession
+    from app.services import powershell_command_mode as cmd
+
+    def go():
+        session = db.get(TerminalSession, session_id)
+        # A result is still readable after the session ended (the last command).
+        if session is None or session.device_id != device_id or session.mode != cmd.MODE \
+                or session.operator_id != operator.id:
+            raise cmd.CommandModeError(404, "No command-mode session of yours on this device")
+        return CommandModeResult(**cmd.command_result(db, session, action_id))
+
+    return _command_mode_call(go)
+
+
+@router.post("/devices/{device_id}/terminal/sessions/{session_id}/close", status_code=204)
+def close_command_mode(
+    device_id: int,
+    session_id: str,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(_require_admin),
+):
+    from app.models.terminal_session import TerminalSession
+    from app.services import powershell_command_mode as cmd
+
+    session = db.get(TerminalSession, session_id)
+    if session is None or session.device_id != device_id or session.mode != cmd.MODE or session.operator_id != operator.id:
+        raise HTTPException(status_code=404, detail="No command-mode session of yours on this device")
+    if cmd.close_session(db, session):
+        audit_log(db, operator=operator, action=AuditAction.TERMINAL_SESSION_CLOSED, entity_type="terminal_session",
+                  entity_id=None, details={"session_id": session.id, "device_id": device_id, "mode": "command",
+                                           "reason": "operator_closed"})
+
+
 class TerminalSessionSummary(BaseModel):
     session_id: str
     engine: str
@@ -248,6 +380,7 @@ class TerminalSessionSummary(BaseModel):
     ended_at: Optional[datetime] = None
     disconnect_reason: Optional[str] = None
     recording_bytes: Optional[int] = None
+    mode: str = "agent"  # agent: the live console · command: command mode
 
 
 @router.get("/devices/{device_id}/terminal/sessions", response_model=List[TerminalSessionSummary])
@@ -264,9 +397,12 @@ def list_terminal_sessions(
 
     if DeviceRepository(db).get(device_id) is None:
         raise HTTPException(status_code=404, detail="Device not found")
+    from app.services.powershell_command_mode import close_stale
+
+    close_stale(db, device_id)
     rows = (
         db.query(TerminalSession)
-        .filter(TerminalSession.device_id == device_id, TerminalSession.mode == "agent")
+        .filter(TerminalSession.device_id == device_id, TerminalSession.mode.in_(("agent", "command")))
         .order_by(TerminalSession.created_at.desc())
         .limit(max(1, min(limit, 100)))
         .all()
@@ -278,7 +414,7 @@ def list_terminal_sessions(
         out.append(TerminalSessionSummary(
             session_id=s.id, engine=s.engine, operator_username=s.operator_username, status=s.status,
             created_at=s.created_at, started_at=s.started_at, ended_at=s.ended_at,
-            disconnect_reason=s.disconnect_reason, recording_bytes=size,
+            disconnect_reason=s.disconnect_reason, recording_bytes=size, mode=s.mode,
         ))
     return out
 

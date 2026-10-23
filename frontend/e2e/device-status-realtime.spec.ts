@@ -133,6 +133,11 @@ for (const theme of ["dark", "light"] as const) {
     expect(await page.evaluate(() => (window as unknown as { __sameDocument?: boolean }).__sameDocument)).toBe(true);
 
     if (desktop) {
+      // A status change is counted again 3 s later (STATUS_REFRESH_DELAY_MS);
+      // here that reload answers with the mock's fixed state. Let it land
+      // before the drawer's own events, or it can overwrite them (flaky).
+      await page.waitForTimeout(3500);
+      await page.waitForLoadState("networkidle");
       // The drawer's header chip says the same.
       await row.getByText("BH-WH-SCANNER").first().click();
       const header = page.locator(".th-drawer").getByTestId("device-status").first();

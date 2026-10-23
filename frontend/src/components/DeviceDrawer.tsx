@@ -659,9 +659,11 @@ export default function DeviceDrawer({
   // shell (Linux): admin/owner only, behind the same platform flag as the
   // terminal, opened with a two-factor code. The backend enforces all again.
   const showPowerShell = (isWindows || isLinux) && platformFeatures.FEATURE_TERMINAL && can("admin");
-  const powerShellCapable = isLinux
-    ? terminalCapable
-    : Boolean(device.capabilities && "powershell" in device.capabilities);
+  const fullPowerShell = Boolean(device.capabilities && "powershell" in device.capabilities);
+  // A Windows agent without the pseudo console (Server 2012 R2 / 2016) still
+  // runs PowerShell, a command at a time: the console opens in command mode.
+  const powerShellCommandMode = isWindows && !fullPowerShell && Boolean(device.agent_version);
+  const powerShellCapable = isLinux ? terminalCapable : fullPowerShell || powerShellCommandMode;
   // Agent actions a Linux agent answers "not supported" to.
   const linuxUnsupported = new Set<ActionType>(["apply_power_policy", "reopen_rustdesk", "repair_config_rustdesk"]);
   const supported = (type: ActionType) => !(isLinux && linuxUnsupported.has(type));
@@ -1801,6 +1803,7 @@ export default function DeviceDrawer({
                 currentUser={device.current_user}
                 osCaption={device.os_caption}
                 capable={powerShellCapable}
+                commandMode={powerShellCommandMode}
                 active={isOpen && activeTab === "management"}
                 offline={offline}
                 kind={isLinux ? "linux" : "powershell"}

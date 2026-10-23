@@ -12,6 +12,7 @@ import { useSessionStore } from "../../store/sessionStore";
 import type { TerminalHandle } from "../DeviceTerminal";
 import { downloadConsoleRecording } from "../consoleDownload";
 import CommandBar, { toConsoleInput } from "./CommandBar";
+import CommandModeScreen from "./CommandModeScreen";
 import { CONSOLE_APPEARANCE } from "./consoleTheme";
 
 // The drawer's console is ~85 columns at 13 px; a point smaller fits a typical
@@ -82,6 +83,8 @@ export default function PowerShellConsole({
 }: PowerShellConsoleProps) {
   const { user } = useSessionStore();
   const linux = kind === "linux";
+  // Windows without a pseudo console: each command on its own (CommandModeScreen).
+  const commandMode = session.mode === "command";
   const compact = layout === "drawer";
   const [state, setState] = useState<ConsoleState>("connecting");
   const [endedText, setEndedText] = useState("");
@@ -94,11 +97,13 @@ export default function PowerShellConsole({
   const [notice, setNotice] = useState<string | null>(null);
 
   const operator = user ? { username: user.username, role: user.role } : null;
-  const [banner] = useState(
+  const [plainBanner] = useState(
     () =>
-      `\x1b[90mSession started by ${operator?.username ?? "you"} at ${clock(startedAt, true)} after a 2FA code` +
-      `${osCaption ? ` · ${osCaption}` : ""}\x1b[0m`,
+      `Session started by ${operator?.username ?? "you"} at ${clock(startedAt, true)} after a 2FA code` +
+      `${osCaption ? ` · ${osCaption}` : ""}`,
   );
+  // The live terminal shows it in grey (ANSI); command mode prints plain text.
+  const banner = `\x1b[90m${plainBanner}\x1b[0m`;
 
   // Idle and hard limits, counted locally from the last byte either way.
   const lastActivity = useRef(startedAt);
@@ -191,7 +196,11 @@ export default function PowerShellConsole({
   const subtitle = [
     clientName,
     `#${deviceId}`,
-    linux ? "runs as root over the live channel" : "runs as NT AUTHORITY\\SYSTEM over the live channel",
+    linux
+      ? "runs as root over the live channel"
+      : commandMode
+        ? "runs as NT AUTHORITY\\SYSTEM · command mode (no pseudo console on this Windows)"
+        : "runs as NT AUTHORITY\\SYSTEM over the live channel",
   ]
     .filter(Boolean)
     .join(" · ");
@@ -294,19 +303,33 @@ export default function PowerShellConsole({
             </div>
           }
         >
-          <DeviceTerminal
-            key={session.session_id}
-            deviceId={deviceId}
-            session={session}
-            bare
-            appearance={compact ? COMPACT_APPEARANCE : CONSOLE_APPEARANCE}
-            banner={banner}
-            handleRef={handle}
-            onOpen={onOpen}
-            onActivity={onActivity}
-            onClosed={onSocketClosed}
-            onTitleChange={onTitleChange}
-          />
+          {commandMode ? (
+            <CommandModeScreen
+              key={session.session_id}
+              deviceId={deviceId}
+              sessionId={session.session_id}
+              banner={plainBanner}
+              handleRef={handle}
+              onOpen={onOpen}
+              onActivity={onActivity}
+              onClosed={onSocketClosed}
+              onTitleChange={onTitleChange}
+            />
+          ) : (
+            <DeviceTerminal
+              key={session.session_id}
+              deviceId={deviceId}
+              session={session}
+              bare
+              appearance={compact ? COMPACT_APPEARANCE : CONSOLE_APPEARANCE}
+              banner={banner}
+              handleRef={handle}
+              onOpen={onOpen}
+              onActivity={onActivity}
+              onClosed={onSocketClosed}
+              onTitleChange={onTitleChange}
+            />
+          )}
         </Suspense>
       </div>
       {state === "ended" ? (
@@ -332,6 +355,11 @@ export default function PowerShellConsole({
           onInterrupt={interrupt}
           compact={compact}
           initialValue={initialCommand ?? ""}
+          placeholder={
+            commandMode
+              ? "Type a command · Enter runs · Shift+Enter new line · ↑↓ history · runs on its own, up to 5 min"
+              : undefined
+          }
         />
       )}
     </div>
