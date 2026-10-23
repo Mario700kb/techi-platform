@@ -5,6 +5,19 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-23] PS-PROMPT-2026-10-23 — Command mode types straight into the screen (`11997f8`)
+
+**Frontend deployed 22:06 (Tirana); backend unchanged at `dc4a2ad`.**
+- The owner: in command mode PowerShell did not type into the black screen,
+  only into the bar next to Run. The screen now ends with its own prompt
+  (`PS <folder>>`): focused when the device answers, a click anywhere on
+  the screen returns to it, Enter runs, Up/Down walk this session's
+  commands, Ctrl+C clears the line; no app focus ring on it. The command bar
+  keeps working.
+- Rollback `techi-platform-frontend:pre-ps-prompt-dc4a2ad`; guard, `nginx -t`
+  and smoke passed. e2e `powershell-command-mode` types at the prompt, clicks
+  the screen and walks the history. Disk 2.6 GB free (89%).
+
 ## [2026-10-23] PS-COMMAND-MODE-2026-10-23 — PowerShell on Windows without a pseudo console (`dc4a2ad`)
 
 **Backend ready 21:51:42, frontend 21:53:08 (Tirana), no migration, no agent change.**
