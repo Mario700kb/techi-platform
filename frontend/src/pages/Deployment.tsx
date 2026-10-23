@@ -793,9 +793,7 @@ export default function Deployment() {
         )}
       </div>
 
-      {diagnosticsToken && (
-        <TokenDiagnostics token={diagnosticsToken} onClose={() => setDiagnosticsToken(null)} />
-      )}
+      {diagnosticsToken && <TokenDiagnostics token={diagnosticsToken} onClose={() => setDiagnosticsToken(null)} />}
 
       {pendingTokenAction && (
         <ConfirmationModal
@@ -870,6 +868,33 @@ export default function Deployment() {
   );
 }
 
+// A titled group of commands inside a platform: what it is for on the left,
+// an optional action (download, link) on the right.
+function DeploySection({
+  title,
+  hint,
+  aside,
+  children,
+}: {
+  title: string;
+  hint: string;
+  aside?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="th-onb-section th-deploy-section">
+      <div className="flex flex-wrap items-center justify-between gap-3 [&>*:last-child:not(:first-child)]:flex-none [&>*:last-child:not(:first-child)]:whitespace-nowrap">
+        <div className="min-w-0 flex-1">
+          <div className="th-onb-label">{title}</div>
+          <div className="th-onb-hint !mt-0.5">{hint}</div>
+        </div>
+        {aside}
+      </div>
+      {children}
+    </section>
+  );
+}
+
 function CommandBlock({
   label,
   value,
@@ -917,6 +942,9 @@ function DeploymentModal({
   const token = tokenFromBootstrapUrl(deployment.bootstrap_url);
   const visible = DEPLOYMENT_PLATFORMS.filter((meta) => isPlatformVisible(meta, features));
   const meta = deployment.token_metadata;
+  const [platformId, setPlatformId] = useState(visible[0]?.id ?? "windows");
+  const platform = visible.find((p) => p.id === platformId) ?? visible[0];
+  const platformTabsRef = useTabIndicator<HTMLDivElement>(platform?.id ?? "");
   return (
     <Modal
       title={deployment.token_name}
@@ -930,44 +958,70 @@ function DeploymentModal({
         </Button>
       }
     >
-      {!deployment.token_available && (
-        <div className="th-onb-note" style={{ "--onb-tone": "var(--th-status-warning)" } as CSSProperties}>
-          <AlertTriangle className="h-4 w-4" />
-          <span>This token has no recoverable value. Regenerate it to copy a usable command.</span>
+      {/* One block whose height follows its content: the body scrolls instead
+          of squeezing the summary to a line when Windows' commands are long. */}
+      <div className="flex flex-col gap-4">
+        {!deployment.token_available && (
+          <div className="th-onb-note" style={{ "--onb-tone": "var(--th-status-warning)" } as CSSProperties}>
+            <AlertTriangle className="h-4 w-4" />
+            <span>This token has no recoverable value. Regenerate it to copy a usable command.</span>
+          </div>
+        )}
+        <dl className="th-onb-meta sm:!grid-cols-4">
+          <div>
+            <dt>Status</dt>
+            <dd>
+              <TokenStatusChip token={meta} />
+            </dd>
+          </div>
+          <div>
+            <dt>Uses</dt>
+            <dd>
+              <UsageMeter token={meta} />
+            </dd>
+          </div>
+          <div>
+            <dt>Expires</dt>
+            <dd>{fmtDate(meta.expires_at)}</dd>
+          </div>
+          <div>
+            <dt>{TERMS.remoteSupport}</dt>
+            <dd className="font-mono !text-[12px]">{deployment.rustdesk.server_host ?? "—"}</dd>
+          </div>
+        </dl>
+        <div ref={platformTabsRef} role="tablist" aria-label="Platform" className="th-tabs th-deploy-tabs">
+          {visible.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              role="tab"
+              aria-selected={p.id === platform?.id}
+              onClick={() => setPlatformId(p.id)}
+              className="th-tab"
+            >
+              <p.icon className="h-3.5 w-3.5" />
+              {p.label}
+              <i
+                className="th-tab-dot"
+                style={{ "--tab-tone": STATUS_TONE[p.status] } as CSSProperties}
+                title={p.status}
+              />
+            </button>
+          ))}
         </div>
-      )}
-      <dl className="th-onb-meta sm:!grid-cols-4">
-        <div>
-          <dt>Status</dt>
-          <dd className="capitalize">{meta.status}</dd>
-        </div>
-        <div>
-          <dt>Uses</dt>
-          <dd className="tabular-nums">
-            {meta.use_count} / {meta.max_uses}
-          </dd>
-        </div>
-        <div>
-          <dt>Expires</dt>
-          <dd>{fmtDate(meta.expires_at)}</dd>
-        </div>
-        <div>
-          <dt>{TERMS.remoteSupport}</dt>
-          <dd className="font-mono !text-[12px]">{deployment.rustdesk.server_host ?? "—"}</dd>
-        </div>
-      </dl>
-      {visible.map((platformMeta) => (
-        <PlatformSection
-          key={platformMeta.id}
-          meta={platformMeta}
-          deployment={deployment}
-          token={token}
-          linuxPackages={linuxPackages}
-          copied={copied}
-          onCopy={onCopy}
-          onDownload={onDownload}
-        />
-      ))}
+        {platform && (
+          <PlatformSection
+            key={platform.id}
+            meta={platform}
+            deployment={deployment}
+            token={token}
+            linuxPackages={linuxPackages}
+            copied={copied}
+            onCopy={onCopy}
+            onDownload={onDownload}
+          />
+        )}
+      </div>
     </Modal>
   );
 }
@@ -1007,42 +1061,49 @@ function PlatformSection({
         {/* WINDOWS — production-proven. */}
         {meta.kind === "windows" && (
           <>
-            <CommandBlock
-              label="One-time / manual command"
-              value={deployment.manual_command}
-              copied={copied === "modal-manual"}
-              onCopy={() => void onCopy("modal-manual", deployment.manual_command)}
-            />
-            <CommandBlock
-              label="GPO startup command"
-              value={deployment.gpo_command}
-              copied={copied === "modal-gpo"}
-              onCopy={() => void onCopy("modal-gpo", deployment.gpo_command)}
-            />
-            <CommandBlock
-              label="GPO scheduled task (domain controller)"
-              value={deployment.gpo_deploy_command}
-              copied={copied === "modal-gpo-deploy"}
-              onCopy={() => void onCopy("modal-gpo-deploy", deployment.gpo_deploy_command)}
-            />
-            <CommandBlock
-              label="Bootstrap URL"
-              value={deployment.bootstrap_url}
-              copied={copied === "modal-url"}
-              onCopy={() => void onCopy("modal-url", deployment.bootstrap_url)}
-            />
-            <div>
-              <Button
-                variant="secondary"
-                size="sm"
-                type="button"
-                onClick={onDownload}
-                disabled={!deployment.token_available}
-              >
-                <Download className="h-3.5 w-3.5" />
-                Download .ps1
-              </Button>
-            </div>
+            <DeploySection
+              title="Manual install"
+              hint="One PC at a time, in an elevated PowerShell"
+              aside={
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  type="button"
+                  onClick={onDownload}
+                  disabled={!deployment.token_available}
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Download .ps1
+                </Button>
+              }
+            >
+              <CommandBlock
+                label="One-time command"
+                value={deployment.manual_command}
+                copied={copied === "modal-manual"}
+                onCopy={() => void onCopy("modal-manual", deployment.manual_command)}
+              />
+              <CommandBlock
+                label="Bootstrap URL"
+                value={deployment.bootstrap_url}
+                copied={copied === "modal-url"}
+                onCopy={() => void onCopy("modal-url", deployment.bootstrap_url)}
+              />
+            </DeploySection>
+            <DeploySection title="Group Policy" hint="Domain-joined fleets, at the next startup">
+              <CommandBlock
+                label="Startup script"
+                value={deployment.gpo_command}
+                copied={copied === "modal-gpo"}
+                onCopy={() => void onCopy("modal-gpo", deployment.gpo_command)}
+              />
+              <CommandBlock
+                label="Scheduled task (domain controller)"
+                value={deployment.gpo_deploy_command}
+                copied={copied === "modal-gpo-deploy"}
+                onCopy={() => void onCopy("modal-gpo-deploy", deployment.gpo_deploy_command)}
+              />
+            </DeploySection>
           </>
         )}
 
@@ -1050,39 +1111,44 @@ function PlatformSection({
         {meta.kind === "linux" &&
           (token ? (
             <>
-              <CommandBlock
-                label="One-time install"
-                value={buildLinuxInstallCommand(token)}
-                copied={copied === "modal-linux-cmd"}
-                onCopy={() => void onCopy("modal-linux-cmd", buildLinuxInstallCommand(token))}
-              />
-              <CommandBlock
-                label="Manual URL"
-                value={buildLinuxInstallUrl(token)}
-                copied={copied === "modal-linux-url"}
-                onCopy={() => void onCopy("modal-linux-url", buildLinuxInstallUrl(token))}
-              />
-              <dl className="th-onb-meta">
-                <div>
-                  <dt>Architectures</dt>
-                  <dd className="font-mono !text-[12px]">{meta.arches?.join(", ")}</dd>
+              <DeploySection title="One-time install" hint="Any systemd distribution, as root (sudo when present)">
+                <CommandBlock
+                  label="Command"
+                  value={buildLinuxInstallCommand(token)}
+                  copied={copied === "modal-linux-cmd"}
+                  onCopy={() => void onCopy("modal-linux-cmd", buildLinuxInstallCommand(token))}
+                />
+                <CommandBlock
+                  label="Installer URL"
+                  value={buildLinuxInstallUrl(token)}
+                  copied={copied === "modal-linux-url"}
+                  onCopy={() => void onCopy("modal-linux-url", buildLinuxInstallUrl(token))}
+                />
+              </DeploySection>
+              <DeploySection
+                title="Agent packages"
+                hint="The installer refuses an architecture without an active package"
+                aside={
+                  linuxPackages.some(({ pkg }) => !pkg) ? (
+                    <Link to="/onboarding?tab=packages" className="th-onb-link text-[12px]">
+                      Packages
+                    </Link>
+                  ) : undefined
+                }
+              >
+                <div className="flex flex-wrap gap-1.5">
+                  {linuxPackages.map(({ arch, pkg }) => (
+                    <span
+                      key={arch}
+                      className="th-status-chip font-mono !text-[11px]"
+                      style={{ "--chip-tone": pkg ? TONE.online : TONE.warning } as CSSProperties}
+                    >
+                      <i />
+                      {arch.replace("linux-", "")} {pkg ? pkg.version : "missing"}
+                    </span>
+                  ))}
                 </div>
-                <div>
-                  <dt>Package source</dt>
-                  <dd>
-                    <span className="font-mono !text-[12px]">{formatLinuxPackages(linuxPackages)}</span>
-                    {linuxPackages.some(({ pkg }) => !pkg) && (
-                      <>
-                        {" "}
-                        ·{" "}
-                        <Link to="/onboarding?tab=packages" className="th-onb-link">
-                          Packages
-                        </Link>
-                      </>
-                    )}
-                  </dd>
-                </div>
-              </dl>
+              </DeploySection>
             </>
           ) : (
             <p className="th-onb-hint">
@@ -1151,61 +1217,62 @@ function ScriptSection({
   const label = meta.scriptLabel ?? "Deployment script";
   return (
     <>
-      {meta.routerosVersions && (
-        <div className="th-onb-field">
-          RouterOS version
-          <div
-            className="th-segmented"
-            role="radiogroup"
-            aria-label="RouterOS version"
-            data-thumb
-            style={
-              {
-                "--seg-n": meta.routerosVersions.length,
-                "--seg-i": Math.max(
-                  0,
-                  meta.routerosVersions.findIndex((v) => v.value === routerosVersion),
-                ),
-              } as CSSProperties
-            }
-          >
-            {meta.routerosVersions.map((version) => (
-              <button
-                key={version.value}
-                type="button"
-                role="radio"
-                aria-checked={routerosVersion === version.value}
-                onClick={() => setRouterosVersion(version.value)}
-              >
-                {version.label}
-              </button>
-            ))}
+      <DeploySection title={label} hint="Paste into a RouterOS terminal (Winbox → New Terminal, or SSH)">
+        {meta.routerosVersions && (
+          <div className="th-onb-field">
+            RouterOS version
+            <div
+              className="th-segmented"
+              role="radiogroup"
+              aria-label="RouterOS version"
+              data-thumb
+              style={
+                {
+                  "--seg-n": meta.routerosVersions.length,
+                  "--seg-i": Math.max(
+                    0,
+                    meta.routerosVersions.findIndex((v) => v.value === routerosVersion),
+                  ),
+                } as CSSProperties
+              }
+            >
+              {meta.routerosVersions.map((version) => (
+                <button
+                  key={version.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={routerosVersion === version.value}
+                  onClick={() => setRouterosVersion(version.value)}
+                >
+                  {version.label}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
-      {error ? (
-        <div className="th-onb-note" style={{ "--onb-tone": "var(--th-status-critical)" } as CSSProperties}>
-          <AlertTriangle className="h-4 w-4" />
-          <span>
-            Could not generate the {label}: {error}
-          </span>
-        </div>
-      ) : script === null ? (
-        <div className="flex items-center gap-2 text-xs" style={{ color: "var(--th-text-muted)" }}>
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          Generating {label}…
-        </div>
-      ) : (
-        <CommandBlock
-          label={label}
-          value={script}
-          copied={copied === `modal-${meta.id}-script`}
-          onCopy={() => void onCopy(`modal-${meta.id}-script`, script)}
-        />
-      )}
+        )}
+        {error ? (
+          <div className="th-onb-note" style={{ "--onb-tone": "var(--th-status-critical)" } as CSSProperties}>
+            <AlertTriangle className="h-4 w-4" />
+            <span>
+              Could not generate the {label}: {error}
+            </span>
+          </div>
+        ) : script === null ? (
+          <div className="flex items-center gap-2 text-xs" style={{ color: "var(--th-text-muted)" }}>
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Generating {label}…
+          </div>
+        ) : (
+          <CommandBlock
+            label="Script"
+            value={script}
+            copied={copied === `modal-${meta.id}-script`}
+            onCopy={() => void onCopy(`modal-${meta.id}-script`, script)}
+          />
+        )}
+      </DeploySection>
       {meta.arches && meta.arches.length > 0 && (
-        <div className="th-onb-field">
-          Supported architectures
+        <DeploySection title="Supported architectures" hint="Every RouterOS device on these runs the same script">
           <div className="flex flex-wrap gap-1.5">
             {meta.arches.map((a) => (
               <span key={a} className="th-status-chip font-mono !text-[11px]">
@@ -1213,7 +1280,7 @@ function ScriptSection({
               </span>
             ))}
           </div>
-        </div>
+        </DeploySection>
       )}
     </>
   );

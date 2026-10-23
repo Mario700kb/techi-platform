@@ -3237,6 +3237,15 @@ a.th-kpi:hover {
   font-weight: 600;
   color: var(--th-text-muted);
 }
+/* Deployment commands modal: one platform at a time under a tab row. */
+.th-deploy-tabs {
+  margin-bottom: 0;
+  box-shadow: inset 0 -1px 0 var(--th-border-subtle);
+}
+.th-deploy-tabs .th-tab-dot {
+  width: 6px;
+  height: 6px;
+}
 /* Package summary: one card per package type, the selected one outlined. */
 .th-onb-summary {
   padding: 16px 18px 18px;

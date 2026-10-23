@@ -34,11 +34,7 @@ import { Client, DeviceGroup, getClients, getGroups } from "../api/clients";
 import { useAuth } from "../auth/AuthContext";
 import { API_BASE_URL } from "../api/client";
 import { Button, Modal, PageHeader, Select, DatePicker } from "../components/ui";
-import {
-  TokenStatusChip,
-  UsageMeter,
-  formatTokenPrefix,
-} from "../components/EnrollmentTokenBits";
+import { TokenStatusChip, UsageMeter, formatTokenPrefix } from "../components/EnrollmentTokenBits";
 import { TERMS, TONE } from "../utils/deviceStatus";
 import { useCachedQuery } from "../hooks/useCachedQuery";
 import { tiranaInputToUtcIso } from "../utils/time";
@@ -60,7 +56,10 @@ const PLATFORMS: { id: EnrollmentBootstrapPlatform; label: string }[] = [
 
 const INSTALLER_STEPS: [string, string][] = [
   ["Choose how it enrolls", "Token enrollment for workgroup PCs and tests, Trusted domain / GPO for domain fleets."],
-  ["Pick the platform and device policy", "Windows or Linux; the Server profile keeps a machine reachable on AC power."],
+  [
+    "Pick the platform and device policy",
+    "Windows or Linux; the Server profile keeps a machine reachable on AC power.",
+  ],
   ["Generate and run", "Copy the run command or download the script; run it as Administrator (root on Linux)."],
 ];
 
@@ -433,7 +432,10 @@ export default function EnrollmentBootstrap() {
       )}
 
       {flashToken && (
-        <div className="th-onb-note th-onb-reveal" style={{ "--onb-tone": "var(--th-status-warning)" } as React.CSSProperties}>
+        <div
+          className="th-onb-note th-onb-reveal"
+          style={{ "--onb-tone": "var(--th-status-warning)" } as React.CSSProperties}
+        >
           <Info className="h-4 w-4 flex-none" style={{ color: "var(--th-status-warning)" }} />
           <span className="flex-none text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>
             Copy the token now; it is not shown again.
@@ -448,7 +450,6 @@ export default function EnrollmentBootstrap() {
           </button>
         </div>
       )}
-
 
       {/* ── generator · installer, default token, security model ────────── */}
       <div className="grid items-stretch gap-4 xl:grid-cols-2">
@@ -774,10 +775,10 @@ export default function EnrollmentBootstrap() {
                 <span>
                   Installer
                   <small>
-                  {bootstrap
-                    ? `Ready to run as ${bootstrap.platform === "windows" ? "Administrator" : "root"}`
-                    : "Appears here once generated"}
-                </small>
+                    {bootstrap
+                      ? `Ready to run as ${bootstrap.platform === "windows" ? "Administrator" : "root"}`
+                      : "Appears here once generated"}
+                  </small>
                 </span>
               </div>
               {bootstrap && (

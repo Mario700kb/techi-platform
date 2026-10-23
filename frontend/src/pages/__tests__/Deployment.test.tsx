@@ -60,8 +60,20 @@ describe("Deployment (Tokens & commands)", () => {
     vi.spyOn(clientsApi, "getClients").mockResolvedValue([{ id: 42, name: "Vanto shpk", is_active: true }] as never);
     vi.spyOn(clientsApi, "getGroups").mockResolvedValue([] as never);
     vi.spyOn(packagesApi, "getAgentPackages").mockResolvedValue([
-      pkg({ id: "u", version: "2.1.35.0", platform: "windows-amd64", file_type: "agent_update_msi", filename: "TECHI-Agent-Update-2.1.35.msi" }),
-      pkg({ id: "m", version: "2.1.34.0", platform: "windows-amd64", file_type: "msi", filename: "TECHI-Agent-2.1.34.msi" }),
+      pkg({
+        id: "u",
+        version: "2.1.35.0",
+        platform: "windows-amd64",
+        file_type: "agent_update_msi",
+        filename: "TECHI-Agent-Update-2.1.35.msi",
+      }),
+      pkg({
+        id: "m",
+        version: "2.1.34.0",
+        platform: "windows-amd64",
+        file_type: "msi",
+        filename: "TECHI-Agent-2.1.34.msi",
+      }),
       pkg({ id: "l", version: "2.1.39", platform: "linux-amd64", file_type: "agent_binary", filename: "a.bin" }),
     ] as never);
   });
@@ -101,13 +113,11 @@ describe("Deployment (Tokens & commands)", () => {
     const table = await screen.findByRole("table");
     fireEvent.click(within(table).getByRole("button", { name: "More actions for Vanto" }));
     const menu = screen.getByRole("menu", { name: "More actions for Vanto" });
-    expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
-      "Edit",
-      "Regenerate value",
-      "Diagnostics",
-      "Revoke",
-      "Delete",
-    ]);
+    expect(
+      within(menu)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual(["Edit", "Regenerate value", "Diagnostics", "Revoke", "Delete"]);
   });
 
   it("names the Endpoint MSI as what a new install downloads, never the update bridge", async () => {
@@ -117,5 +127,37 @@ describe("Deployment (Tokens & commands)", () => {
     expect(within(card).getByText("2.1.34.0")).toBeInTheDocument();
     expect(within(card).queryByText("2.1.35.0")).toBeNull();
     expect(within(card).getByText("amd64 2.1.39 · arm64 none · armhf none")).toBeInTheDocument();
+  });
+
+  it("shows one platform at a time in the deployment commands, Windows first", async () => {
+    vi.spyOn(api, "getEnrollmentTokenDeployment").mockResolvedValue({
+      token_id: 1,
+      token_name: "Vanto",
+      token_prefix: "abcd1234",
+      token_available: true,
+      bootstrap_url: "https://api.example/api/v1/bootstrap/windows.ps1?token=TKN",
+      manual_command: "manual",
+      gpo_command: "gpo",
+      gpo_deploy_command: "gpo-deploy",
+      token_metadata: TOKENS[0],
+      rustdesk: { server_host: "h" },
+    } as never);
+    renderPage();
+    const table = await screen.findByRole("table");
+    fireEvent.click(within(table).getByRole("button", { name: "Deployment commands for Vanto" }));
+    const tabs = await screen.findByRole("tablist", { name: "Platform" });
+    expect(
+      within(tabs)
+        .getAllByRole("tab")
+        .map((t) => t.textContent),
+    ).toEqual(["Windows", "Linux"]);
+    expect(screen.getByText("Manual install")).toBeInTheDocument();
+    expect(screen.getByText("Group Policy")).toBeInTheDocument();
+    expect(screen.queryByText("One-time install")).toBeNull();
+
+    fireEvent.click(within(tabs).getByRole("tab", { name: /Linux/ }));
+    expect(screen.getByText("One-time install")).toBeInTheDocument();
+    expect(screen.queryByText("Group Policy")).toBeNull();
+    expect(screen.getByText("arm64 missing")).toBeInTheDocument();
   });
 });
