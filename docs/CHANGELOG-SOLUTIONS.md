@@ -5,6 +5,23 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-23] DEPLOY-DIALOG-2026-10-23 — Deployment commands: one platform at a time (`20fde45`)
+
+**Frontend deployed 13:02 (Tirana).**
+- The dialog stacked every platform about three screens deep; it now has a
+  platform tab row (Windows · Linux · MikroTik, with a status dot) and shows
+  one. Windows is grouped into Manual install (command, bootstrap URL, .ps1
+  download) and Group Policy (startup script, scheduled task); Linux into the
+  install and one chip per architecture package ("arm64 missing" in warning
+  tone); MikroTik into the RouterOS script and its architectures.
+- Bug: the token summary (status, uses, expires, Remote Support) showed as an
+  empty line at the top. With Windows' long commands the dialog body, a flex
+  column, squeezed it to 2 px (`overflow: hidden` lets a flex child shrink);
+  the content now sits in one block the body scrolls.
+- 442 unit tests; screenshots in dark and light, desktop and phone. Rollback
+  `techi-platform-frontend:pre-deploy-dialog-7b63fe6`; `nginx -t`, guard and
+  smoke passed.
+
 ## [2026-10-23] ONBOARDING-REDESIGN-2026-10-23 — One token table, balanced Installer, correct packages (`e4fcd49`)
 
 **Frontend deployed 12:08 (Tirana).**
