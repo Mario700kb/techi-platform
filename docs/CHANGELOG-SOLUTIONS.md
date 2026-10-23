@@ -5,6 +5,27 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-23] ALERT-NOISE-2026-10-23 — No alerts for a PC waking up; resolving asks why (`e515405`)
+
+**Backend ready 15:35:45, frontend 15:38 (Tirana).**
+- Measured 19–23 Oct: 1570 alerts, 81% closed by themselves, 1845 reopenings;
+  3 taken, 0 notes; the only manual resolutions a bulk "fixed" on 19 Oct.
+- `telemetry_missing` (615 alerts, 39%): 96% opened within 10 minutes of the
+  PC coming online — the sweep counted the time it slept as silence, and the
+  agent uploads on its 15-minute tick. Silence is now measured from when the
+  device came online (`device_status_history`, one grouped query a sweep).
+- An upload that carries a firing and its own "ok" (an episode while the
+  agent could not report live) no longer opens and closes an alert in the
+  same second: 119/195 `disk_busy`, 119/176 `packet_loss`, 20 CPU/RAM.
+  Together about half of all alert openings in that period.
+- Resolving asks why: no reason preselected, the note asks what fits it; on
+  the phone "Dismiss" (a silent "fixed" after 5 s) is Resolve with the same
+  dialog. Screenshots in dark and light, desktop and phone.
+- Dump `/opt/backups/techi/pre-alert-noise-20261023-152855.sql.gz`
+  (190 MB, `gzip -t` OK); rollback `techi-platform-{backend,frontend}:pre-alert-noise-5d97d20`;
+  no migration. Both images built before the restart; backend ready 13 s after
+  start, 0 tracebacks; `nginx -t`, guard and smoke passed. Disk 2.3 GB free (91%).
+
 ## [2026-10-23] LIVE-PATCH-COUNT-2026-10-23 — Update counts follow the agent live; Connect notes clear themselves (`28aead7`)
 
 **Backend ready 14:55:53, frontend 14:58 (Tirana).**
