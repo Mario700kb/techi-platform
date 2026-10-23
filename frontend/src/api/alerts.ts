@@ -10,6 +10,7 @@ import type {
   AlertPage,
   AlertSeverity,
   AlertView,
+  Finding,
   FindingsPage,
   QualityReport,
 } from "../types/alert";
@@ -199,7 +200,7 @@ export function removeAlertMute(muteId: number): Promise<void> {
   return fetchJson<void>(`/api/v1/alerts/mutes/${muteId}`, send("DELETE"));
 }
 
-export function getAlertFindings(type?: "security" | "reboot" | "disk_forecast"): Promise<FindingsPage> {
+export function getAlertFindings(type?: Finding["type"]): Promise<FindingsPage> {
   return fetchJson<FindingsPage>(`/api/v1/alerts/findings${query({ type })}`);
 }
 

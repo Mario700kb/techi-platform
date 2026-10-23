@@ -205,7 +205,7 @@ export interface Finding {
   device_name: string;
   client_name: string | null;
   device_role: "server" | "pc";
-  type: "security" | "reboot" | "disk_forecast";
+  type: "security" | "reboot" | "power" | "disk_forecast";
   severity: "high" | "medium" | "low";
   title: string;
   detail: string | null;

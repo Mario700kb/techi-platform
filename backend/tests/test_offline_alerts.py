@@ -140,6 +140,17 @@ def test_lunch_and_leaving_early_raise_nothing(db):
     assert _alerts(db, lunch) == _alerts(db, early) == []
 
 
+def test_a_laptop_closed_for_the_afternoon_raises_nothing(db):
+    asleep = _device(db, tirana(13, 11), hostname="laptop", offline_reason="sleep")
+    shut = _device(db, tirana(13, 11), hostname="shut", offline_reason="shutdown")
+    lost = _device(db, tirana(13, 11), hostname="lost", offline_reason="connection_lost")
+
+    _sweep(db, tirana(13, 14))
+
+    assert _alerts(db, asleep) == _alerts(db, shut) == []
+    assert len(_alerts(db, lost)) == 1
+
+
 def test_a_workstation_switched_off_at_the_end_of_the_day_raises_nothing(db):
     lost = tirana(13, 16, 50)
     pc = _device(db, lost)

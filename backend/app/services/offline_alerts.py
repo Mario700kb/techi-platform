@@ -15,7 +15,9 @@ The reconciliation worker runs this sweep every pass instead:
   today's working hours and has stayed lost OFFLINE_ALERT_WORKSTATION_MINUTES
   (120), checked while still inside working hours, so with 08:00–17:00 only a
   PC lost before 15:00 can alert. Lunch, meetings, leaving early, a PC not
-  switched on in the morning raise nothing.
+  switched on in the morning raise nothing, and neither does a PC whose agent
+  said it was going to sleep or being shut down (a laptop closed for the
+  afternoon: 50 of 317 alerts in Oct 2026).
 * Workstations out of contact OFFLINE_ALERT_ABSENT_DAYS: one WARNING (broken,
   lost or retired; archive it if it is retired).
 
@@ -122,6 +124,7 @@ class OfflineAlertSweep:
             due.append(
                 and_(
                     ~always_on,
+                    or_(Device.offline_reason.is_(None), Device.offline_reason.notin_(tuple(_CLEAN_POWER_STATES))),
                     Device.last_seen >= _naive(window[0]),
                     Device.last_seen <= _naive(now - timedelta(minutes=settings.OFFLINE_ALERT_WORKSTATION_MINUTES)),
                 )

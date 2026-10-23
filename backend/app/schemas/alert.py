@@ -211,7 +211,7 @@ class FindingOut(BaseModel):
     device_name: str
     client_name: Optional[str] = None
     device_role: str
-    type: str  # security | reboot | disk_forecast
+    type: str  # security | reboot | power | disk_forecast
     severity: str  # high | medium | low
     title: str
     detail: Optional[str] = None

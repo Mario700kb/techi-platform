@@ -39,7 +39,7 @@ const TABS: { id: Tab; label: string; hint: string }[] = [
   { id: "open", label: "All open", hint: "Every open alert, most urgent first" },
   { id: "snoozed", label: "Snoozed", hint: "Back when the snooze ends" },
   { id: "resolved", label: "Resolved", hint: "Closed, newest first" },
-  { id: "findings", label: "Findings", hint: "Security, restarts and disks to fix on a plan" },
+  { id: "findings", label: "Findings", hint: "Security, restarts, power cuts and disks to fix on a plan" },
   { id: "rsids", label: "Remote Support IDs", hint: "IDs as the clients themselves report them" },
   { id: "quality", label: "Quality", hint: "Which rules make noise" },
   { id: "mutes", label: "Mute rules", hint: "Rules that keep alerts from opening" },

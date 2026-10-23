@@ -298,7 +298,12 @@ class MonitorAlertService:
                   "; ".join(f"{d.name}: {d.problem}" for d in problems))
         if "critical_events" in monitors:
             monitor = monitors["critical_events"]
-            groups = firing_event_groups(health, now, is_server=is_server, base_severity=monitor.severity)
+            from app.services.alert_rules import EVENT_GROUPS
+
+            groups = [
+                g for g in firing_event_groups(health, now, is_server=is_server, base_severity=monitor.severity)
+                if is_server or EVENT_GROUPS[g.key].pc_alert
+            ]
             for group in groups:
                 latest = group.events[0]
                 times = "time" if group.count == 1 else "times"

@@ -159,6 +159,22 @@ def test_reports_open_one_alert_per_group_and_close_the_rest(db):
     assert [a.fingerprint for a in _open(db, AlertKind.CRITICAL_EVENTS)] == ["evt:disk_bad"]
 
 
+def test_a_pc_that_keeps_losing_power_is_a_finding_not_an_alert(db, monkeypatch):
+    shutdowns = [_event(1, "Microsoft-Windows-Kernel-Power", 41, 2), _event(2, "Microsoft-Windows-Kernel-Power", 41, 50)]
+    _store_health(db, 1, shutdowns)
+    MonitorAlertService(db).evaluate_reports(db.get(Device, 1))
+    assert _open(db, AlertKind.CRITICAL_EVENTS) == []
+
+    page = _api(db, monkeypatch).get("/api/v1/alerts/findings?type=power").json()
+    [finding] = page["items"]
+    assert finding["device_id"] == 1 and finding["title"] == "Unexpected shutdown 2× in 7 days"
+
+    db.query(DeviceInventory).delete()
+    _store_health(db, 2, shutdowns[:1])
+    MonitorAlertService(db).evaluate_reports(db.get(Device, 2))
+    assert [a.fingerprint for a in _open(db, AlertKind.CRITICAL_EVENTS)] == ["evt:shutdown"]  # a server still alerts
+
+
 # ── priority, reopening, mutes ──────────────────────────────────────────────
 
 def test_priority_weighs_the_device_role_and_recurrence():
@@ -410,8 +426,7 @@ def test_an_analysis_is_redacted_structured_reused_and_limited(db, monkeypatch):
     monkeypatch.setattr(AlertAIService, "_client", lambda self: SimpleNamespace(
         beta=SimpleNamespace(messages=_FakeMessages(calls, ANSWER))))
     monkeypatch.setattr(alert_ai_service, "audit_log", lambda *a, **k: None, raising=False)
-    _store_health(db, 1, [_event(1, "Microsoft-Windows-Kernel-Power", 41, 2, "RECEPTION-08 lost power"),
-                          _event(2, "Microsoft-Windows-Kernel-Power", 41, 50)])
+    _store_health(db, 1, [_event(1, "BugCheck", 1001, 2, "RECEPTION-08 stopped with a blue screen")])
     MonitorAlertService(db).evaluate_reports(db.get(Device, 1))
     [alert] = _open(db, AlertKind.CRITICAL_EVENTS)
     api = _api(db, monkeypatch)

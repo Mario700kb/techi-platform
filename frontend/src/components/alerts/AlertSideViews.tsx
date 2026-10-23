@@ -17,6 +17,7 @@ const FINDING_TYPES: { id: Finding["type"] | "all"; label: string }[] = [
   { id: "all", label: "All" },
   { id: "security", label: "Security" },
   { id: "reboot", label: "Restart pending" },
+  { id: "power", label: "Unexpected shutdowns" },
   { id: "disk_forecast", label: "Disk forecast" },
 ];
 const FINDING_TONE: Record<Finding["severity"], string> = {
@@ -34,8 +35,8 @@ export function FindingsView() {
   return (
     <div className="th-ac-view">
       <p className="th-ac-muted">
-        Weak security, restarts waiting and disks that will fill. Fixed in batches, by plan: they do not wait in the
-        alert queue. A protection that gets switched off still opens an alert.
+        Weak security, restarts waiting, PCs that keep losing power and disks that will fill. Fixed in batches, by plan:
+        they do not wait in the alert queue. A protection that gets switched off still opens an alert.
       </p>
       <div className="th-ac-seg" role="group" aria-label="Finding type">
         {FINDING_TYPES.map((t) => (

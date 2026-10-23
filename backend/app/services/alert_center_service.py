@@ -524,10 +524,12 @@ class AlertCenterService:
 
     def findings(self, scope, *, kind: Optional[str] = None, client_id: Optional[int] = None) -> Dict[str, Any]:
         """States worth fixing on a plan, not incidents: weak security,
-        restarts waiting on PCs, disks forecast to fill."""
+        restarts waiting on PCs, PCs that keep losing power, disks forecast
+        to fill."""
         from app.models.device_inventory import DeviceInventory
         from app.repositories.device_repository import DeviceRepository
-        from app.services.device_health import health_from_json, reboot_pending_days
+        from app.services.alert_rules import EVENT_GROUPS
+        from app.services.device_health import firing_event_groups, health_from_json, reboot_pending_days
         from app.services.metrics_query_service import disk_trends
         from app.services.security_posture import posture_findings, posture_from_json, posture_score
 
@@ -557,8 +559,19 @@ class AlertCenterService:
                             "type": "security", "severity": level, "title": f"Security score {score}",
                             "detail": "; ".join(t for _, t in found), "since": posture.collected_at,
                         })
-            if kind in (None, "reboot") and health_json:
-                health = health_from_json(health_json)
+            health = health_from_json(health_json) if kind in (None, "reboot", "power") and health_json else None
+            if kind in (None, "power") and health is not None and not server:
+                for group in firing_event_groups(health, now, is_server=False):
+                    if EVENT_GROUPS[group.key].pc_alert:
+                        continue
+                    items.append({
+                        "device_id": device.id, "device_name": name, "client_name": client_name, "device_role": role,
+                        "type": "power", "severity": "medium" if group.count >= 4 else "low",
+                        "title": f"{group.title} {group.count}× in {group.window_h // 24} days",
+                        "detail": "Power cut or the power button held: check the UPS and power strip, ask the user",
+                        "since": group.events[0].at,
+                    })
+            if kind in (None, "reboot") and health is not None:
                 days = reboot_pending_days(health, now)
                 if days is not None and days >= 3:
                     items.append({
