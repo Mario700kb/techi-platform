@@ -5,6 +5,17 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-23] LINUX-PKG-LIST-2026-10-23 — Deployment card: no 404 for an architecture without a package (`be82577`)
+
+**Frontend deployed 11:37 (Tirana).**
+- The Linux card asked `/packages/latest` for each architecture; linux-arm64
+  has no active package yet, so opening Tokens & Commands logged a 404 in the
+  browser console (reported by the owner).
+- The card now reads the package list once (`/api/v1/agent-packages`) and
+  picks the active `agent_binary` for each architecture.
+- Rollback `techi-platform-frontend:pre-linux-pkg-list-8e46d37`; `nginx -t`,
+  guard and smoke passed.
+
 ## [2026-10-23] LINUX-PRODUCTION-2026-10-23 — Linux deployment is Production; the installer covers every systemd distribution (`6ccb0da`)
 
 **Backend deployed 11:08, frontend 11:11 (Tirana).**
