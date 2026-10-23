@@ -5,6 +5,27 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-23] UNSTABLE-CONNECTION-2026-10-23 — Connections that keep dropping are a finding; No telemetry says how long (`2545bde`)
+
+**Backend ready 21:13:07, frontend 21:14:38 (Tirana), no migration.**
+- "Unstable connection" in Findings: 10+ drops in 24 h the agent did not
+  announce (`agent_channel_lost`, `heartbeat_timeout_exceeded`; sleep and
+  shutdown do not count). Spread over the day they never trip Repeated
+  reconnects (3 in 10 min). At deploy 14 devices, LAPTOP3 108, Zoomtrip-3
+  94, FINARCH-02 50, manager-opa 26; high from 40 drops or on a server.
+  One grouped read of a day of status changes, on the Findings view only.
+- No telemetry reads "No telemetry for 60 min while online on X (expected
+  every 15 min)"; the detail names the real limit (40 min online without
+  an upload), not the 10-minute grace alone.
+- Since ALERT-NOISE (15:35) No telemetry opened twice by 20:30, against 124
+  in 08:00–09:00 the same morning; the morning wake-up is the real test.
+- Dump `/opt/backups/techi/pre-unstable-conn-20261023-204928.sql.gz`
+  (200 MB, `gzip -t` OK); rollback `techi-platform-{backend,frontend}:pre-unstable-conn-44a3ca1`.
+  Both images built before the restart, restart after load fell below 2;
+  reconnect 400 + 83, 0 tracebacks; `nginx -t`, guard and smoke passed.
+  Pytest 1766, Vitest 450. 25 old rollback tags removed with the owner's
+  OK at 20:50 (1.6 → 2.4 GB free); disk 3.0 GB free (87%) after the builds.
+
 ## [2026-10-23] ALERT-SLA-2026-10-23 — Every alert has an owner, a deadline and an escalation path (`44a3ca1`)
 
 **Migration 20:25, backend ready 20:26:15, frontend 20:27:58 (Tirana).**
