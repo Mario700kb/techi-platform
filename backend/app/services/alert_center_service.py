@@ -35,6 +35,11 @@ logger = logging.getLogger(__name__)
 # Manual "false positive" or "expected" keeps the alert closed for a day; a
 # mute rule keeps it closed for longer.
 QUIET_AFTER_DISMISS_SECONDS = 24 * 3600
+# "Unstable connection" finding: this many drops the agent did not announce
+# (no sleep, hibernate or shutdown) within the window.
+UNSTABLE_WINDOW_HOURS = 24
+UNSTABLE_MIN_DROPS = 10
+UNANNOUNCED_DROP_REASONS = ("agent_channel_lost", "heartbeat_timeout_exceeded")
 # A site is out when this many of its devices went offline within this long.
 SITE_OUTAGE_MIN_DEVICES = 3
 SITE_OUTAGE_WINDOW = timedelta(minutes=15)
@@ -620,7 +625,7 @@ class AlertCenterService:
     def findings(self, scope, *, kind: Optional[str] = None, client_id: Optional[int] = None) -> Dict[str, Any]:
         """States worth fixing on a plan, not incidents: weak security,
         restarts waiting on PCs, PCs that keep losing power, disks forecast
-        to fill."""
+        to fill, connections that keep dropping."""
         from app.models.device_inventory import DeviceInventory
         from app.repositories.device_repository import DeviceRepository
         from app.services.alert_rules import EVENT_GROUPS
@@ -694,12 +699,52 @@ class AlertCenterService:
                             "type": "disk_forecast", "severity": "medium" if disk.days_to_full < 30 else "low",
                             "title": f"Disk {disk.mount} full in ~{disk.days_to_full:.0f} days", "detail": None, "since": None,
                         })
+        if kind in (None, "connection"):
+            items.extend(self._unstable_connections(scope, client_id))
         rank = {"high": 0, "medium": 1, "low": 2}
         items.sort(key=lambda i: (rank[i["severity"]], 0 if i["device_role"] == "server" else 1, i["device_name"].lower()))
         counts: Dict[str, int] = {}
         for item in items:
             counts[item["type"]] = counts.get(item["type"], 0) + 1
         return {"items": items, "counts": counts}
+
+    def _unstable_connections(self, scope, client_id: Optional[int]) -> List[Dict[str, Any]]:
+        """Devices that lost their connection many times in a day without
+        announcing sleep or shutdown: spread out, they never trip "Repeated
+        reconnects" (3 in 10 minutes), yet the user works on a flaky link.
+        One grouped read over a day of status changes (indexed by time)."""
+        from app.models.device_status_history import DeviceStatusHistory
+        from app.repositories.device_repository import DeviceRepository
+
+        since = utcnow_naive() - timedelta(hours=UNSTABLE_WINDOW_HOURS)
+        drops = (
+            self.db.query(DeviceStatusHistory.device_id, func.count(DeviceStatusHistory.id).label("drops"))
+            .filter(DeviceStatusHistory.created_at >= since, DeviceStatusHistory.new_status == DeviceStatus.OFFLINE,
+                    DeviceStatusHistory.reason.in_(UNANNOUNCED_DROP_REASONS))
+            .group_by(DeviceStatusHistory.device_id)
+            .having(func.count(DeviceStatusHistory.id) >= UNSTABLE_MIN_DROPS)
+            .subquery()
+        )
+        query = DeviceRepository(self.db)._apply_scope_filter(
+            self.db.query(Device, Client.name, drops.c.drops).join(drops, drops.c.device_id == Device.id)
+            .outerjoin(Client, Client.id == Device.client_id), scope
+        ).filter(Device.is_archived.is_(False), Device.deleted_at.is_(None))
+        if client_id is not None:
+            query = query.filter(Device.client_id == client_id)
+        out = []
+        for device, client_name, count in query.limit(500).all():
+            server = device_is_server(device)
+            out.append({
+                "device_id": device.id,
+                "device_name": (device.display_name or "").strip() or device.hostname or f"Device #{device.id}",
+                "client_name": client_name, "device_role": "server" if server else "pc",
+                "type": "connection",
+                "severity": "high" if server or count >= 40 else "medium" if count >= 20 else "low",
+                "title": f"Connection lost {count}× in {UNSTABLE_WINDOW_HOURS} h",
+                "detail": "Not sleep or shutdown: check the Wi-Fi signal, the network adapter's power saving and the cable",
+                "since": None,
+            })
+        return out
 
     # ── alert quality ───────────────────────────────────────────────────────
 

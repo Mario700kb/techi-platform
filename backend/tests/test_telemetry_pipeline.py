@@ -269,7 +269,10 @@ def test_telemetry_that_stops_arriving_while_online_raises_an_alert(db):
     db.commit()
     MonitorAlertService(db).sweep()
     alert = db.query(DeviceAlert).filter(DeviceAlert.kind == AlertKind.TELEMETRY_MISSING).one()
-    assert "no data for 10 min while on" in alert.message
+    # How long it was silent and what was expected, not the policy's grace alone.
+    assert alert.message.startswith("No telemetry for 60 min while online on ")
+    assert alert.message.endswith("(expected every 15 min)")
+    assert "opens after 40 min online without an upload" in alert.detail
 
 
 def test_a_pc_that_just_woke_is_not_silent_until_its_first_upload_is_due(db):

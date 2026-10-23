@@ -240,11 +240,12 @@ def alert_findings(
     db: Session = Depends(get_db),
     _: Operator = Depends(get_current_operator),
     scope: Optional[AllowedScope] = Depends(get_operator_scope),
-    type: Optional[str] = Query(default=None, pattern="^(security|reboot|power|disk_forecast)$"),
+    type: Optional[str] = Query(default=None, pattern="^(security|reboot|power|disk_forecast|connection)$"),
     client_id: Optional[int] = None,
 ):
     """States to fix on a plan, not incidents: security posture, restarts
-    pending on PCs, PCs that keep losing power, disks forecast to fill."""
+    pending on PCs, PCs that keep losing power, disks forecast to fill,
+    connections that keep dropping."""
     return AlertCenterService(db).findings(_scope_for(db, scope, client_id), kind=type, client_id=client_id)
 
 

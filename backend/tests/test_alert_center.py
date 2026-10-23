@@ -305,6 +305,26 @@ def test_a_site_that_goes_offline_together_is_one_p1(db, monkeypatch):
     assert items[0]["title"] == "Site offline · Durrës office" and len(items[0]["member_ids"]) == 3
 
 
+def test_a_connection_that_keeps_dropping_is_a_finding_sleep_is_not(db, monkeypatch):
+    from app.models.device_status_history import DeviceStatusHistory
+
+    now = utcnow_naive()
+    for i in range(12):  # RECEPTION-08: the link drops, spread over the day
+        db.add(DeviceStatusHistory(device_id=1, new_status=DeviceStatus.OFFLINE, reason="agent_channel_lost",
+                                   created_at=now - timedelta(hours=i)))
+    for i in range(30):  # SRV-FILE-02 sleeping is announced: not a drop
+        db.add(DeviceStatusHistory(device_id=2, new_status=DeviceStatus.OFFLINE, reason="agent_sleep",
+                                   created_at=now - timedelta(minutes=10 * i)))
+    db.add(DeviceStatusHistory(device_id=1, new_status=DeviceStatus.OFFLINE, reason="agent_channel_lost",
+                               created_at=now - timedelta(hours=30)))  # outside the day
+    db.commit()
+    page = _api(db, monkeypatch).get("/api/v1/alerts/findings", params={"type": "connection"}).json()
+    assert [(i["device_name"], i["title"], i["severity"]) for i in page["items"]] == [
+        ("RECEPTION-08", "Connection lost 12× in 24 h", "low"),
+    ]
+    assert page["counts"] == {"connection": 1}
+
+
 def test_findings_list_security_and_pending_restarts(db, monkeypatch):
     weak = {"defender": {"present": True, "antivirus_enabled": False}, "firewall": {"domain": True, "private": False, "public": True}}
     since = (datetime.now(timezone.utc) - timedelta(days=20)).isoformat()

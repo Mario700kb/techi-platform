@@ -160,6 +160,19 @@ class MonitorAlertService:
         label = LABEL.get(monitor.metric, monitor.metric)
         if event.target:
             label = f"{label} {event.target}"
+        if monitor.metric == "no_data":
+            # The real limit is two uploads plus the policy's grace, counted
+            # from when the device came online; the grace alone is not it.
+            every = max(1, policy.upload_seconds // 60)
+            limit = (policy.upload_seconds * 2 + monitor.duration_s) // 60
+            silent = f"{event.value:.0f} min" if event.value is not None else f"over {limit} min"
+            engine._open_alert(
+                device.id, kind, severity,
+                f"No telemetry for {silent} while online on {hostname} (expected every {every} min)",
+                detail=f"Monitor {monitor.key} · opens after {limit} min online without an upload",
+                device=device, fingerprint=fingerprint,
+            )
+            return
         now = ""
         if event.value is not None:
             now = f" (now {event.value:.0f}{UNIT.get(monitor.metric, '')})"
@@ -359,7 +372,8 @@ class MonitorAlertService:
                 if silent_for is not None and device.id in came_online:
                     quiet_for = min(silent_for, now - came_online[device.id])
                 if online and quiet_for is not None and quiet_for > limit:
-                    self.apply(device, MonitorEvent(key=no_data.key, state="firing"), policy)
+                    self.apply(device, MonitorEvent(key=no_data.key, state="firing",
+                                                    value=quiet_for.total_seconds() / 60), policy)
                     touched += 1
                 elif silent_for is not None and silent_for <= limit:
                     engine._resolve(device.id, AlertKind.TELEMETRY_MISSING, reason="telemetry_arriving")
