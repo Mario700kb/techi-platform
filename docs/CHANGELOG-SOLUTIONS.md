@@ -5,6 +5,37 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-23] LINUX-PRODUCTION-2026-10-23 — Linux deployment is Production; the installer covers every systemd distribution (`6ccb0da`)
+
+**Backend deployed 11:08, frontend 11:11 (Tirana).**
+- Review before the switch found two production gaps: `linux-arm64` had no
+  active package (the installer died mid-run on every aarch64 machine with a
+  404) and `linux-amd64` was still 2.1.33, older than Remote Support on Linux.
+- The installer now stops before touching anything when the machine has no
+  systemd (Alpine, Devuan, containers), when the architecture has no active
+  package, or when sha256sum is missing; the agent binary is always verified.
+  It no longer needs awk: a minimal openSUSE Tumbleweed has none, and every
+  checksum looked like a mismatch there.
+- Remote Support installs on Fedora/RHEL/Rocky/Alma (rpm), openSUSE (suse rpm)
+  and Arch (x86_64) as well as Debian/Ubuntu, each pinned to the SHA-256
+  GitHub publishes for RustDesk 1.4.6. The package follows the userland
+  (`dpkg --print-architecture`): 32-bit Raspberry Pi OS on a Pi 4/5 reports
+  aarch64. GNOME/GDM on Wayland gets the X11 hint.
+- Checked in containers: Debian 12, Ubuntu 22.04 and 24.04, Fedora 40, Rocky 9
+  (with and without EPEL), openSUSE Leap 15.6, Tumbleweed and Arch all install
+  RustDesk; agent 2.1.39 runs on CentOS 7, Ubuntu 16.04 and Alpine. armhf could
+  not be run on the Mac (it runs on the four Pis).
+- Deployment card: Production, package version per architecture; the command
+  runs plain `bash` where there is no sudo.
+- Packages: agent 2.1.39 (CI run 39855667238; amd64 `702cf8f6…`, arm64
+  `d7a92ac2…`, armhf `96a3737a…`) copied to the server and hash-checked;
+  registration was denied by the permission classifier and is left to the
+  owner through Packages. Until then aarch64 installs are refused cleanly.
+- Dump `/opt/backups/techi/pre-linux-production-20261023-103045.sql.gz`
+  (178 MB, `gzip -t` OK); rollback `techi-platform-{backend,frontend}:pre-linux-production-e01ff84`;
+  no migration. Backend ready 11:08:28; guard and smoke passed, 0 tracebacks,
+  0 5xx.
+
 ## [2026-10-22] LIVE-SALVAGE-2026-10-22 — Live on the Raspberry Pis: one bad value no longer drops a frame (`577d488`)
 
 **Backend deployed 23:18 (Tirana).**
