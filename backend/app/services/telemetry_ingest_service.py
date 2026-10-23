@@ -160,10 +160,10 @@ class TelemetryIngestService:
         self.db.commit()
 
         if upload.events:
-            from app.services.monitor_alert_service import MonitorAlertService
+            from app.services.monitor_alert_service import MonitorAlertService, settled
 
             alerts = MonitorAlertService(self.db)
-            for event in upload.events:
+            for event in settled(upload.events):
                 alerts.apply(device, event, policy)
 
         return TelemetryAck(

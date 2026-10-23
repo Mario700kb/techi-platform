@@ -272,6 +272,59 @@ def test_telemetry_that_stops_arriving_while_online_raises_an_alert(db):
     assert "no data for 10 min while on" in alert.message
 
 
+def test_a_pc_that_just_woke_is_not_silent_until_its_first_upload_is_due(db):
+    from app.models.device_status_history import DeviceStatusHistory
+
+    _ingest(db, _minutes(utcnow_naive() - timedelta(minutes=5), 1))
+    state = db.get(DeviceTelemetryState, 924)
+    state.last_upload_at = utcnow_naive() - timedelta(hours=3)  # before it went to sleep
+    db.add(DeviceStatusHistory(device_id=924, previous_status=DeviceStatus.OFFLINE, new_status=DeviceStatus.ONLINE,
+                               reason="heartbeat", created_at=utcnow_naive() - timedelta(minutes=8)))
+    db.commit()
+    MonitorAlertService(db).sweep()
+    assert db.query(DeviceAlert).filter(DeviceAlert.kind == AlertKind.TELEMETRY_MISSING).count() == 0
+
+
+def test_a_pc_online_for_longer_than_the_limit_without_uploading_still_alerts(db):
+    from app.models.device_status_history import DeviceStatusHistory
+
+    _ingest(db, _minutes(utcnow_naive() - timedelta(minutes=5), 1))
+    state = db.get(DeviceTelemetryState, 924)
+    state.last_upload_at = utcnow_naive() - timedelta(hours=3)
+    db.add(DeviceStatusHistory(device_id=924, previous_status=DeviceStatus.OFFLINE, new_status=DeviceStatus.ONLINE,
+                               reason="heartbeat", created_at=utcnow_naive() - timedelta(hours=1)))
+    db.commit()
+    MonitorAlertService(db).sweep()
+    assert db.query(DeviceAlert).filter(DeviceAlert.kind == AlertKind.TELEMETRY_MISSING).count() == 1
+
+
+def test_an_episode_that_began_and_ended_inside_one_upload_opens_no_alert(db):
+    events = [
+        {"key": "cpu", "state": "firing", "value": 99.0},
+        {"key": "cpu", "state": "ok"},
+        {"key": "mem", "state": "firing", "value": 95.0},
+    ]
+    _ingest(db, _minutes(utcnow_naive() - timedelta(minutes=5), 1), events=events)
+    # Not opened and closed again either: no row the Quality view counts as noise.
+    assert [(a.kind, a.state) for a in db.query(DeviceAlert)] == [(AlertKind.HIGH_RAM, AlertState.OPEN)]
+
+
+def test_an_alert_opened_live_is_closed_by_the_upload_that_carries_its_end(db):
+    device = db.get(Device, 924)
+    MonitorAlertService(db).apply(device, MonitorEvent(key="cpu", state="firing", value=99.0), effective_policy(db, device))
+    _ingest(db, _minutes(utcnow_naive() - timedelta(minutes=5), 1),
+            events=[{"key": "cpu", "state": "firing", "value": 99.0}, {"key": "cpu", "state": "ok"}])
+    assert db.query(DeviceAlert).filter(DeviceAlert.state == AlertState.OPEN).count() == 0
+
+
+def test_a_volume_that_recovered_does_not_hide_another_that_did_not():
+    from app.services.monitor_alert_service import settled
+
+    events = [MonitorEvent(key="disk", state="firing", target="C:"), MonitorEvent(key="disk", state="firing", target="D:"),
+              MonitorEvent(key="disk", state="ok", target="C:")]
+    assert [(e.state, e.target) for e in settled(events)] == [("firing", "D:"), ("ok", "C:")]
+
+
 def test_a_disk_that_will_fill_within_the_threshold_raises_an_alert(db):
     base = (utcnow_naive() - timedelta(days=13)).replace(hour=10, minute=0, second=0, microsecond=0)
     for day in range(13):

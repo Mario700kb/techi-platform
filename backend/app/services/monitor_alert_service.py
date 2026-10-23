@@ -12,9 +12,10 @@ score, the health of its physical disks, critical System events and a restart
 left pending (agents 2.1.31 / 2.1.33).
 """
 import logging
-from datetime import timedelta
-from typing import Optional
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.time import utcnow, utcnow_naive
@@ -58,6 +59,25 @@ AGENT_METRICS_SINCE = (2, 1, 33)
 # Posture findings that, when they appear on a device that had them off,
 # open an alert (a protection was switched off). The rest stay findings.
 REGRESSION_CODES = ("no_antivirus", "realtime_off", "firewall_off", "uac_off")
+# How far back the no-data sweep looks for a device coming online: longer than
+# any silence limit a policy can set (2 × an hour's upload + the duration).
+CAME_ONLINE_LOOKBACK = timedelta(hours=6)
+
+
+def settled(events: List[MonitorEvent]) -> List[MonitorEvent]:
+    """The events of one upload as they are applied. A firing that a later
+    event of the same upload already ended happened while the device could
+    not report it live (asleep, starting up, offline) and is over: it is not
+    opened only to be closed in the same second."""
+    out = []
+    for i, event in enumerate(events):
+        if event.state == "firing" and any(
+            later.key == event.key and later.state == "ok" and (not later.target or later.target == event.target)
+            for later in events[i + 1:]
+        ):
+            continue
+        out.append(event)
+    return out
 
 
 def fingerprint_for(metric: str, target: Optional[str]) -> str:
@@ -314,6 +334,7 @@ class MonitorAlertService:
         touched = 0
         now = utcnow_naive()
         states = self.db.query(DeviceTelemetryState).all()
+        came_online = self._came_online(now - CAME_ONLINE_LOOKBACK)
         engine = self._engine()
         for state in states:
             device = self.db.get(Device, state.device_id)
@@ -327,7 +348,12 @@ class MonitorAlertService:
                 silent_for = (now - state.last_upload_at) if state.last_upload_at else None
                 limit = timedelta(seconds=policy.upload_seconds * 2 + no_data.duration_s)
                 online = device.status == DeviceStatus.ONLINE
-                if online and silent_for is not None and silent_for > limit:
+                # Time the device was off or asleep is not silence: a PC that
+                # wakes uploads on its next tick, up to 15 minutes later.
+                quiet_for = silent_for
+                if silent_for is not None and device.id in came_online:
+                    quiet_for = min(silent_for, now - came_online[device.id])
+                if online and quiet_for is not None and quiet_for > limit:
                     self.apply(device, MonitorEvent(key=no_data.key, state="firing"), policy)
                     touched += 1
                 elif silent_for is not None and silent_for <= limit:
@@ -345,3 +371,15 @@ class MonitorAlertService:
                 else:
                     engine._resolve(device.id, AlertKind.DISK_FORECAST, reason="disk_forecast_ok")
         return touched
+
+    def _came_online(self, since: datetime) -> Dict[int, datetime]:
+        """When each device last came online, for those that did since then."""
+        from app.models.device_status_history import DeviceStatusHistory
+
+        rows = (
+            self.db.query(DeviceStatusHistory.device_id, func.max(DeviceStatusHistory.created_at))
+            .filter(DeviceStatusHistory.new_status == DeviceStatus.ONLINE, DeviceStatusHistory.created_at >= since)
+            .group_by(DeviceStatusHistory.device_id)
+            .all()
+        )
+        return {device_id: at for device_id, at in rows}
