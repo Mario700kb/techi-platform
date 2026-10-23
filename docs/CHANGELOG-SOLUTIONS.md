@@ -5,6 +5,35 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-23] PS-COMMAND-MODE-2026-10-23 — PowerShell on Windows without a pseudo console (`dc4a2ad`)
+
+**Backend ready 21:51:42, frontend 21:53:08 (Tirana), no migration, no agent change.**
+- The administrator console needs ConPTY (Windows 10 1809 / Server 2019+);
+  24 Server 2016 (14393) and 8 Server 2012 R2 (9600), all agent 2.1.35 and
+  online, never reported the "powershell" capability, so no console was
+  offered. No Windows 7 device exists in the platform (the agent is built
+  with Go 1.21, which officially needs Windows 10 / Server 2016).
+- The same `POST /devices/{id}/terminal/sessions`, after the same 2FA
+  code (admin+), now opens such a device in command mode: each command is a
+  `run_powershell` action pushed over the live channel, its result polled
+  back (`…/sessions/{sid}/commands[/{action_id}]`, `…/close`), shown in
+  the same console (command bar, saved scripts, session details, recorded
+  to the same .cast). The folder is carried between commands; a marker line
+  leads each result so the agent's 4,096-character cut keeps it. Idle 15
+  min / 60 min max. Devices with the full console are unchanged.
+- Also offered on ~140 Windows 10/11 devices still on agent 2.1.20 (they
+  have ConPTY but their agent predates the capability; almost all offline):
+  updating their agent gives them the full console.
+- e2e `device-status-realtime` was flaky: the 3 s status recount answered
+  with the mock's fixed state and raced the drawer's events; the test now
+  lets it land first (5/5).
+- Dump `/opt/backups/techi/pre-ps-command-mode-20261023-214629.sql.gz`
+  (202 MB, `gzip -t` OK); rollback `techi-platform-{backend,frontend}:pre-ps-command-mode-2545bde`.
+  Both images built before the restart, restart after load fell below 2;
+  reconnect 146 + 312, 0 tracebacks; new routes answer 401 unauthenticated;
+  `nginx -t`, guard and smoke passed. Pytest 1776, Vitest 450, e2e new
+  `powershell-command-mode`. Disk 2.7 GB free (89%).
+
 ## [2026-10-23] UNSTABLE-CONNECTION-2026-10-23 — Connections that keep dropping are a finding; No telemetry says how long (`2545bde`)
 
 **Backend ready 21:13:07, frontend 21:14:38 (Tirana), no migration.**
