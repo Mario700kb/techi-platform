@@ -7,7 +7,7 @@
 
 ## [2026-10-23] LINUX-2139-PACKAGES-2026-10-23 — Linux agent 2.1.39 active on amd64, arm64 and armhf
 
-**Packages activated 13:07 (Tirana), with the owner's permission.**
+**Packages activated 13:22 (Tirana), with the owner's permission.**
 - Agent 2.1.39 from CI run 39855667238 (`577d488`) registered through
   `AgentPackageService` in the backend container and activated for all three
   Linux architectures: amd64 `702cf8f6…` (package `6a7e0d7e…`), arm64
