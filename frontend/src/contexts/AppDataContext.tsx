@@ -1,9 +1,11 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { DeviceFleetOverview, getDevicesOverview } from "../api/devices";
+import { DeviceInventory, inventoryCacheKey, patchStatusFromEvent, withPatchStatus } from "../api/inventory";
 import { useAuth } from "../auth/AuthContext";
 import { useDeviceRealtime } from "../hooks/useDeviceRealtime";
 import { DeviceRealtimeEvent, DeviceRealtimeStatus } from "../services/deviceRealtime";
 import { alertCountCacheKey, useAlerts } from "../hooks/useAlerts";
+import { appCache } from "../store/appCache";
 import { Alert, AlertCount } from "../types/alert";
 import { serverNow } from "../utils/devicePresence";
 import { parseUTC } from "../utils/time";
@@ -29,6 +31,7 @@ const OVERVIEW_REFRESH_EVENTS = new Set([
   "health_recovered",
   "alert_created",
   "alert_resolved",
+  "patch_status_updated",
 ]);
 /** A device changed status or live state: the counts are out of date now. */
 const STATUS_CHANGE_EVENTS = new Set(["device_online", "device_offline"]);
@@ -191,6 +194,14 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const realtimeStatus = useDeviceRealtime({
     enabled: Boolean(userId),
     onEvent: (event) => {
+      // An inventory pulled earlier this session is shown again without a
+      // request; it carries the new update count from the next render on.
+      const patch = patchStatusFromEvent(event);
+      if (patch) {
+        const key = inventoryCacheKey(patch.device_id);
+        const cached = appCache.peek<DeviceInventory>(key);
+        if (cached) appCache.set(key, withPatchStatus(cached, patch));
+      }
       setLatestEvent(event);
       if (isStatusChange(event)) {
         // Counts (tabs, Explorer rings, client figures) move with the rows:

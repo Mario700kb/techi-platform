@@ -1,4 +1,5 @@
 import { fetchJson } from "./client";
+import type { DeviceRealtimeEvent } from "../services/deviceRealtime";
 
 export interface ProcessInfo {
   pid: number;
@@ -61,6 +62,27 @@ export interface PatchStatus {
   last_update_at?: string | null;
   patch_state: PatchState;
 }
+
+/** The patch report a patch_status_updated event carries, or null for any other event. */
+export function patchStatusFromEvent(event: DeviceRealtimeEvent | null): PatchStatus | null {
+  const d = event?.data;
+  if (event?.type !== "patch_status_updated" || !d?.id || !d.patch_state) return null;
+  return {
+    device_id: d.id,
+    pending_updates: d.pending_updates ?? null,
+    reboot_required: d.reboot_required ?? false,
+    last_update_at: d.last_update_at ?? null,
+    patch_state: d.patch_state,
+  };
+}
+
+export function withPatchStatus(inventory: DeviceInventory, patch: PatchStatus): DeviceInventory {
+  if (inventory.device_id !== patch.device_id) return inventory;
+  const { device_id: _id, ...fields } = patch;
+  return { ...inventory, ...fields };
+}
+
+export const inventoryCacheKey = (deviceId: number) => `mem.device.${deviceId}.inventory`;
 
 export async function getDeviceInventory(deviceId: number): Promise<DeviceInventory> {
   return fetchJson<DeviceInventory>(`/api/v1/devices/${deviceId}/inventory`);

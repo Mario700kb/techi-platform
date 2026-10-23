@@ -23,7 +23,13 @@ import {
   Wrench,
 } from "lucide-react";
 import { clearDeviceMaintenance, Device, enterDeviceMaintenance, getDevice, updateDevice } from "../api/devices";
-import { getDeviceInventory, DeviceInventory } from "../api/inventory";
+import {
+  getDeviceInventory,
+  DeviceInventory,
+  inventoryCacheKey,
+  patchStatusFromEvent,
+  withPatchStatus,
+} from "../api/inventory";
 import { getDeviceTelemetryHistory } from "../api/telemetry";
 import { TelemetrySnapshot } from "../types/telemetry";
 import { createDeviceNote, getDeviceNotes, DeviceNote } from "../api/notes";
@@ -121,9 +127,12 @@ export default function DeviceDetailsMobile() {
   // Details, Implementation Note).
   const [softwareRequestedFor, setSoftwareRequestedFor] = useState<number | null>(null);
   const softwareRequested = validId && softwareRequestedFor === deviceId;
-  const { data: cachedSoftware, loading: softwareLoading } = useCachedQuery<DeviceInventory>(
-    softwareRequested ? `mem.device.${deviceId}.inventory` : null,
-    () => getDeviceInventory(deviceId),
+  const {
+    data: cachedSoftware,
+    loading: softwareLoading,
+    setData: setSoftware,
+  } = useCachedQuery<DeviceInventory>(softwareRequested ? inventoryCacheKey(deviceId) : null, () =>
+    getDeviceInventory(deviceId),
   );
   const software = cachedSoftware ?? null;
   const [notesRequested, setNotesRequested] = useState(false);
@@ -158,6 +167,12 @@ export default function DeviceDetailsMobile() {
     if (!latestEvent || !d?.id || d.id !== deviceId || !DEVICE_PATCH_EVENTS.has(latestEvent.type)) return;
     setDevice((prev) => (prev ? ({ ...prev, ...d } as Device) : prev));
   }, [latestEvent, deviceId, setDevice]);
+
+  useEffect(() => {
+    const patch = patchStatusFromEvent(latestEvent);
+    if (patch?.device_id !== deviceId) return;
+    setSoftware((prev) => (prev ? withPatchStatus(prev, patch) : prev));
+  }, [latestEvent, deviceId, setSoftware]);
 
   const loadSoftware = () => setSoftwareRequestedFor(deviceId);
 

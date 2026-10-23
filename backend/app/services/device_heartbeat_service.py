@@ -18,6 +18,7 @@ from app.repositories.device_repository import DeviceRepository
 from app.repositories.device_heartbeat_repository import DeviceHeartbeatRepository
 from app.schemas.agent import AgentHeartbeatPayload
 from app.schemas.device_health import parse_device_health
+from app.schemas.device_inventory import PatchStatusSnapshot
 from app.schemas.security_posture import parse_security_posture
 from app.services.remote_session_service import RemoteSessionService
 from app.schemas.device import DeviceCreate, DeviceUpdate
@@ -900,8 +901,29 @@ class DeviceHeartbeatService:
                     actor="connector",
                     fail_silently=True,
                 )
+            if payload.patch_status:
+                self._publish_patch_status(device, payload.patch_status)
         except Exception:
             logger.warning("inventory snapshot failed for device %d — heartbeat continues", device.id, exc_info=True)
+
+    @staticmethod
+    def _publish_patch_status(device, patch_status: dict) -> None:
+        """The update count on every open screen (table chip, drawer, Overview)
+        follows the agent's report instead of waiting for a reload."""
+        patch = PatchStatusSnapshot.model_validate({**patch_status, "device_id": device.id})
+        realtime_publisher.publish_threadsafe(
+            build_event(
+                RealtimeEventType.PATCH_STATUS_UPDATED,
+                data={
+                    "id": device.id,
+                    "client_id": device.client_id,
+                    "group_id": device.group_id,
+                    **patch.model_dump(exclude={"device_id"}),
+                },
+                reason="heartbeat_patch_status",
+            ),
+            dedupe_key=f"patch_status:{device.id}",
+        )
 
     def _maybe_emit_user_changed(self, device, prev_user: Optional[str]) -> None:
         def _is_meaningful(u: Optional[str]) -> bool:

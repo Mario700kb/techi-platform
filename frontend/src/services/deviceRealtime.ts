@@ -1,3 +1,4 @@
+import type { PatchState } from "../api/inventory";
 import { noteServerTime } from "../utils/devicePresence";
 
 export type DeviceRealtimeEventType =
@@ -19,7 +20,8 @@ export type DeviceRealtimeEventType =
   | "alert_created"
   | "alert_resolved"
   | "action_queued"
-  | "action_status_changed";
+  | "action_status_changed"
+  | "patch_status_updated";
 
 export interface DeviceRealtimeEvent {
   event_id?: string;
@@ -120,6 +122,10 @@ export interface DeviceRealtimeEvent {
     progress?: number | null;
     stage?: string | null;
     agent_version?: string | null;
+    pending_updates?: number | null;
+    reboot_required?: boolean;
+    last_update_at?: string | null;
+    patch_state?: PatchState;
   };
 }
 

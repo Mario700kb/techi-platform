@@ -41,6 +41,7 @@ class RealtimeEventType(str, Enum):
     ALERT_RESOLVED = "alert_resolved"
     ACTION_QUEUED = "action_queued"
     ACTION_STATUS_CHANGED = "action_status_changed"
+    PATCH_STATUS_UPDATED = "patch_status_updated"
 
 
 def device_payload(device: Device) -> Dict[str, Any]:

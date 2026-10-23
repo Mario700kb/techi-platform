@@ -72,7 +72,13 @@ import {
 } from "../api/actions";
 import { useAuth } from "../auth/AuthContext";
 import { appCache } from "../store/appCache";
-import { DeviceInventory, getDeviceInventory } from "../api/inventory";
+import {
+  DeviceInventory,
+  getDeviceInventory,
+  inventoryCacheKey,
+  patchStatusFromEvent,
+  withPatchStatus,
+} from "../api/inventory";
 import { createDeviceNote, deleteDeviceNote, DeviceNote, getDeviceNotes, updateDeviceNote } from "../api/notes";
 import { DeviceRealtimeEvent } from "../services/deviceRealtime";
 import { useCachedQuery } from "../hooks/useCachedQuery";
@@ -335,7 +341,7 @@ export default function DeviceDrawer({
   // drawer already required an explicit tap; desktop now matches it, and the
   // operator can re-pull whenever they want via the Refresh button. A copy
   // pulled earlier this session is shown without a request.
-  const inventoryKey = `mem.device.${device.id}.inventory`;
+  const inventoryKey = inventoryCacheKey(device.id);
   const [inventoryRequestedFor, setInventoryRequestedFor] = useState<number | null>(null);
   const inventoryQuery = useCachedQuery(inventoryRequestedFor === device.id ? inventoryKey : null, () =>
     getDeviceInventory(device.id),
@@ -496,6 +502,13 @@ export default function DeviceDrawer({
         /* non-critical */
       });
   }, [isOpen, activeTab, device.id]);
+
+  const { setData: setInventory } = inventoryQuery;
+  useEffect(() => {
+    const patch = patchStatusFromEvent(latestEvent ?? null);
+    if (patch?.device_id !== device.id) return;
+    setInventory((prev) => (prev ? withPatchStatus(prev, patch) : prev));
+  }, [latestEvent, device.id, setInventory]);
 
   // Merge realtime action events without a full reload.
   useEffect(() => {

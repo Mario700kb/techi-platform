@@ -288,7 +288,9 @@ export default function ClientProfilePage() {
     const ownDevice = data && (data.client_id === clientId || data.resolved_client_id === clientId);
     if (
       ownDevice &&
-      ["device_online", "device_offline", "alert_created", "alert_resolved"].includes(latestEvent.type)
+      ["device_online", "device_offline", "alert_created", "alert_resolved", "patch_status_updated"].includes(
+        latestEvent.type,
+      )
     ) {
       window.clearTimeout(profileRefreshTimer.current);
       profileRefreshTimer.current = window.setTimeout(() => void reloadProfile(), 4000);

@@ -22,7 +22,7 @@ import {
   TreeLocation,
   TreeLocationCounts,
 } from "../api/devices";
-import { PatchStatus } from "../api/inventory";
+import { PatchStatus, patchStatusFromEvent } from "../api/inventory";
 import DeviceDrawer from "../components/DeviceDrawer";
 import GenericDeviceDrawer from "../components/GenericDeviceDrawer";
 import { usesRegistryDrawer } from "../utils/drawerChoice";
@@ -611,6 +611,18 @@ export default function Devices() {
     void loadOrgData();
   }, [loadOrgData]);
 
+  // A patch report moves a device in or out of "Needs updates" and "Reboot":
+  // those counts, and a list filtered by them, are fetched again once per burst.
+  const patchRefreshTimerRef = useRef<number | undefined>();
+  const patchRefreshRef = useRef(() => {});
+  patchRefreshRef.current = () => {
+    void loadQuickCounts();
+    if (quickFilter === "needs_updates" || quickFilter === "reboot_required") {
+      appCache.invalidatePrefix("devices-table");
+      void loadTableData();
+    }
+  };
+
   useEffect(() => {
     const event = latestEvent;
     if (!event || event.type === "connection_ready") {
@@ -634,6 +646,18 @@ export default function Devices() {
           computed_at: event.occurred_at ?? null,
         },
       }));
+      return;
+    }
+
+    const patch = patchStatusFromEvent(event);
+    if (patch) {
+      setPatchMap((prev) => (prev[patch.device_id] ? { ...prev, [patch.device_id]: patch } : prev));
+      if (!patchRefreshTimerRef.current) {
+        patchRefreshTimerRef.current = window.setTimeout(() => {
+          patchRefreshTimerRef.current = undefined;
+          patchRefreshRef.current();
+        }, 5000);
+      }
       return;
     }
 
@@ -682,6 +706,7 @@ export default function Devices() {
   useEffect(() => {
     return () => {
       window.clearTimeout(refreshTimerRef.current);
+      window.clearTimeout(patchRefreshTimerRef.current);
       window.clearTimeout(drawerCloseTimerRef.current);
       window.clearTimeout(searchTimerRef.current);
       window.clearTimeout(treeSelectTimerRef.current);

@@ -35,7 +35,10 @@ vi.mock("../../api/notes", () => ({
   deleteDeviceNote: vi.fn(),
   updateDeviceNote: vi.fn(),
 }));
-vi.mock("../../api/inventory", () => ({ getDeviceInventory: vi.fn().mockResolvedValue(null) }));
+vi.mock("../../api/inventory", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../api/inventory")>()),
+  getDeviceInventory: vi.fn().mockResolvedValue(null),
+}));
 vi.mock("../../api/remoteSupport", () => ({
   getConnectUrl: vi.fn(),
   getRemoteSupportDevice: vi.fn().mockResolvedValue({}),

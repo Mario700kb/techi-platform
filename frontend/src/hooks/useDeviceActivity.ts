@@ -32,7 +32,7 @@ const EVENT_SUMMARIES: Partial<Record<string, string>> = {
   action_failed: "Action failed",
 };
 
-const IGNORED_TYPES = new Set(["connection_ready", "server_ping", "telemetry_updated"]);
+const IGNORED_TYPES = new Set(["connection_ready", "server_ping", "telemetry_updated", "patch_status_updated"]);
 
 export function useDeviceActivity({ deviceId, latestEvent, enabled = true }: UseDeviceActivityOptions) {
   const seenIds = useRef(new Set<string>());
