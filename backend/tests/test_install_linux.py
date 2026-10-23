@@ -133,6 +133,22 @@ def test_checksum_is_published_and_enforced(monkeypatch):
     body = _script(monkeypatch)
     assert "EXPECTED_SHA256=" in body
     assert "Checksum mismatch - refusing to install." in body
+    assert "Checksum not verified" not in body, "an unverified binary is never installed"
+
+
+def test_blockers_are_checked_before_anything_is_touched(monkeypatch):
+    """No systemd (Alpine, Devuan, a container), no active package for the
+    architecture (aarch64 got a 404 mid-run) or no sha256sum: the script stops
+    before the download and before the running agent is stopped."""
+    body = _script(monkeypatch)
+    download = body.index('fetch "${BACKEND}')
+    for check in (
+        "if [ ! -d /run/systemd/system ] || ! command -v systemctl",
+        'if [ -z "${EXPECTED_SHA256}" ]; then',
+        "if ! command -v sha256sum",
+    ):
+        assert body.index(check) < download, check
+    assert "No TECHI agent package is active for linux-${ARCH} - nothing was changed." in body
 
 
 def test_previous_binary_is_backed_up(monkeypatch):
@@ -148,11 +164,38 @@ def _remote_support_section(body: str) -> str:
     return body[body.index("# --- TECHI Remote Support"):]
 
 
-def test_remote_support_package_is_pinned_per_architecture(monkeypatch):
+def test_remote_support_package_is_pinned_per_package_manager_and_architecture(monkeypatch):
     body = _script(monkeypatch)
-    for arch, (deb, sha) in install_endpoint.RUSTDESK_LINUX_DEBS.items():
-        assert f'{arch}) RS_DEB="{deb}"; RS_SHA256="{sha}" ;;' in body
+    for (fmt, arch), (pkg, sha) in install_endpoint.RUSTDESK_LINUX_PACKAGES.items():
+        assert f'{fmt}-{arch}) RS_PKG="{pkg}"; RS_SHA256="{sha}" ;;' in body
     assert "Remote Support checksum mismatch - not installing it." in body
+
+
+def test_remote_support_reaches_rpm_and_arch_desktops_too(monkeypatch):
+    """Ubuntu was not the only desktop: Fedora/RHEL, openSUSE and Arch got the
+    agent but never Remote Support, because only apt-get could install it."""
+    section = _remote_support_section(_script(monkeypatch))
+    formats = {fmt for fmt, _ in install_endpoint.RUSTDESK_LINUX_PACKAGES}
+    assert formats == {"deb", "rpm", "suse", "arch"}
+    assert 'dnf install -y "$1"' in section
+    assert 'zypper --non-interactive install --allow-unsigned-rpm "$1"' in section
+    assert 'pacman -U --noconfirm "$1"' in section
+    assert "rpm -q --qf '%{VERSION}' rustdesk" in section
+    assert 'elif [ -z "${RS_PKG}" ]; then' in section
+
+
+def test_remote_support_package_follows_the_userland_not_the_kernel(monkeypatch):
+    """32-bit Raspberry Pi OS on a Pi 4/5 reports aarch64; dpkg refuses an
+    arm64 package there."""
+    section = _remote_support_section(_script(monkeypatch))
+    assert 'case "$(dpkg --print-architecture 2>/dev/null)" in' in section
+    assert 'case "${RS_FORMAT}-${RS_ARCH}" in' in section
+
+
+def test_gnome_on_wayland_gets_the_x11_hint(monkeypatch):
+    section = _remote_support_section(_script(monkeypatch))
+    assert "WaylandEnable=false" in section
+    assert "/etc/gdm3/custom.conf /etc/gdm/custom.conf" in section
 
 
 def test_remote_support_points_at_the_platform_id_server(monkeypatch):
@@ -215,3 +258,9 @@ def test_remote_support_is_installed_before_the_agent_starts(monkeypatch):
     body = _script(monkeypatch)
     assert body.index("elif ! install_remote_support; then") < body.index("Installing systemd service and enrolling...")
     assert body.rstrip().endswith("exit 0")
+
+
+def test_script_needs_no_awk(monkeypatch):
+    """A minimal openSUSE Tumbleweed has no awk: `sha256sum | awk` printed
+    nothing there and every download looked like a checksum mismatch."""
+    assert "awk" not in _script(monkeypatch)

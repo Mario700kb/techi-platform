@@ -166,6 +166,7 @@ PLATFORM_REGISTRY: Dict[str, PlatformDescriptor] = {
             mode=MODE_NATIVE_AGENT,
             feature_flag="FEATURE_LINUX",
             connect_methods=("terminal", "ssh_desktop", "web_terminal", "remote_support"),
+            certification_stage="production",
             allowed_capabilities=frozenset(
                 {
                     "terminal",

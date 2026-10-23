@@ -250,10 +250,11 @@ export function buildLinuxInstallUrl(token: string): string {
 // default, and an operator who has one rarely has both. Redirecting stderr on
 // the curl attempt keeps the shell's "command not found" out of the output, so
 // a host without curl simply installs via wget with no scary line (reported
-// 2026-08-05 on a fresh Debian: "-bash: curl: command not found").
+// 2026-08-05 on a fresh Debian: "-bash: curl: command not found"). A Debian
+// server logged in as root often has no sudo, so sudo is used only if present.
 export function buildLinuxInstallCommand(token: string): string {
   const url = buildLinuxInstallUrl(token);
-  return `{ curl -fsSL '${url}' 2>/dev/null || wget -qO- '${url}'; } | sudo bash`;
+  return `{ curl -fsSL '${url}' 2>/dev/null || wget -qO- '${url}'; } | { if command -v sudo >/dev/null; then sudo bash; else bash; fi; }`;
 }
 
 // The deployment endpoint embeds the (recoverable) token in the Windows

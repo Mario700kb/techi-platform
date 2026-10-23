@@ -52,20 +52,27 @@ def _linux_checksums() -> str:
 
 # TECHI Remote Support on Linux is upstream RustDesk, pinned to the version the
 # Windows fleet runs and checked against the SHA-256 GitHub publishes for each
-# asset. There is no armv6 build: a Pi Zero/1 gets the terminal only.
+# asset, one package per package manager and architecture. There is no armv6
+# build: a Pi Zero/1 gets the terminal only, and so does a distribution or
+# architecture missing below.
 RUSTDESK_LINUX_VERSION = "1.4.6"
-RUSTDESK_LINUX_DEBS = {
-    "amd64": ("rustdesk-1.4.6-x86_64.deb", "0da46d7a7b252282ded5323f74319a10c1fa7271001d3b297b3def415c8c8f04"),
-    "arm64": ("rustdesk-1.4.6-aarch64.deb", "d767b042c53a169f4bc6273d884a238fc44501a9fda2095fb05820dfc538b34c"),
-    "armhf": ("rustdesk-1.4.6-armv7-sciter.deb", "c573774c7bd47b80d816f453c080e1f0eb22901f8fb868d69359f088c049451d"),
+RUSTDESK_LINUX_PACKAGES = {
+    ("deb", "amd64"): ("rustdesk-1.4.6-x86_64.deb", "0da46d7a7b252282ded5323f74319a10c1fa7271001d3b297b3def415c8c8f04"),
+    ("deb", "arm64"): ("rustdesk-1.4.6-aarch64.deb", "d767b042c53a169f4bc6273d884a238fc44501a9fda2095fb05820dfc538b34c"),
+    ("deb", "armhf"): ("rustdesk-1.4.6-armv7-sciter.deb", "c573774c7bd47b80d816f453c080e1f0eb22901f8fb868d69359f088c049451d"),
+    ("rpm", "amd64"): ("rustdesk-1.4.6-0.x86_64.rpm", "8986df89ed20401944f77be45ed389855ba5fb6611861718a00a0cfe146822d5"),
+    ("rpm", "arm64"): ("rustdesk-1.4.6-0.aarch64.rpm", "3255ba6007f2b00295c38a9d9c8b8d9d4edc7e7755e451b4fc1f83595962fed1"),
+    ("suse", "amd64"): ("rustdesk-1.4.6-0.x86_64-suse.rpm", "76677500275cf73acc7fa69b1276a50d4af5fd317ad2e18b2cecdfc64e37536a"),
+    ("suse", "arm64"): ("rustdesk-1.4.6-0.aarch64-suse.rpm", "cb0893417e97bd9d0585b634b8d220066d9c0ec38229f4e72ce770f16814756d"),
+    ("arch", "amd64"): ("rustdesk-1.4.6-0-x86_64.pkg.tar.zst", "d3eb57735b3f9ea919bc58795e9f2bf6420b0cf80af55647c63697d6fb22c9b8"),
 }
 
 
-def _rustdesk_debs() -> str:
-    """A shell `case` mapping each architecture to its RustDesk .deb and SHA-256."""
+def _rustdesk_packages() -> str:
+    """A shell `case` mapping package manager + architecture to RustDesk's package and SHA-256."""
     return "\n".join(
-        f'    {arch}) RS_DEB="{deb}"; RS_SHA256="{sha}" ;;'
-        for arch, (deb, sha) in RUSTDESK_LINUX_DEBS.items()
+        f'    {fmt}-{arch}) RS_PKG="{pkg}"; RS_SHA256="{sha}" ;;'
+        for (fmt, arch), (pkg, sha) in RUSTDESK_LINUX_PACKAGES.items()
     )
 
 
@@ -78,7 +85,7 @@ def linux_installer(token: str = Query(..., min_length=1)) -> PlainTextResponse:
     ws = _ws_base(base)
     checksums = _linux_checksums()
     heartbeat = _agent_cfg.get_heartbeat_interval("linux")
-    rustdesk_debs = _rustdesk_debs()
+    rustdesk_packages = _rustdesk_packages()
     rs_host = settings.RUSTDESK_SERVER_HOST
     rs_relay = settings.RUSTDESK_RELAY_HOST
     rs_key = settings.RUSTDESK_PUBLIC_KEY
@@ -111,9 +118,29 @@ case "$(uname -m)" in
   *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
 esac
 
+# Everything that can stop the install is checked here, before anything on
+# the machine is touched. The agent runs as a systemd service: a machine
+# without systemd as PID 1 (Alpine, Devuan, a container) is refused cleanly
+# instead of halfway, after the binary was already replaced.
+if [ ! -d /run/systemd/system ] || ! command -v systemctl >/dev/null 2>&1; then
+  echo "This installer needs systemd, and this machine does not run it - nothing was changed." >&2
+  echo "  Supported: Debian, Ubuntu, Raspberry Pi OS, Mint, RHEL, Rocky, Alma, Fedora, openSUSE, Arch and other systemd distributions." >&2
+  exit 1
+fi
+
+EXPECTED_SHA256=""
 case "${{ARCH}}" in
 {checksums}
 esac
+if [ -z "${{EXPECTED_SHA256}}" ]; then
+  echo "No TECHI agent package is active for linux-${{ARCH}} - nothing was changed." >&2
+  echo "  Activate one under Onboarding -> Packages, then run this again." >&2
+  exit 1
+fi
+if ! command -v sha256sum >/dev/null 2>&1; then
+  echo "sha256sum is missing, so the download cannot be verified - nothing was changed." >&2
+  exit 1
+fi
 
 TMP_BIN="$(mktemp /tmp/techi-agent-XXXXXX)"
 BACKUP=""
@@ -139,18 +166,14 @@ fetch() {{
 echo "Downloading TECHI agent (linux-${{ARCH}})..."
 fetch "${{BACKEND}}/api/v1/agent-packages/platform/linux-${{ARCH}}/download" "${{TMP_BIN}}"
 
-if [ -n "${{EXPECTED_SHA256}}" ] && command -v sha256sum >/dev/null 2>&1; then
-  ACTUAL_SHA256="$(sha256sum "${{TMP_BIN}}" | awk '{{print $1}}')"
-  if [ "${{ACTUAL_SHA256}}" != "${{EXPECTED_SHA256}}" ]; then
-    echo "Checksum mismatch - refusing to install." >&2
-    echo "  expected: ${{EXPECTED_SHA256}}" >&2
-    echo "  actual:   ${{ACTUAL_SHA256}}" >&2
-    exit 1
-  fi
-  echo "Checksum verified."
-else
-  echo "Checksum not verified (no published checksum or sha256sum unavailable)."
+ACTUAL_SHA256="$(sha256sum "${{TMP_BIN}}" | cut -d ' ' -f 1)"
+if [ "${{ACTUAL_SHA256}}" != "${{EXPECTED_SHA256}}" ]; then
+  echo "Checksum mismatch - refusing to install." >&2
+  echo "  expected: ${{EXPECTED_SHA256}}" >&2
+  echo "  actual:   ${{ACTUAL_SHA256}}" >&2
+  exit 1
 fi
+echo "Checksum verified."
 
 # A running executable cannot be overwritten - the kernel returns ETXTBSY and
 # curl/install fail. Stopping first is what makes re-running this work at all.
@@ -180,7 +203,7 @@ fi
 ENROLLED=0
 if [ -f "${{CONFIG_PATH}}" ]; then
   echo "Existing configuration found - keeping it (device identity preserved)."
-  if grep -q '"agent_id"[[:space:]]*:[[:space:]]*"[^"]\\+"' "${{CONFIG_PATH}}"; then
+  if grep -Eq '"agent_id"[[:space:]]*:[[:space:]]*"[^"]+"' "${{CONFIG_PATH}}"; then
     ENROLLED=1
   fi
 else
@@ -208,10 +231,30 @@ fi
 # carries Remote Support and its ID: Connect never meets a desktop that shows
 # only the terminal while RustDesk is still being installed.
 RS_VERSION="{RUSTDESK_LINUX_VERSION}"
-RS_DEB=""
+RS_FORMAT=""
+if command -v apt-get >/dev/null 2>&1 && command -v dpkg-query >/dev/null 2>&1; then
+  RS_FORMAT="deb"
+elif command -v zypper >/dev/null 2>&1; then
+  RS_FORMAT="suse"
+elif command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1; then
+  RS_FORMAT="rpm"
+elif command -v pacman >/dev/null 2>&1; then
+  RS_FORMAT="arch"
+fi
+# The package follows the userland, not the kernel: 32-bit Raspberry Pi OS on
+# a Pi 4/5 runs a 64-bit kernel (aarch64) under armhf packages.
+RS_ARCH="${{ARCH}}"
+if [ "${{RS_FORMAT}}" = "deb" ]; then
+  case "$(dpkg --print-architecture 2>/dev/null)" in
+    amd64) RS_ARCH="amd64" ;;
+    arm64) RS_ARCH="arm64" ;;
+    armhf) RS_ARCH="armhf" ;;
+  esac
+fi
+RS_PKG=""
 RS_SHA256=""
-case "${{ARCH}}" in
-{rustdesk_debs}
+case "${{RS_FORMAT}}-${{RS_ARCH}}" in
+{rustdesk_packages}
 esac
 RS_OPTIONS="/root/.config/rustdesk/RustDesk2.toml"
 
@@ -223,26 +266,47 @@ has_desktop() {{
   return 1
 }}
 
+rs_installed_version() {{
+  case "${{RS_FORMAT}}" in
+    deb) dpkg-query -W -f='${{Status}} ${{Version}}' rustdesk 2>/dev/null | sed -n 's/^install ok installed //p' ;;
+    rpm|suse) rpm -q rustdesk >/dev/null 2>&1 && rpm -q --qf '%{{VERSION}}' rustdesk ;;
+    arch) pacman -Q rustdesk 2>/dev/null | cut -d ' ' -f 2 ;;
+  esac
+}}
+
+rs_install_package() {{
+  case "${{RS_FORMAT}}" in
+    deb)
+      DEBIAN_FRONTEND=noninteractive apt-get install -y "$1" \\
+        || {{ apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y "$1"; }} ;;
+    rpm)
+      if command -v dnf >/dev/null 2>&1; then dnf install -y "$1"; else yum install -y "$1"; fi \\
+        || {{ echo "  On RHEL/Rocky/Alma a missing library usually comes from EPEL: dnf install -y epel-release, then run this again." >&2; return 1; }} ;;
+    suse) zypper --non-interactive install --allow-unsigned-rpm "$1" ;;
+    arch) pacman -U --noconfirm "$1" ;;
+    *) return 1 ;;
+  esac
+}}
+
 install_remote_support() {{
-  # An installed RustDesk is kept whatever its version (apt refuses to go
-  # back to 1.4.6 from a newer one); it only gets pointed at the platform.
-  RS_INSTALLED="$(dpkg-query -W -f='${{Status}} ${{Version}}' rustdesk 2>/dev/null || true)"
-  if [ "${{RS_INSTALLED#install ok installed }}" != "${{RS_INSTALLED}}" ]; then
-    echo "TECHI Remote Support ${{RS_INSTALLED#install ok installed }} already installed - keeping it."
+  # An installed RustDesk is kept whatever its version (a package manager
+  # refuses to go back to 1.4.6 from a newer one); it only gets pointed at
+  # the platform.
+  RS_INSTALLED="$(rs_installed_version || true)"
+  if [ -n "${{RS_INSTALLED}}" ]; then
+    echo "TECHI Remote Support ${{RS_INSTALLED}} already installed - keeping it."
   else
     RS_TMP="$(mktemp -d /tmp/techi-rs-XXXXXX)" || return 1
     chmod 755 "${{RS_TMP}}"
-    echo "Downloading TECHI Remote Support ${{RS_VERSION}} (${{RS_DEB}})..."
-    fetch "https://github.com/rustdesk/rustdesk/releases/download/${{RS_VERSION}}/${{RS_DEB}}" "${{RS_TMP}}/${{RS_DEB}}" || return 1
-    if [ "$(sha256sum "${{RS_TMP}}/${{RS_DEB}}" | awk '{{print $1}}')" != "${{RS_SHA256}}" ]; then
+    echo "Downloading TECHI Remote Support ${{RS_VERSION}} (${{RS_PKG}})..."
+    fetch "https://github.com/rustdesk/rustdesk/releases/download/${{RS_VERSION}}/${{RS_PKG}}" "${{RS_TMP}}/${{RS_PKG}}" || return 1
+    if [ "$(sha256sum "${{RS_TMP}}/${{RS_PKG}}" | cut -d ' ' -f 1)" != "${{RS_SHA256}}" ]; then
       echo "Remote Support checksum mismatch - not installing it." >&2
       rm -rf "${{RS_TMP}}"
       return 1
     fi
-    chmod 644 "${{RS_TMP}}/${{RS_DEB}}"
-    DEBIAN_FRONTEND=noninteractive apt-get install -y "${{RS_TMP}}/${{RS_DEB}}" \\
-      || {{ apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y "${{RS_TMP}}/${{RS_DEB}}"; }} \\
-      || {{ rm -rf "${{RS_TMP}}"; return 1; }}
+    chmod 644 "${{RS_TMP}}/${{RS_PKG}}"
+    rs_install_package "${{RS_TMP}}/${{RS_PKG}}" || {{ rm -rf "${{RS_TMP}}"; return 1; }}
     rm -rf "${{RS_TMP}}"
   fi
 
@@ -309,9 +373,18 @@ TOML
   fi
 
   # Unattended access needs X11; on Wayland every session waits for a click.
-  if ls /run/user/*/wayland-[0-9] >/dev/null 2>&1; then
+  # GNOME (Ubuntu 22.04+, Debian 12+, Fedora, RHEL 9) logs in on Wayland
+  # unless GDM is told otherwise, even before anyone has logged in.
+  RS_GDM_WAYLAND=0
+  for conf in /etc/gdm3/custom.conf /etc/gdm/custom.conf; do
+    if [ -f "${{conf}}" ] && ! grep -Eq '^[[:space:]]*WaylandEnable[[:space:]]*=[[:space:]]*false' "${{conf}}"; then
+      {{ systemctl is-active --quiet gdm3 2>/dev/null || systemctl is-active --quiet gdm 2>/dev/null; }} && RS_GDM_WAYLAND=1
+    fi
+  done
+  if [ "${{RS_GDM_WAYLAND}}" = "1" ] || ls /run/user/*/wayland-[0-9] >/dev/null 2>&1; then
     echo "Note: this desktop runs on Wayland. Remote Support needs X11 for unattended access." >&2
     echo "  Raspberry Pi OS: sudo raspi-config -> Advanced Options -> Wayland -> X11, then reboot." >&2
+    echo "  GNOME (Ubuntu, Debian, Fedora, RHEL): set WaylandEnable=false under [daemon] in /etc/gdm3/custom.conf (or /etc/gdm/custom.conf), then reboot." >&2
   fi
 }}
 
@@ -319,8 +392,8 @@ if [ "$(uname -m)" = "armv6l" ]; then
   echo "TECHI Remote Support: no build for ARMv6 - terminal only."
 elif ! has_desktop; then
   echo "TECHI Remote Support: no desktop on this machine - terminal only."
-elif ! command -v apt-get >/dev/null 2>&1 || ! command -v sha256sum >/dev/null 2>&1; then
-  echo "TECHI Remote Support: needs apt-get and sha256sum - skipped."
+elif [ -z "${{RS_PKG}}" ]; then
+  echo "TECHI Remote Support: no RustDesk package for this distribution on ${{RS_ARCH}} - terminal only."
 elif ! install_remote_support; then
   echo "TECHI Remote Support could not be installed; the agent is installed and works without it." >&2
 fi

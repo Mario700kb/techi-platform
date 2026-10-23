@@ -95,6 +95,13 @@ interface DeploymentPlatformMeta {
   routerosVersions?: { value: "6" | "7"; label: string }[];
 }
 
+const LINUX_ARCHES = ["linux-amd64", "linux-arm64", "linux-armhf"];
+
+interface LinuxPackage {
+  arch: string;
+  pkg: AgentPackage | null;
+}
+
 const DEPLOYMENT_PLATFORMS: DeploymentPlatformMeta[] = [
   { id: "windows", label: "Windows", icon: Monitor, featureFlag: null, status: "Production", kind: "windows" },
   {
@@ -102,9 +109,9 @@ const DEPLOYMENT_PLATFORMS: DeploymentPlatformMeta[] = [
     label: "Linux",
     icon: Terminal,
     featureFlag: "FEATURE_LINUX",
-    status: "Experimental",
+    status: "Production",
     kind: "linux",
-    arches: ["linux-amd64", "linux-arm64", "linux-armhf"],
+    arches: LINUX_ARCHES,
   },
   { id: "macos", label: "macOS", icon: Laptop, featureFlag: "FEATURE_MACOS", status: "Planned", kind: "placeholder" },
   {
@@ -216,8 +223,16 @@ function fetchWindowsPackage(): Promise<AgentPackage | null> {
     .catch(() => null);
 }
 
-function fetchLinuxPackage(): Promise<AgentPackage | null> {
-  return getLatestPackage("linux-amd64").catch(() => null);
+// One package per architecture: the installer refuses an architecture
+// without one, so the card shows every version and every gap.
+function fetchLinuxPackages(): Promise<LinuxPackage[]> {
+  return Promise.all(
+    LINUX_ARCHES.map((arch) =>
+      getLatestPackage(arch)
+        .then((pkg) => ({ arch, pkg }))
+        .catch(() => ({ arch, pkg: null })),
+    ),
+  );
 }
 
 function fetchRustDeskConfig(): Promise<RustDeskConfig | null> {
@@ -240,7 +255,7 @@ export default function Deployment() {
   const { tokens, clients, groups } = table.data ?? EMPTY_TABLE;
   const rustdesk = useCachedQuery("page.deployment.rustdesk-config", fetchRustDeskConfig).data ?? null;
   const activePackage = useCachedQuery("page.deployment.package.windows", fetchWindowsPackage).data ?? null;
-  const linuxPackage = useCachedQuery("page.deployment.package.linux-amd64", fetchLinuxPackage).data ?? null;
+  const linuxPackages = useCachedQuery("page.deployment.packages.linux", fetchLinuxPackages).data ?? [];
   const features = usePlatformFeatures();
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState<CopyTarget>(null);
@@ -787,7 +802,7 @@ export default function Deployment() {
         <DeploymentModal
           deployment={viewDeployment}
           features={features}
-          linuxPackage={linuxPackage}
+          linuxPackages={linuxPackages}
           copied={copied}
           onCopy={copy}
           onDownload={() => void downloadTokenScript(viewDeployment.token_id)}
@@ -847,7 +862,7 @@ function CommandBlock({
 function DeploymentModal({
   deployment,
   features,
-  linuxPackage,
+  linuxPackages,
   copied,
   onCopy,
   onDownload,
@@ -855,7 +870,7 @@ function DeploymentModal({
 }: {
   deployment: EnrollmentTokenDeployment;
   features: PlatformFeatures;
-  linuxPackage: AgentPackage | null;
+  linuxPackages: LinuxPackage[];
   copied: CopyTarget;
   onCopy: (target: string, value: string) => Promise<void>;
   onDownload: () => void;
@@ -911,7 +926,7 @@ function DeploymentModal({
           meta={platformMeta}
           deployment={deployment}
           token={token}
-          linuxPackage={linuxPackage}
+          linuxPackages={linuxPackages}
           copied={copied}
           onCopy={onCopy}
           onDownload={onDownload}
@@ -925,7 +940,7 @@ function PlatformSection({
   meta,
   deployment,
   token,
-  linuxPackage,
+  linuxPackages,
   copied,
   onCopy,
   onDownload,
@@ -933,7 +948,7 @@ function PlatformSection({
   meta: DeploymentPlatformMeta;
   deployment: EnrollmentTokenDeployment;
   token: string | null;
-  linuxPackage: AgentPackage | null;
+  linuxPackages: LinuxPackage[];
   copied: CopyTarget;
   onCopy: (target: string, value: string) => Promise<void>;
   onDownload: () => void;
@@ -995,7 +1010,7 @@ function PlatformSection({
           </>
         )}
 
-        {/* LINUX — same token, one-liner installer (Experimental). */}
+        {/* LINUX — same token, one-liner installer. */}
         {meta.kind === "linux" &&
           (token ? (
             <>
@@ -1019,13 +1034,15 @@ function PlatformSection({
                 <div>
                   <dt>Package source</dt>
                   <dd>
-                    {linuxPackage ? (
-                      <span className="font-mono !text-[12px]">
-                        {linuxPackage.version} · {linuxPackage.filename}
-                      </span>
-                    ) : (
+                    <span className="font-mono !text-[12px]">
+                      {linuxPackages
+                        .map(({ arch, pkg }) => `${arch.replace("linux-", "")} ${pkg ? pkg.version : "none"}`)
+                        .join(" · ")}
+                    </span>
+                    {linuxPackages.some(({ pkg }) => !pkg) && (
                       <>
-                        None active ·{" "}
+                        {" "}
+                        ·{" "}
                         <Link to="/onboarding?tab=packages" className="th-onb-link">
                           Packages
                         </Link>

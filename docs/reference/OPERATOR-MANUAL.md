@@ -262,7 +262,7 @@ Expansion flag is enabled (Windows is always shown):
 | Platform | Status | Visible when | Deployment |
 |----------|--------|--------------|------------|
 | **Windows** | **Production** | always | Safe one-time command · GPO Startup · GPO Scheduled Task · Bootstrap URL · Download PS1 *(unchanged, production-proven)* |
-| **Linux** | Experimental | `FEATURE_LINUX` | One-Time Install (`curl … \| sudo bash`) · Manual URL · arches (amd64/arm64/armhf) · active Linux package |
+| **Linux** | **Production** | `FEATURE_LINUX` | One-Time Install (`curl … \| sudo bash`, plain `bash` when there is no sudo) · Manual URL · arches (amd64/arm64/armhf) · active package version per architecture |
 | **macOS** | Planned | `FEATURE_MACOS` (not yet defined) | placeholder only |
 | **MikroTik** | Experimental | `FEATURE_MIKROTIK` | **RouterOS Script** (Connector v1) — select RouterOS 6.x or 7.x, then copy/paste into RouterOS; generated from the Platform Registry template with the token injected; supported arches chr/x86/arm/arm64/mipsbe/mmips/ppc/tile |
 | **Synology DSM** | Planned | `FEATURE_STORAGE` | placeholder — Package / SSH Installer |
@@ -995,8 +995,14 @@ in Agent Config; every device adopts it on its next heartbeat.
   history because those data sources do not exist yet. Schedules generate into
   TECHI Report History; automatic email attachment delivery is a later additive
   integration with the Notification Engine.
-- **Linux**: certified **Experimental** — validate on a canary before broad use.
-  Tier-1 distros: Ubuntu LTS, Debian, RHEL family.
+- **Linux**: **Production** since 2026-10-23. The agent runs on any systemd
+  distribution on x86_64, aarch64 and 32-bit ARM (static binary, glibc or musl).
+  Remote Support (desktops only) installs on Debian/Ubuntu/Raspberry Pi OS/Mint
+  (amd64, arm64, armhf), Fedora/RHEL/Rocky/Alma (x86_64, aarch64), openSUSE
+  (x86_64, aarch64) and Arch (x86_64); elsewhere, and on
+  ARMv6 (Pi Zero/1), the device gets the terminal only. Not supported: machines
+  without systemd (Alpine, Devuan, containers) and i386 — the installer refuses
+  them before changing anything. Unattended Remote Support needs X11, not Wayland.
 - **IAM**: the granular permission matrix / sessions manager is a future phase;
   the current owner/admin/operator/read-only model + team scopes is what's live.
 - **Deployments page** shows sample data (`/deployments/recent`).
