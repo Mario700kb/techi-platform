@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -84,6 +84,25 @@ describe("ConnectMenu — Embedded SSH Connect wiring", () => {
     // The generic launcher endpoint must never be called for "ssh" — only
     // the initial /connect-methods list fetch.
     expect(client.fetchJson).toHaveBeenCalledTimes(1);
+  });
+
+  it("a note under the button clears itself instead of staying until a reload", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.spyOn(client, "fetchJson").mockResolvedValueOnce({
+      platform: "linux",
+      methods: [SSH_METHOD, WEB_TERMINAL_METHOD],
+      preferred_method_id: "ssh",
+      configured_preference_id: null,
+    });
+    renderMenu();
+
+    fireEvent.click(await screen.findByLabelText("Connect options"));
+    fireEvent.click(await screen.findByText("Embedded Terminal"));
+    expect(await screen.findByText("Embedded Terminal opens from the device's Terminal tab.")).toBeInTheDocument();
+
+    act(() => vi.advanceTimersByTime(5000));
+    expect(screen.queryByText("Embedded Terminal opens from the device's Terminal tab.")).not.toBeInTheDocument();
+    vi.useRealTimers();
   });
 
   it("web_terminal calls onOpenTerminal (opens the Terminal tab) instead of a dead toast", async () => {

@@ -87,6 +87,8 @@ const CREDENTIAL_SOURCE_LABEL: Record<string, string> = {
   global: "Global credential",
 };
 const OS_LABEL: Record<string, string> = { windows: "Windows", macos: "macOS", linux: "Linux" };
+/** A note under the Connect button clears itself (the drawer's toasts do the same). */
+const NOTE_VISIBLE_MS = 5000;
 
 export function displayStatus(m: ConnectMethod, operatorOS: string | null): DisplayStatus {
   if (m.requires_client_os && m.requires_client_os !== operatorOS) return "unavailable_os";
@@ -211,6 +213,12 @@ export default function ConnectMenu({
     return () => window.removeEventListener(CONNECT_REFRESH_EVENT, onRefresh);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deviceId]);
+
+  useEffect(() => {
+    if (!note) return;
+    const id = window.setTimeout(() => setNote(null), NOTE_VISIBLE_MS);
+    return () => window.clearTimeout(id);
+  }, [note]);
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
