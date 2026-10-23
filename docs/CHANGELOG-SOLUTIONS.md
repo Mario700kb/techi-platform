@@ -5,6 +5,25 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-23] LIVE-PATCH-COUNT-2026-10-23 — Update counts follow the agent live; Connect notes clear themselves (`28aead7`)
+
+**Backend ready 14:55:53, frontend 14:58 (Tirana).**
+- The "N updates" chip only changed on a reload: the heartbeat stored the
+  agent's `patch_status` but published nothing. It now publishes
+  `patch_status_updated` (id, client_id, group_id, pending_updates,
+  reboot_required, last_update_at, patch_state) whenever a report arrives —
+  at most hourly per device, or every 4 h as the agent's re-send.
+- Applied without a reload in the Devices table chip and phone cards, the
+  Needs updates / Reboot counts (and a list filtered by them, once per burst),
+  the drawer and mobile inventory (also a copy pulled earlier this session),
+  the Dashboard figure and the client profile.
+- `7e1a093`: notes under the Connect button ("Opening the Remote Support app
+  instead", Winbox, SSH, errors) clear after 5 s; they stayed until a reload.
+- Dump `/opt/backups/techi/pre-live-patch-count-20261023-143821.sql.gz`
+  (188 MB, `gzip -t` OK); rollback `techi-platform-{backend,frontend}:pre-live-patch-count-d262656`;
+  no migration. Both images built before the restart; backend ready 35 s after
+  start, 0 tracebacks; `nginx -t`, guard and smoke passed. Disk 2.6 GB free (89%).
+
 ## [2026-10-23] LINUX-2139-PACKAGES-2026-10-23 — Linux agent 2.1.39 active on amd64, arm64 and armhf
 
 **Packages activated 13:22 (Tirana), with the owner's permission.**
