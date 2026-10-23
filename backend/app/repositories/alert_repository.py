@@ -67,6 +67,24 @@ class AlertRepository:
             .first()
         )
 
+    def openings_within(self, device_id: int, kind: AlertKind, fingerprint: str, seconds: int) -> int:
+        """How often this problem opened on this device lately (first
+        openings and reopenings, across rows)."""
+        since = utcnow_naive() - timedelta(seconds=seconds)
+        return (
+            self.db.query(func.count(AlertActivity.id))
+            .join(DeviceAlert, DeviceAlert.id == AlertActivity.alert_id)
+            .filter(
+                DeviceAlert.device_id == device_id,
+                DeviceAlert.kind == kind.value,
+                DeviceAlert.fingerprint == (fingerprint or ""),
+                AlertActivity.action.in_(("opened", "reopened")),
+                AlertActivity.at >= since,
+            )
+            .scalar()
+            or 0
+        )
+
     def add_activity(self, alert_id: int, action: str, actor: Optional[str] = None, detail: Optional[str] = None) -> AlertActivity:
         """Adds a timeline row; the caller commits."""
         row = AlertActivity(alert_id=alert_id, at=utcnow_naive(), actor=actor, action=action,
@@ -94,6 +112,8 @@ class AlertRepository:
         cooldown_seconds: int = 300,
         fingerprint: str = "",
         priority: Optional[int] = None,
+        sla: Optional[dict] = None,
+        recurring: bool = False,
     ) -> DeviceAlert:
         now = utcnow()
         db_obj = DeviceAlert(
@@ -109,6 +129,8 @@ class AlertRepository:
             fingerprint=fingerprint or "",
             occurrences=1,
             priority=priority,
+            recurring=recurring,
+            **(sla or {}),
         )
         self.db.add(db_obj)
         self.db.flush()
@@ -117,9 +139,12 @@ class AlertRepository:
         self.db.refresh(db_obj)
         return db_obj
 
-    def reopen(self, alert: DeviceAlert, *, severity: AlertSeverity, message: str, detail: Optional[str], priority: Optional[int]) -> DeviceAlert:
-        """The same problem again within a day: the row opens again, counted."""
+    def reopen(self, alert: DeviceAlert, *, severity: AlertSeverity, message: str, detail: Optional[str], priority: Optional[int],
+               sla: Optional[dict] = None, recurring: bool = False) -> DeviceAlert:
+        """The same problem again within a day: the row opens again, counted.
+        Back after someone marked it fixed: the fix did not hold."""
         now = utcnow()
+        fix_failed = alert.resolution == "fixed"
         alert.state = AlertState.OPEN.value
         alert.severity = AlertSeverity(getattr(severity, "value", severity)).value
         alert.message = message[:512]
@@ -133,9 +158,15 @@ class AlertRepository:
         alert.snoozed_until = None
         alert.snooze_until_worse = False
         alert.escalated_at = None
+        alert.parent_id = None
+        alert.recurring = bool(alert.recurring or recurring or fix_failed)
+        for key, value in (sla or {}).items():
+            setattr(alert, key, value)
         alert.updated_at = now
         alert.last_seen_at = now
         self.add_activity(alert.id, "reopened", None, f"Back again (×{alert.occurrences}): {message[:250]}")
+        if fix_failed:
+            self.add_activity(alert.id, "fix_failed", None, "Came back within a day of being marked fixed")
         self.db.commit()
         self.db.refresh(alert)
         return alert
@@ -160,11 +191,45 @@ class AlertRepository:
         alert.snoozed_until = None
         alert.snooze_until_worse = False
         alert.cooldown_until = now + timedelta(seconds=cooldown_seconds) if cooldown_seconds > 0 else None
+        alert.next_check_at = None
+        alert.waiting_reason = None
+        alert.waiting_since = None
         self.db.add(alert)
         self.add_activity(alert.id, "resolved", resolved_by, f"{resolution}: {note}" if note else resolution)
+        self._release_followers(alert, resolution, resolved_by, note)
         self.db.commit()
         self.db.refresh(alert)
         return alert
+
+    def _release_followers(self, lead: DeviceAlert, resolution: str, resolved_by: Optional[str], note: Optional[str]) -> None:
+        """An incident's lead closed: a person's reason closes its followers
+        too; when the problem left the lead's device by itself, the others
+        are back on their own clocks."""
+        followers = (
+            self.db.query(DeviceAlert)
+            .filter(DeviceAlert.parent_id == lead.id, DeviceAlert.state == AlertState.OPEN.value)
+            .limit(500)
+            .all()
+        )
+        if not followers:
+            return
+        from app.services.alert_sla import schedule
+
+        now = utcnow()
+        for alert in followers:
+            if resolution != "auto":
+                alert.state = AlertState.RESOLVED.value
+                alert.resolved_at = now
+                alert.resolution = resolution
+                alert.resolved_by = resolved_by
+                alert.next_check_at = None
+                self.add_activity(alert.id, "resolved", resolved_by,
+                                  f"{resolution}: with the incident #{lead.id}" + (f" · {note}" if note else ""))
+            else:
+                alert.parent_id = None
+                schedule(alert)
+                self.add_activity(alert.id, "incident_left", None, f"Incident #{lead.id} cleared on its first device")
+            alert.updated_at = now
 
     def get_by_device(
         self,
@@ -326,7 +391,7 @@ class AlertRepository:
 
 # ── the work queue ─────────────────────────────────────────────────────────
 
-QUEUE_VIEWS = ("needs_action", "mine", "open", "snoozed", "resolved")
+QUEUE_VIEWS = ("needs_action", "mine", "overdue", "open", "snoozed", "resolved")
 QueueRow = Tuple[DeviceAlert, Optional[str], Optional[str], Optional[str], Optional[int], Optional[str]]
 
 
@@ -367,11 +432,23 @@ class AlertQueueRepository(AlertRepository):
                 query = query.filter(snoozed)
             elif view != "all_open":
                 query = query.filter(~snoozed)
+            # An incident's followers wait under their lead; filtering by a
+            # device or an issue still finds them.
+            if view in ("needs_action", "mine", "overdue", "open") and device_id is None and not issue:
+                query = query.filter(DeviceAlert.parent_id.is_(None))
             if view == "needs_action":
-                query = query.filter(func.coalesce(DeviceAlert.priority, 3) <= 2)
-                query = query.filter(or_(DeviceAlert.assigned_to_id.is_(None), DeviceAlert.assigned_to_id == operator_id))
+                # P1–P2 nobody else owns, and whatever is mine and not yet taken in hand.
+                query = query.filter(or_(
+                    and_(func.coalesce(DeviceAlert.priority, 3) <= 2,
+                         or_(DeviceAlert.assigned_to_id.is_(None), DeviceAlert.assigned_to_id == operator_id)),
+                    and_(DeviceAlert.assigned_to_id == operator_id, DeviceAlert.acknowledged_at.is_(None)),
+                ))
             elif view == "mine":
                 query = query.filter(DeviceAlert.assigned_to_id == operator_id)
+            elif view == "overdue":
+                from app.services.alert_sla import overdue_filter
+
+                query = query.filter(overdue_filter(now))
         if severity:
             query = query.filter(DeviceAlert.severity == severity)
         if priority:
@@ -405,8 +482,12 @@ class AlertQueueRepository(AlertRepository):
         if view == "resolved":
             order = (DeviceAlert.resolved_at.desc(), DeviceAlert.id.desc())
         else:
+            # Most urgent first: priority, then the deadline closest (or most
+            # passed), then the newest.
             order = (
                 func.coalesce(DeviceAlert.priority, 3).asc(),
+                DeviceAlert.resolve_due_at.is_(None).asc(),
+                DeviceAlert.resolve_due_at.asc(),
                 func.coalesce(DeviceAlert.last_seen_at, DeviceAlert.created_at).desc(),
                 DeviceAlert.id.desc(),
             )
@@ -450,21 +531,31 @@ class AlertQueueRepository(AlertRepository):
         query = self._filter(self._base(scope), view="all_open", operator_id=operator_id, search=search)
         query = query.filter(DeviceAlert.state == AlertState.OPEN.value)
         rows = query.with_entities(
-            DeviceAlert.priority, DeviceAlert.assigned_to_id, DeviceAlert.snoozed_until, DeviceAlert.severity, DeviceAlert.kind
+            DeviceAlert.priority, DeviceAlert.assigned_to_id, DeviceAlert.snoozed_until, DeviceAlert.acknowledged_at,
+            DeviceAlert.parent_id, DeviceAlert.waiting_since, DeviceAlert.ack_due_at, DeviceAlert.resolve_due_at,
         ).limit(20000).all()
-        counts = {"needs_action": 0, "mine": 0, "open": 0, "snoozed": 0}
+        counts = {"needs_action": 0, "mine": 0, "overdue": 0, "open": 0, "snoozed": 0, "waiting": 0}
         by_priority: Dict[str, int] = {}
-        for priority, assigned, snoozed_until, _severity, _kind in rows:
+        for priority, assigned, snoozed_until, acknowledged, parent, waiting, ack_due, resolve_due in rows:
             if snoozed_until is not None and snoozed_until > now:
                 counts["snoozed"] += 1
+                continue
+            if parent is not None:
                 continue
             counts["open"] += 1
             p = priority or 3
             by_priority[str(p)] = by_priority.get(str(p), 0) + 1
-            if assigned is not None and assigned == operator_id:
+            mine = assigned is not None and assigned == operator_id
+            if mine:
                 counts["mine"] += 1
-            if p <= 2 and (assigned is None or assigned == operator_id):
+            if (p <= 2 and (assigned is None or mine)) or (mine and acknowledged is None):
                 counts["needs_action"] += 1
+            if waiting is not None:
+                counts["waiting"] += 1
+            elif (resolve_due is not None and resolve_due <= now) or (
+                acknowledged is None and ack_due is not None and ack_due <= now
+            ):
+                counts["overdue"] += 1
         return {"views": counts, "by_priority": by_priority}
 
     def activity(self, alert_id: int) -> List[AlertActivity]:

@@ -89,6 +89,8 @@ export const NOTIFICATION_EVENT_TYPES = [
   "agent_update_failed",
   "agent_update_completed",
   "critical_alert",
+  "alert_escalated",
+  "alert_handover",
   "maintenance_finished",
   "remote_action_failed",
   "remote_action_completed",

@@ -26,13 +26,21 @@ from app.schemas.alert import (
     AlertPage,
     AlertRateBody,
     AlertResolveBody,
+    AlertOperatorOut,
     AlertSnoozeBody,
+    AlertWaitBody,
+    DutyOut,
+    DutyShiftBody,
+    DutyShiftOut,
     FindingsPage,
+    HandoverItem,
     QualityReport,
 )
 from app.repositories.alert_repository import QUEUE_VIEWS, AlertQueueRepository
 from app.services.alert_ai_service import AIError, AlertAIService
 from app.services.alert_center_service import AlertActionError, AlertCenterService, alert_out
+from app.services.alert_incidents import follower_counts
+from app.services.alert_sla import handover
 from app.services.device_service import DeviceService
 from app.services.operator_scope_service import OperatorScopeService
 from app.services.token_usage_alert_service import build_token_usage_alerts
@@ -166,7 +174,7 @@ def alert_queue(
     db: Session = Depends(get_db),
     operator: Operator = Depends(get_current_operator),
     scope: Optional[AllowedScope] = Depends(get_operator_scope),
-    view: str = Query(default="needs_action", pattern="^(needs_action|mine|open|snoozed|resolved)$"),
+    view: str = Query(default="needs_action", pattern="^(needs_action|mine|overdue|open|snoozed|resolved)$"),
     severity: Optional[str] = Query(default=None, pattern="^(info|warning|critical)$"),
     priority: Optional[int] = Query(default=None, ge=1, le=4),
     kind: Optional[str] = Query(default=None, max_length=64),
@@ -186,6 +194,9 @@ def alert_queue(
         kind=kind, issue=issue, client_id=client_id, device_id=device_id, search=search,
     )
     items = [alert_out(*row) for row in rows]
+    followers = follower_counts(db, [item.id for item in items])
+    for item in items:
+        item.followers = followers.get(item.id, 0)
     if offset == 0 and view in ("needs_action", "open") and not (kind or issue or device_id or search or severity) \
             and priority in (None, 1):
         outages = [o for o in AlertCenterService(db).site_outages(scope) if client_id is None or o.client_id == client_id]
@@ -200,7 +211,7 @@ def alert_groups(
     operator: Operator = Depends(get_current_operator),
     scope: Optional[AllowedScope] = Depends(get_operator_scope),
     by: str = Query(default="issue", pattern="^(issue|client|device)$"),
-    view: str = Query(default="open", pattern="^(needs_action|mine|open|snoozed|resolved)$"),
+    view: str = Query(default="open", pattern="^(needs_action|mine|overdue|open|snoozed|resolved)$"),
     search: Optional[str] = Query(default=None, max_length=100),
     client_id: Optional[int] = None,
 ):
@@ -245,6 +256,68 @@ def alert_quality(
     days: int = Query(default=7, ge=1, le=90),
 ):
     return AlertCenterService(db).quality(scope, days=days)
+
+
+@router.get("/handover", response_model=List[HandoverItem])
+def alert_handover(
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+):
+    """What the next shift takes over: owned alerts and every P1–P2, with
+    their deadlines and last note."""
+    return handover(db, scope)
+
+
+@router.get("/operators", response_model=List[AlertOperatorOut])
+def alert_operators(
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+):
+    """People an alert can be given to (active, allowed to work alerts)."""
+    people = (
+        db.query(Operator)
+        .filter(Operator.is_active.is_(True), Operator.role.in_(
+            (OperatorRole.OWNER.value, OperatorRole.ADMIN.value, OperatorRole.OPERATOR.value)))
+        .order_by(Operator.display_name, Operator.username)
+        .all()
+    )
+    return [AlertOperatorOut(id=p.id, name=p.display_name or p.username) for p in people]
+
+
+@router.get("/duty", response_model=DutyOut)
+def alert_duty(
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+):
+    return AlertCenterService(db).duty()
+
+
+@router.post("/duty", response_model=DutyShiftOut)
+def add_duty_shift(
+    body: DutyShiftBody,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(require_min_role(OperatorRole.ADMIN.value)),
+):
+    from app.services.audit_service import audit_log
+
+    row = _action(lambda: AlertCenterService(db).add_shift(operator, body))
+    audit_log(db, operator=operator, action="alert_duty_shift_created", entity_type="alert_duty_shift",
+              entity_id=row["id"], details={"starts_on": str(body.starts_on), "ends_on": str(body.ends_on),
+                                            "operator_id": body.operator_id, "backup_operator_id": body.backup_operator_id})
+    return row
+
+
+@router.delete("/duty/{shift_id}", status_code=204)
+def remove_duty_shift(
+    shift_id: int,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(require_min_role(OperatorRole.ADMIN.value)),
+):
+    from app.services.audit_service import audit_log
+
+    _action(lambda: AlertCenterService(db).remove_shift(shift_id))
+    audit_log(db, operator=operator, action="alert_duty_shift_removed", entity_type="alert_duty_shift", entity_id=shift_id)
 
 
 @router.get("/mutes", response_model=List[AlertMuteOut])
@@ -396,6 +469,29 @@ def snooze_alert(
 ):
     return alert_out(_action(lambda: AlertCenterService(db).snooze(
         alert_id, scope, operator, minutes=body.minutes, until=body.until, until_worse=body.until_worse)))
+
+
+@router.post("/{alert_id}/wait", response_model=AlertOut)
+def wait_alert(
+    alert_id: int,
+    body: AlertWaitBody,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(require_min_role(OperatorRole.OPERATOR.value)),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+):
+    """Waiting on the client, a vendor, a part or a maintenance window: the
+    deadlines stop until work goes on."""
+    return alert_out(_action(lambda: AlertCenterService(db).wait(alert_id, scope, operator, reason=body.reason, note=body.note)))
+
+
+@router.post("/{alert_id}/resume", response_model=AlertOut)
+def resume_alert(
+    alert_id: int,
+    db: Session = Depends(get_db),
+    operator: Operator = Depends(require_min_role(OperatorRole.OPERATOR.value)),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+):
+    return alert_out(_action(lambda: AlertCenterService(db).resume(alert_id, scope, operator)))
 
 
 @router.post("/{alert_id}/unsnooze", response_model=AlertOut)

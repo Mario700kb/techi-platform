@@ -271,10 +271,11 @@ const alertCount: AlertCount = {
   by_severity: { critical: 1, warning: 1 },
   by_kind: { device_offline: 1, low_disk: 1 },
   devices_affected: 2,
-  views: { needs_action: 1, mine: 0, open: 2, snoozed: 0 },
+  views: { needs_action: 1, mine: 0, overdue: 1, open: 2, snoozed: 0, waiting: 0 },
   by_priority: { "1": 1, "3": 1 },
 };
 // The alert work queue (/alerts): the same alerts with priority and wording.
+const QUEUE_ACK = iso(60 * 26 - 15);
 const QUEUE: Alert[] = [
   {
     ...ALERTS[0],
@@ -284,6 +285,13 @@ const QUEUE: Alert[] = [
     device_role: "server",
     occurrences: 1,
     fingerprint: "",
+    // Not taken, past its 15 minutes: the dispatcher was told.
+    ack_due_at: iso(60 * 26 - 15),
+    resolve_due_at: iso(60 * 26 - 240),
+    sla_24x7: true,
+    sla_step: 4,
+    sla_state: "overdue",
+    followers: 2,
   },
   {
     ...ALERTS[1],
@@ -294,6 +302,47 @@ const QUEUE: Alert[] = [
     device_role: "pc",
     occurrences: 2,
     fingerprint: "vol:C:",
+    ack_due_at: iso(-60 * 5),
+    resolve_due_at: iso(-60 * 26),
+    recurring: true,
+  },
+];
+const DUTY = {
+  today: iso(0).slice(0, 10),
+  current: {
+    id: 1,
+    starts_on: iso(60 * 24).slice(0, 10),
+    ends_on: iso(-60 * 24 * 5).slice(0, 10),
+    operator_id: 2,
+    operator_name: "Besi Ops",
+    backup_operator_id: 1,
+    backup_name: "Ana Owner",
+    note: null,
+    created_by: "ana.owner",
+  },
+  shifts: [] as unknown[],
+  deadlines: [
+    { priority: 1, ack_minutes: 15, resolve_minutes: 240, round_the_clock_on_servers: true },
+    { priority: 2, ack_minutes: 60, resolve_minutes: 480, round_the_clock_on_servers: false },
+    { priority: 3, ack_minutes: 540, resolve_minutes: 1620, round_the_clock_on_servers: false },
+    { priority: 4, ack_minutes: null, resolve_minutes: 5400, round_the_clock_on_servers: false },
+  ],
+  work_hours: { days: [1, 2, 3, 4, 5], start: "08:00", end: "17:00", zone: "Europe/Tirane" },
+};
+DUTY.shifts = [DUTY.current];
+const HANDOVER = [
+  {
+    id: 11,
+    priority: 1,
+    title: "Device offline",
+    device_name: "BH-WH-SCANNER",
+    client_name: "Blue Harbor Logistics",
+    owner: null,
+    ack_due_at: QUEUE_ACK,
+    resolve_due_at: iso(60 * 26 - 240),
+    sla_state: "overdue",
+    waiting_reason: null,
+    last_note: null,
   },
 ];
 function alertDetail(id: number) {
@@ -315,6 +364,16 @@ function alertDetail(id: number) {
     },
     analysis: null,
     ai_enabled: false,
+    incident: alert.followers
+      ? {
+          lead_id: alert.id,
+          lead_device: alert.device_name,
+          followers: [
+            { id: 31, device_id: 5, device_name: "BH-WH-PRINTER" },
+            { id: 32, device_id: 6, device_name: "BH-WH-DESK-2" },
+          ],
+        }
+      : null,
   };
 }
 const recentActions: RemoteActionWithDevice[] = [];
@@ -615,7 +674,14 @@ const HANDLERS: Record<string, Handler> = {
   "GET /api/v1/alerts/count": (route) => json(route, alertCount),
   "GET /api/v1/alerts/queue": (route, _state, url) => {
     const view = url.searchParams.get("view") ?? "needs_action";
-    const items = view === "needs_action" ? QUEUE.filter((a) => (a.priority ?? 3) <= 2) : view === "open" ? QUEUE : [];
+    const items =
+      view === "needs_action"
+        ? QUEUE.filter((a) => (a.priority ?? 3) <= 2)
+        : view === "open"
+          ? QUEUE
+          : view === "overdue"
+            ? QUEUE.filter((a) => a.sla_state === "overdue")
+            : [];
     return json(route, { items, total: items.length });
   },
   "GET /api/v1/alerts/groups": (route) => json(route, []),
@@ -623,6 +689,13 @@ const HANDLERS: Record<string, Handler> = {
   "GET /api/v1/alerts/quality": (route) =>
     json(route, { days: 7, since: iso(60 * 24 * 7), rows: [], totals: { opened: 0, noise_pct: 0, issues: 0 } }),
   "GET /api/v1/alerts/mutes": (route) => json(route, []),
+  "GET /api/v1/alerts/duty": (route) => json(route, DUTY),
+  "GET /api/v1/alerts/handover": (route) => json(route, HANDOVER),
+  "GET /api/v1/alerts/operators": (route) =>
+    json(route, [
+      { id: 1, name: "Ana Owner" },
+      { id: 2, name: "Besi Ops" },
+    ]),
   "GET /api/v1/remote-support/identity/summary": (route) =>
     json(route, { devices_with_id: 5, confirmed_24h: 5, unbound_clients_24h: 0, attention_24h: 0, agent_disagrees: 0 }),
   "GET /api/v1/remote-support/identity/clients": (route) => json(route, []),

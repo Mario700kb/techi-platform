@@ -1,6 +1,6 @@
 from enum import Enum
 
-from sqlalchemy import Boolean, Column, DateTime, Enum as SQLEnum, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, Column, Date, DateTime, Enum as SQLEnum, Float, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy import false as sa_false
 from sqlalchemy.orm import relationship
 
@@ -48,6 +48,9 @@ class DeviceAlert(Base):
         Index("ix_device_alerts_device_kind_state", "device_id", "kind", "state"),
         # OfflineAlertSweep: "an offline alert opened since the last contact?"
         Index("ix_device_alerts_device_kind_created", "device_id", "kind", "created_at"),
+        # The deadline sweep: open alerts whose next escalation step is due.
+        Index("ix_device_alerts_open_next_check", "next_check_at",
+              postgresql_where=text("state = 'open'"), sqlite_where=text("state = 'open'")),
     )
 
     id = Column(Integer, primary_key=True)
@@ -82,9 +85,57 @@ class DeviceAlert(Base):
     resolved_by = Column(String(128), nullable=True)
     # When an unowned P1 was last escalated (reminder notification).
     escalated_at = Column(DateTime, nullable=True)
+    # Deadlines (app/services/alert_sla.py): stamped once when the alert opens
+    # or reopens, so no read computes the working-hours calendar. The clock
+    # starts at sla_started_at; time spent waiting on someone else is added
+    # back as sla_paused_minutes. sla_24x7: a P1 on a server counts every hour.
+    sla_started_at = Column(DateTime, nullable=True)
+    ack_due_at = Column(DateTime, nullable=True)
+    resolve_due_at = Column(DateTime, nullable=True)
+    sla_24x7 = Column(Boolean, nullable=False, default=False, server_default=sa_false())
+    sla_paused_minutes = Column(Integer, nullable=False, default=0, server_default="0")
+    # The last escalation step taken (0 none … 4 deadline missed) and when the
+    # next one is due: the sweep reads only rows whose next_check_at passed.
+    sla_step = Column(Integer, nullable=False, default=0, server_default="0")
+    next_check_at = Column(DateTime, nullable=True)
+    # Work on it: the first note, waiting on the client / a vendor / a part.
+    first_action_at = Column(DateTime, nullable=True)
+    waiting_reason = Column(String(32), nullable=True)
+    waiting_since = Column(DateTime, nullable=True)
+    # One problem on several devices of a client: the first alert leads, the
+    # others follow its owner and close with it.
+    parent_id = Column(Integer, ForeignKey("device_alerts.id", ondelete="SET NULL"), nullable=True, index=True)
+    # Came back 5 times in 7 days, or after a fix: closing it needs the cause.
+    recurring = Column(Boolean, nullable=False, default=False, server_default=sa_false())
 
     device = relationship("Device")
     assigned_to = relationship("Operator", lazy="joined")
+
+
+class AlertWaitingReason(str, Enum):
+    CLIENT = "client"
+    VENDOR = "vendor"
+    PARTS = "parts"
+    MAINTENANCE = "maintenance"
+
+
+class AlertDutyShift(Base):
+    """Who keeps the alert queue (the dispatcher) from one day to another,
+    and who stands in. Days in the display time zone, both inclusive."""
+
+    __tablename__ = "alert_duty_shifts"
+
+    id = Column(Integer, primary_key=True)
+    starts_on = Column(Date, nullable=False, index=True)
+    ends_on = Column(Date, nullable=False, index=True)
+    operator_id = Column(Integer, ForeignKey("operators.id", ondelete="CASCADE"), nullable=False)
+    backup_operator_id = Column(Integer, ForeignKey("operators.id", ondelete="SET NULL"), nullable=True)
+    note = Column(String(200), nullable=True)
+    created_by = Column(String(128), nullable=True)
+    created_at = Column(DateTime, default=utcnow_naive, nullable=False)
+
+    operator = relationship("Operator", foreign_keys=[operator_id], lazy="joined")
+    backup = relationship("Operator", foreign_keys=[backup_operator_id], lazy="joined")
 
 
 class AlertResolution(str, Enum):

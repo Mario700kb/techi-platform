@@ -258,7 +258,7 @@ def test_the_queue_orders_by_priority_and_needs_action_hides_what_others_own(db,
     assert api.get("/api/v1/alerts/queue").json()["items"] == []  # Mario has it
     assert [a["id"] for a in mario.get("/api/v1/alerts/queue", params={"view": "mine"}).json()["items"]] == [p1.id]
     counts = api.get("/api/v1/alerts/count").json()
-    assert counts["views"] == {"needs_action": 0, "mine": 0, "open": 2, "snoozed": 0}
+    assert counts["views"] == {"needs_action": 0, "mine": 0, "overdue": 0, "open": 2, "snoozed": 0, "waiting": 0}
     assert counts["by_priority"] == {"1": 1, "3": 1}
 
 
@@ -303,25 +303,6 @@ def test_a_site_that_goes_offline_together_is_one_p1(db, monkeypatch):
     items = _api(db, monkeypatch).get("/api/v1/alerts/queue").json()["items"]
     assert items[0]["kind"] == "site_outage" and items[0]["priority"] == 1
     assert items[0]["title"] == "Site offline · Durrës office" and len(items[0]["member_ids"]) == 3
-
-
-def test_an_unowned_p1_is_sent_again_after_30_minutes_of_working_hours(db, monkeypatch):
-    p1, _ = _seed_queue(db)
-    p1.last_seen_at = p1.created_at = utcnow_naive() - timedelta(minutes=45)
-    db.commit()
-    sent = []
-    monkeypatch.setattr("app.services.notification_service.NotificationService.dispatch", lambda self, **kw: sent.append(kw))
-    monday_10 = datetime(2026, 10, 19, 8, 0, tzinfo=timezone.utc)  # 10:00 in Tirana
-    monkeypatch.setattr("app.services.alert_center_service.utcnow", lambda: monday_10)
-    p1.last_seen_at = p1.created_at = monday_10.replace(tzinfo=None) - timedelta(minutes=45)
-    db.commit()
-    assert AlertCenterService(db).escalate_unowned(monday_10) == 1
-    assert sent and sent[0]["payload"]["reminder"] is True
-    assert AlertCenterService(db).escalate_unowned(monday_10) == 0  # once
-    sunday = datetime(2026, 10, 18, 8, 0, tzinfo=timezone.utc)
-    p1.escalated_at = None
-    db.commit()
-    assert AlertCenterService(db).escalate_unowned(sunday) == 0
 
 
 def test_findings_list_security_and_pending_restarts(db, monkeypatch):

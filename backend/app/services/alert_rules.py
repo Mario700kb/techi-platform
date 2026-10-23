@@ -100,8 +100,10 @@ _PRIORITY = {
 RECURRING_OCCURRENCES = 3
 # Within this long a problem that comes back reopens its own row.
 REOPEN_WINDOW_SECONDS = 24 * 3600
-# An unowned P1 is escalated (notified again) after this long in working hours.
-ESCALATE_AFTER_SECONDS = 30 * 60
+# Opening this many times within the window marks a problem "recurring":
+# closing it as fixed then needs the root cause.
+RECURRING_OPENINGS = 5
+RECURRING_WINDOW_SECONDS = 7 * 24 * 3600
 
 
 def priority_for(severity: AlertSeverity, is_server: bool, occurrences: int = 1) -> int:

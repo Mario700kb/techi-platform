@@ -1,26 +1,31 @@
 import { useCallback, useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { Link } from "react-router-dom";
-import { BellOff, Check, ExternalLink, StickyNote, UserCheck, X } from "lucide-react";
+import { BellOff, Check, ExternalLink, Play, StickyNote, UserCheck, X } from "lucide-react";
 
 import {
   addAlertNote,
   createAlertMute,
   getAlertDetail,
+  getAlertOperators,
   resolveAlert,
+  resumeAlert,
   snoozeAlert,
   takeAlert,
   assignAlert,
   unsnoozeAlert,
+  waitAlert,
 } from "../../api/alerts";
 import { useAuth } from "../../auth/AuthContext";
+import { useCachedQuery } from "../../hooks/useCachedQuery";
 import type { AlertDetail } from "../../types/alert";
-import { ALERT_SEVERITY_TONE, RESOLUTION_LABELS } from "../../types/alert";
+import { ALERT_SEVERITY_TONE, RESOLUTION_LABELS, WAITING_LABELS } from "../../types/alert";
+import { alertDeadline } from "../../utils/alertDeadline";
 import { APP_TIME_ZONE, formatDateTime, formatLocalDateTime, timeAgo } from "../../utils/time";
 import AlertKindIcon from "../AlertKindIcon";
 import { Button } from "../ui";
 import AiAnalysisPanel from "./AiAnalysisPanel";
-import { CommandBlock, MuteModal, PriorityChip, ResolveModal, SnoozeMenu } from "./AlertControls";
+import { AssignMenu, CommandBlock, MuteModal, PriorityChip, ResolveModal, SnoozeMenu, WaitMenu } from "./AlertControls";
 
 const ACTIONS: Record<string, string> = {
   opened: "Opened",
@@ -34,6 +39,17 @@ const ACTIONS: Record<string, string> = {
   note: "Note",
   escalated: "Escalated",
   analysed: "Analysed",
+  waiting: "Waiting",
+  resumed: "Work goes on",
+  auto_assigned: "Given to the dispatcher",
+  sla_unowned: "Nobody on it",
+  sla_take_missed: "Not taken in time",
+  sla_no_progress: "No progress",
+  sla_breached: "Deadline missed",
+  fix_failed: "The fix did not hold",
+  incident: "Incident",
+  incident_joined: "Joined an incident",
+  incident_left: "Left the incident",
 };
 
 function HistoryStrip({ history }: { history: string[] }) {
@@ -128,6 +144,10 @@ export default function AlertDrawer({
   const isOpenAlert = alert?.state === "open";
   const snoozed = alert?.snoozed_until && new Date(alert.snoozed_until).getTime() > Date.now();
   const mine = alert?.assigned_to_id != null && alert.assigned_to_id === user?.id;
+  const operators = useCachedQuery(open && canOperate ? "page.alerts.operators" : null, () => getAlertOperators());
+  const deadline = alert && !snoozed ? alertDeadline(alert) : null;
+  const waiting = Boolean(alert?.waiting_since);
+  const incident = detail?.incident;
   const facts = detail?.facts ?? {};
   const events = detail?.evidence.events ?? [];
 
@@ -200,6 +220,26 @@ export default function AlertDrawer({
                     </Link>
                   )}
                   {alert.client_name && <span className="th-status-chip">{alert.client_name}</span>}
+                  {deadline && (
+                    <span
+                      className="th-status-chip tabular-nums"
+                      style={{ "--chip-tone": deadline.tone } as CSSProperties}
+                      title={deadline.title}
+                    >
+                      <i />
+                      {deadline.label}
+                    </span>
+                  )}
+                  {alert.recurring && (
+                    <span
+                      className="th-status-chip"
+                      style={{ "--chip-tone": "var(--th-status-warning)" } as CSSProperties}
+                      title="Came back 5 times in 7 days, or after a fix"
+                    >
+                      <i />
+                      Recurring
+                    </span>
+                  )}
                   {typeof facts.role === "string" && (
                     <span className="th-status-chip">{facts.role === "server" ? "Server" : "Workstation"}</span>
                   )}
@@ -214,12 +254,37 @@ export default function AlertDrawer({
               )}
               {alert && canOperate && (
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {isOpenAlert && !mine && (
+                  {isOpenAlert && (!mine || !alert.acknowledged_at) && (
                     <Button size="sm" disabled={busy} onClick={() => void act(() => takeAlert(alert.id))}>
                       <UserCheck className="h-3.5 w-3.5" />
                       Take it
                     </Button>
                   )}
+                  {isOpenAlert && (operators.data?.length ?? 0) > 0 && (
+                    <AssignMenu
+                      disabled={busy}
+                      people={(operators.data ?? []).filter((p) => p.id !== alert.assigned_to_id)}
+                      onAssign={(id) => void act(() => assignAlert(alert.id, id))}
+                    />
+                  )}
+                  {isOpenAlert &&
+                    (waiting ? (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={busy}
+                        onClick={() => void act(() => resumeAlert(alert.id))}
+                        title="The deadlines start again, moved by the time spent waiting"
+                      >
+                        <Play className="h-3.5 w-3.5" />
+                        Resume
+                      </Button>
+                    ) : (
+                      <WaitMenu
+                        disabled={busy}
+                        onWait={(reason, text) => void act(() => waitAlert(alert.id, reason, text))}
+                      />
+                    ))}
                   {isOpenAlert && mine && (
                     <Button
                       size="sm"
@@ -269,6 +334,38 @@ export default function AlertDrawer({
               {!detail && !error && <div className="th-alerts-skeleton" aria-busy="true" />}
               {detail && alert && (
                 <>
+                  {incident && (
+                    <section className="th-ac-section">
+                      <h3>Incident</h3>
+                      {incident.lead_id === alert.id ? (
+                        <p>
+                          The same problem on {incident.followers.length} other device
+                          {incident.followers.length === 1 ? "" : "s"} of this client follows this alert: they take its
+                          owner and close with it.
+                        </p>
+                      ) : (
+                        <p>
+                          Part of incident #{incident.lead_id}
+                          {incident.lead_device ? ` (led by ${incident.lead_device})` : ""}: work on it there.
+                        </p>
+                      )}
+                      {incident.followers.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {incident.followers.map((f) => (
+                            <Link
+                              key={f.id}
+                              to={`/devices?device=${f.device_id}`}
+                              className="th-status-chip th-ac-chip-link"
+                            >
+                              {f.device_name ?? `Device #${f.device_id}`}
+                              <ExternalLink className="h-3 w-3" />
+                            </Link>
+                          ))}
+                        </div>
+                      )}
+                    </section>
+                  )}
+
                   <section className="th-ac-section">
                     <h3>What happened</h3>
                     <p>{detail.description}</p>
@@ -278,6 +375,17 @@ export default function AlertDrawer({
                         alert.last_seen_at !== alert.created_at &&
                         ` · last ${timeAgo(alert.last_seen_at)}`}
                     </p>
+                    {isOpenAlert && (alert.ack_due_at || alert.resolve_due_at) && (
+                      <p className="th-ac-muted">
+                        {alert.ack_due_at &&
+                          `Take by ${formatLocalDateTime(alert.ack_due_at)}${alert.acknowledged_at ? " (taken)" : ""} · `}
+                        {alert.resolve_due_at && `Fix by ${formatLocalDateTime(alert.resolve_due_at)}`}
+                        {alert.sla_24x7 ? " · counted every hour (P1 on a server)" : " · counted in working hours"}
+                        {waiting &&
+                          alert.waiting_reason &&
+                          ` · ${WAITING_LABELS[alert.waiting_reason]}, the clock is stopped`}
+                      </p>
+                    )}
                   </section>
 
                   {(events.length > 0 ||
@@ -449,6 +557,8 @@ export default function AlertDrawer({
       {resolveOpen && alert && (
         <ResolveModal
           count={1}
+          recurring={Boolean(alert.recurring)}
+          followers={incident && incident.lead_id === alert.id ? incident.followers.length : 0}
           onClose={() => setResolveOpen(false)}
           onResolve={async (resolution, text) => {
             await act(() => resolveAlert(alert.id, resolution, text));

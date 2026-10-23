@@ -8713,7 +8713,8 @@ button.th-client-group:hover {
   border-radius: 999px;
   font-family: var(--th-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: 11px;
-  color: var(--th-status-warning);
+  /* Pulled toward the text colour: amber alone is 4.4:1 on its tint in the light theme. */
+  color: color-mix(in srgb, var(--th-status-warning) 80%, var(--th-text-primary));
   background: color-mix(in srgb, var(--th-status-warning) 12%, transparent);
 }
 .th-ac-seg {
@@ -9143,6 +9144,9 @@ button.th-client-group:hover {
 }
 .th-ac-view {
   display: grid;
+  /* Rows as tall as their content: a table wrap scrolls sideways, and as a
+     scroll container it would otherwise shrink to fit and clip its rows. */
+  grid-auto-rows: max-content;
   gap: 12px;
   padding: 14px;
   align-content: start;

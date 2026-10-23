@@ -27,7 +27,10 @@ export type AlertKind =
 /** 1 act now · 2 today · 3 when there is time · 4 whenever. */
 export type AlertPriority = 1 | 2 | 3 | 4;
 export type AlertResolution = "auto" | "fixed" | "false_positive" | "expected" | "duplicate" | "muted";
-export type AlertView = "needs_action" | "mine" | "open" | "snoozed" | "resolved";
+export type AlertView = "needs_action" | "mine" | "overdue" | "open" | "snoozed" | "resolved";
+export type WaitingReason = "client" | "vendor" | "parts" | "maintenance";
+/** Past a deadline, or the clock stopped while waiting on someone else. */
+export type SlaState = "ack_overdue" | "overdue" | "waiting";
 
 export interface Alert {
   id: number;
@@ -67,6 +70,21 @@ export interface Alert {
   device_role?: "server" | "pc" | "site" | null;
   /** A site outage: the device alerts it groups. */
   member_ids?: number[] | null;
+  // Deadlines: when it must be taken and fixed (naive UTC from the server).
+  ack_due_at?: string | null;
+  resolve_due_at?: string | null;
+  /** A P1 on a server: the clock counts every hour, not working hours. */
+  sla_24x7?: boolean;
+  sla_step?: number;
+  sla_state?: SlaState | null;
+  first_action_at?: string | null;
+  waiting_reason?: WaitingReason | null;
+  waiting_since?: string | null;
+  /** The incident lead this alert follows, or how many alerts follow it. */
+  parent_id?: number | null;
+  followers?: number;
+  /** Came back 5 times in 7 days or after a fix: closing it needs the cause. */
+  recurring?: boolean;
 }
 
 export interface AlertPage {
@@ -183,6 +201,11 @@ export interface AlertDetail {
   runbook: Runbook | null;
   analysis: AlertAnalysis | null;
   ai_enabled: boolean;
+  incident?: {
+    lead_id: number;
+    lead_device: string | null;
+    followers: { id: number; device_id: number; device_name: string | null }[];
+  } | null;
 }
 
 export interface AlertMute {
@@ -232,12 +255,79 @@ export interface QualityRow {
   noise_pct: number;
 }
 
+export interface DeadlinePriorityRow {
+  priority: AlertPriority;
+  alerts: number;
+  owned_pct: number | null;
+  mtta_minutes: number | null;
+  mttr_minutes: number | null;
+  ack_met_pct: number | null;
+  met_pct: number | null;
+  overdue_open: number;
+}
+
+export interface DeadlineReport {
+  by_priority: DeadlinePriorityRow[];
+  by_person: { name: string; resolved: number; mttr_minutes: number | null; met_pct: number | null }[];
+  urgent_owned_pct: number | null;
+  fixed: number;
+  fix_failed: number;
+  fix_failed_pct: number | null;
+}
+
 export interface QualityReport {
   days: number;
   since: string;
   rows: QualityRow[];
   totals: { opened: number; noise_pct: number; issues: number };
+  deadlines?: DeadlineReport | null;
 }
+
+export interface DutyShift {
+  id: number;
+  starts_on: string;
+  ends_on: string;
+  operator_id: number;
+  operator_name: string | null;
+  backup_operator_id: number | null;
+  backup_name: string | null;
+  note: string | null;
+  created_by: string | null;
+}
+
+export interface DutyInfo {
+  today: string;
+  current: DutyShift | null;
+  shifts: DutyShift[];
+  deadlines: {
+    priority: AlertPriority;
+    ack_minutes: number | null;
+    resolve_minutes: number;
+    round_the_clock_on_servers: boolean;
+  }[];
+  work_hours: { days?: number[]; start?: string; end?: string; zone?: string };
+}
+
+export interface HandoverItem {
+  id: number;
+  priority: AlertPriority;
+  title: string;
+  device_name: string;
+  client_name: string | null;
+  owner: string | null;
+  ack_due_at: string | null;
+  resolve_due_at: string | null;
+  sla_state: SlaState | null;
+  waiting_reason: WaitingReason | null;
+  last_note: string | null;
+}
+
+export const WAITING_LABELS: Record<WaitingReason, string> = {
+  client: "Waiting on the client",
+  vendor: "Waiting on a vendor",
+  parts: "Waiting on a part",
+  maintenance: "Waiting for a maintenance window",
+};
 
 export interface AlertCount {
   total_open: number;
@@ -245,7 +335,7 @@ export interface AlertCount {
   by_kind?: Record<string, number>;
   devices_affected?: number;
   oldest_open_at?: string | null;
-  views?: Partial<Record<Exclude<AlertView, "resolved">, number>>;
+  views?: Partial<Record<Exclude<AlertView, "resolved"> | "waiting", number>>;
   by_priority?: Record<string, number>;
 }
 

@@ -10,6 +10,10 @@ class NotificationEvent:
     AGENT_UPDATE_FAILED = "agent_update_failed"
     AGENT_UPDATE_COMPLETED = "agent_update_completed"
     CRITICAL_ALERT = "critical_alert"
+    # An alert past one of its deadlines (app/services/alert_sla.py), and the
+    # end-of-day list of what stays open.
+    ALERT_ESCALATED = "alert_escalated"
+    ALERT_HANDOVER = "alert_handover"
     MAINTENANCE_FINISHED = "maintenance_finished"
     REMOTE_ACTION_FAILED = "remote_action_failed"
     REMOTE_ACTION_COMPLETED = "remote_action_completed"
@@ -24,6 +28,8 @@ ALL_EVENT_TYPES = [
     NotificationEvent.AGENT_UPDATE_FAILED,
     NotificationEvent.AGENT_UPDATE_COMPLETED,
     NotificationEvent.CRITICAL_ALERT,
+    NotificationEvent.ALERT_ESCALATED,
+    NotificationEvent.ALERT_HANDOVER,
     NotificationEvent.MAINTENANCE_FINISHED,
     NotificationEvent.REMOTE_ACTION_FAILED,
     NotificationEvent.REMOTE_ACTION_COMPLETED,

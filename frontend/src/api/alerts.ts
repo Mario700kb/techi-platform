@@ -10,9 +10,13 @@ import type {
   AlertPage,
   AlertSeverity,
   AlertView,
+  DutyInfo,
+  DutyShift,
   Finding,
   FindingsPage,
+  HandoverItem,
   QualityReport,
+  WaitingReason,
 } from "../types/alert";
 
 export function getAlerts(params?: {
@@ -142,11 +146,46 @@ export function addAlertNote(alertId: number, text: string): Promise<void> {
   return fetchJson<void>(`/api/v1/alerts/${alertId}/notes`, send("POST", { text }));
 }
 
-export type BulkAction = "take" | "assign" | "snooze" | "unsnooze" | "resolve";
+export function waitAlert(alertId: number, reason: WaitingReason, note?: string): Promise<Alert> {
+  return fetchJson<Alert>(`/api/v1/alerts/${alertId}/wait`, send("POST", { reason, note: note?.trim() || null }));
+}
+
+export function resumeAlert(alertId: number): Promise<Alert> {
+  return fetchJson<Alert>(`/api/v1/alerts/${alertId}/resume`, send("POST"));
+}
+
+export function getAlertOperators(): Promise<{ id: number; name: string }[]> {
+  return fetchJson(`/api/v1/alerts/operators`);
+}
+
+export function getAlertHandover(): Promise<HandoverItem[]> {
+  return fetchJson<HandoverItem[]>(`/api/v1/alerts/handover`);
+}
+
+export function getAlertDuty(): Promise<DutyInfo> {
+  return fetchJson<DutyInfo>(`/api/v1/alerts/duty`);
+}
+
+export function addDutyShift(body: {
+  starts_on: string;
+  ends_on: string;
+  operator_id: number;
+  backup_operator_id?: number | null;
+  note?: string | null;
+}): Promise<DutyShift> {
+  return fetchJson<DutyShift>(`/api/v1/alerts/duty`, send("POST", body));
+}
+
+export function removeDutyShift(shiftId: number): Promise<void> {
+  return fetchJson<void>(`/api/v1/alerts/duty/${shiftId}`, send("DELETE"));
+}
+
+export type BulkAction = "take" | "assign" | "snooze" | "unsnooze" | "resolve" | "wait" | "resume";
 
 export function bulkAlerts(body: {
   ids: number[];
   action: BulkAction;
+  reason?: WaitingReason;
   operator_id?: number | null;
   minutes?: number;
   until_worse?: boolean;

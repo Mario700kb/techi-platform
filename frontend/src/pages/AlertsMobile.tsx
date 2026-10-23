@@ -19,6 +19,7 @@ import { PriorityChip, ResolveModal } from "../components/alerts/AlertControls";
 import { useAppData } from "../contexts/AppDataContext";
 import { ManualResolution, resolveAlert } from "../api/alerts";
 import { Alert, ALERT_SEVERITY_TONE } from "../types/alert";
+import { alertDeadline } from "../utils/alertDeadline";
 import { describeAlert } from "../utils/alertText";
 import { parseUTC } from "../utils/time";
 import { Snackbar } from "../components/mobile/Snackbar";
@@ -81,6 +82,7 @@ function AlertItem({
 }) {
   const color = ALERT_SEVERITY_TONE[alert.severity] ?? ALERT_SEVERITY_TONE.info;
   const { title, summary } = describeAlert(alert);
+  const deadline = alertDeadline(alert);
   return (
     <div className="th-malert">
       <span className="th-onb-icon !h-8 !w-8 flex-none" style={{ "--onb-tone": color } as CSSProperties}>
@@ -100,6 +102,12 @@ function AlertItem({
         <p className="mt-0.5 text-[13px] leading-snug" style={{ color: "var(--th-text-secondary)" }}>
           {alert.summary ? summary : alert.message}
         </p>
+        {deadline && (
+          <p className="mt-0.5 text-[12px] tabular-nums" style={{ color: deadline.tone }} title={deadline.title}>
+            {deadline.label}
+            {alert.assigned_to_name ? ` · ${alert.assigned_to_name}` : " · no owner"}
+          </p>
+        )}
         <div className="mt-2 flex justify-end gap-2">
           {alert.id > 0 && (
             <button type="button" onClick={() => onOpen(alert.id)} className="th-malert-dismiss">
@@ -370,6 +378,7 @@ export default function AlertsMobile() {
       {resolving && (
         <ResolveModal
           count={resolving.length}
+          recurring={alerts.some((a) => resolving.includes(a.id) && a.recurring)}
           onClose={() => setResolving(null)}
           onResolve={(resolution, note) => resolveIds(resolving, resolution, note)}
         />

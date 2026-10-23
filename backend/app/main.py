@@ -172,16 +172,39 @@ def _run_monitor_sweep() -> None:
     except Exception:
         logger.exception("ID server sync failed")
         db.rollback()
-    try:
-        # A P1 nobody took within 30 minutes of working hours: send it again.
-        from app.services.alert_center_service import AlertCenterService
+    finally:
+        db.close()
 
-        AlertCenterService(db).escalate_unowned()
+
+ALERT_SLA_SWEEP_INTERVAL_S = 60
+# After a restart the fleet reconnects first; deadlines can wait two minutes.
+ALERT_SLA_SWEEP_FIRST_DELAY_S = 120
+
+
+def _run_alert_sla_sweep() -> None:
+    """Alert deadlines: the escalation steps that came due, the end-of-day
+    handover. Reads only the open alerts whose next step is due."""
+    from app.db.session import SessionLocal
+    from app.services.alert_sla import AlertSlaService
+
+    db = SessionLocal()
+    try:
+        result = AlertSlaService(db).sweep()
+        if result["fired"] or result["stamped"]:
+            logger.info("Alert deadlines: %d stamped, %d checked, %d escalated", result["stamped"], result["checked"],
+                        result["fired"])
     except Exception:
-        logger.exception("Alert reminder sweep failed")
+        logger.exception("Alert deadline sweep failed")
         db.rollback()
     finally:
         db.close()
+
+
+async def _alert_sla_scheduler() -> None:
+    await asyncio.sleep(ALERT_SLA_SWEEP_FIRST_DELAY_S)
+    while True:
+        await asyncio.to_thread(_run_alert_sla_sweep)
+        await asyncio.sleep(ALERT_SLA_SWEEP_INTERVAL_S)
 
 
 # First runs well after a restart: the fleet reconnects in the first minutes.
@@ -285,6 +308,7 @@ async def lifespan(app: FastAPI):
     await asyncio.to_thread(_ensure_telemetry_partitions)
     monitor_sweep_task = asyncio.create_task(_monitor_sweep_scheduler())
     presence_flush_task = asyncio.create_task(_presence_flush_scheduler())
+    alert_sla_task = asyncio.create_task(_alert_sla_scheduler())
     # Only runs when the feature is actually reachable — flag OFF stays
     # zero-extra-behavior (no new periodic queries).
     if feature_enabled("FEATURE_TERMINAL"):
@@ -313,7 +337,7 @@ async def lifespan(app: FastAPI):
 
     cancel_presence_checks()
 
-    for task in (cleanup_task, location_sweep_task, monitor_sweep_task, presence_flush_task):
+    for task in (cleanup_task, location_sweep_task, monitor_sweep_task, presence_flush_task, alert_sla_task):
         task.cancel()
         try:
             await task

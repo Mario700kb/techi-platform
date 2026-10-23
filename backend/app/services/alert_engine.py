@@ -9,6 +9,8 @@ from app.services.device_maintenance_service import is_maintenance_active
 from app.repositories.device_telemetry_repository import DeviceTelemetryRepository
 from app.services.alert_rules import (
     ALERT_RULES,
+    RECURRING_OPENINGS,
+    RECURRING_WINDOW_SECONDS,
     REOPEN_WINDOW_SECONDS,
     is_server_category,
     priority_for,
@@ -26,6 +28,8 @@ from app.services.alert_rules import (
     STALE_WHEN_OFFLINE,
     SUSTAINED_SAMPLES,
 )
+from app.services.alert_incidents import attach as attach_to_incident
+from app.services.alert_sla import deadline_fields, restamp as restamp_sla
 from app.services.notification_events import NotificationEvent
 from app.services.notification_service import NotificationService
 from app.websocket.events import RealtimeEventType, build_event
@@ -162,6 +166,7 @@ class AlertEngine:
         rule = ALERT_RULES.get(kind)
         cooldown_seconds = rule.cooldown_seconds if rule else 300
         is_server = device_is_server(device)
+        recurring = self.repo.openings_within(device_id, kind, fingerprint, RECURRING_WINDOW_SECONDS) + 1 >= RECURRING_OPENINGS
         try:
             if (
                 recent is not None
@@ -169,14 +174,18 @@ class AlertEngine:
                 and (now - recent.resolved_at).total_seconds() <= REOPEN_WINDOW_SECONDS
             ):
                 occurrences = (recent.occurrences or 1) + 1
+                priority = priority_for(severity, is_server, occurrences)
                 alert = self.repo.reopen(
                     recent,
                     severity=severity,
                     message=message,
                     detail=detail,
-                    priority=priority_for(severity, is_server, occurrences),
+                    priority=priority,
+                    sla=deadline_fields(priority, is_server, now),
+                    recurring=recurring,
                 )
             else:
+                priority = priority_for(severity, is_server)
                 alert = self.repo.create(
                     device_id=device_id,
                     kind=kind,
@@ -185,7 +194,9 @@ class AlertEngine:
                     detail=detail,
                     cooldown_seconds=cooldown_seconds,
                     fingerprint=fingerprint,
-                    priority=priority_for(severity, is_server),
+                    priority=priority,
+                    sla=deadline_fields(priority, is_server, now),
+                    recurring=recurring,
                 )
         except Exception:
             logger.exception("Failed to open alert kind=%s device_id=%s", kind, device_id)
@@ -193,11 +204,18 @@ class AlertEngine:
             return None
         if self._prefetched(device_id):
             self._open[(kind, fingerprint)] = alert
+        try:
+            attach_to_incident(self.repo.db, alert, device)
+        except Exception:
+            logger.exception("Incident grouping failed for alert id=%s", alert.id)
+            self.repo.db.rollback()
         realtime_publisher.publish_threadsafe(
             build_event(RealtimeEventType.ALERT_CREATED, data=_alert_payload(alert), reason="alert_created"),
             dedupe_key=f"alert_created:{alert.id}:{alert.occurrences}",
         )
-        self._notify_opened(alert, device)
+        # A follower is told through its incident's lead, not once per device.
+        if alert.parent_id is None:
+            self._notify_opened(alert, device)
         return alert
 
     def _update_open(self, alert: DeviceAlert, severity: AlertSeverity, message: str, detail, device, refresh: bool) -> None:
@@ -207,7 +225,13 @@ class AlertEngine:
         try:
             if worse:
                 alert.severity = severity.value
-                alert.priority = priority_for(severity, device_is_server(device), alert.occurrences or 1)
+                is_server = device_is_server(device)
+                priority = priority_for(severity, is_server, alert.occurrences or 1)
+                if alert.priority is not None and priority < alert.priority:
+                    # More urgent now: its clock starts again on the tighter deadlines.
+                    alert.priority = priority
+                    restamp_sla(alert, is_server)
+                alert.priority = priority
                 if alert.snooze_until_worse:
                     alert.snoozed_until = None
                     alert.snooze_until_worse = False

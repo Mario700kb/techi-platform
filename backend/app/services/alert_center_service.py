@@ -1,7 +1,8 @@
-"""The Alerts work queue: who owns an alert, snooze, resolve with a reason,
-notes, mute rules, the alert panel (description, evidence, history, runbook),
-the Findings view, the alert-quality report, site outages and the reminder
-for an unowned P1.
+"""The Alerts work queue: who owns an alert, snooze, waiting on someone
+else, resolve with a reason, notes, mute rules, the duty roster, the alert
+panel (description, evidence, history, runbook), the Findings view, the
+alert-quality report with its deadlines, and site outages. Deadlines and
+escalation steps live in alert_sla.
 
 Everything runs in the backend and Postgres the platform already has.
 """
@@ -15,7 +16,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.time import ensure_utc, utcnow, utcnow_naive
-from app.models.alert import AlertKind, AlertMute, AlertResolution, AlertState, DeviceAlert
+from app.models.alert import AlertDutyShift, AlertKind, AlertMute, AlertResolution, AlertState, AlertWaitingReason, DeviceAlert
 from app.models.client import Client
 from app.models.device import Device, DeviceStatus
 from app.models.operator import Operator
@@ -23,7 +24,8 @@ from app.repositories.alert_repository import AlertQueueRepository, issue_key
 from app.schemas.alert import AlertOut
 from app.services.alert_engine import _alert_payload, device_is_server
 from app.services.alert_presenter import KIND_TITLES, describe_alert
-from app.services.alert_rules import ESCALATE_AFTER_SECONDS, EVENT_GROUPS, priority_for
+from app.services.alert_rules import EVENT_GROUPS, priority_for
+from app.services import alert_sla
 from app.services.alert_runbooks import runbook_for
 from app.websocket.events import RealtimeEventType, build_event
 from app.websocket.publisher import realtime_publisher
@@ -59,6 +61,7 @@ def alert_out(alert: DeviceAlert, hostname=None, display_name=None, client_name=
     )
     text = describe_alert(alert.kind, alert.fingerprint, alert.message, alert.detail, alert.severity)
     out.title, out.summary, out.value = text.title, text.summary, text.value
+    out.sla_state = alert_sla.sla_state(alert)
     if category is not None:
         from app.services.alert_rules import is_server_category
 
@@ -111,9 +114,58 @@ class AlertCenterService:
             self.repo.add_activity(alert.id, "taken", operator.username, None)
         else:
             self.repo.add_activity(alert.id, "assigned", operator.username, target.display_name or target.username)
+        # An incident's followers have the lead's owner.
+        for follower in self._followers(alert.id):
+            follower.assigned_to_id = alert.assigned_to_id
+            follower.acknowledged_at = alert.acknowledged_at
+            follower.updated_at = now
         self.db.commit()
         self.db.refresh(alert)
         self._publish(alert, "assigned")
+        return alert
+
+    def _followers(self, lead_id: int) -> List[DeviceAlert]:
+        return (
+            self.db.query(DeviceAlert)
+            .filter(DeviceAlert.parent_id == lead_id, DeviceAlert.state == AlertState.OPEN.value)
+            .limit(500)
+            .all()
+        )
+
+    def wait(self, alert_id: int, scope, operator: Operator, *, reason: str, note: Optional[str]) -> DeviceAlert:
+        """Waiting on the client, a vendor, a part or a maintenance window:
+        the deadlines stop until work can go on. Whoever says so owns it."""
+        if reason not in {r.value for r in AlertWaitingReason}:
+            raise AlertActionError(422, "Unknown reason to wait")
+        alert = self._get(alert_id, scope)
+        if _value(alert.state) != "open":
+            raise AlertActionError(409, "Alert already resolved")
+        now = utcnow_naive()
+        if alert.assigned_to_id is None:
+            alert.assigned_to_id = operator.id
+        alert.acknowledged_at = alert.acknowledged_at or now
+        alert.first_action_at = alert.first_action_at or now
+        alert_sla.pause(alert, reason, now)
+        alert.updated_at = now
+        label = WAITING_LABELS[reason]
+        self.repo.add_activity(alert.id, "waiting", operator.username, f"{label}: {note.strip()}" if note and note.strip() else label)
+        self.db.commit()
+        self.db.refresh(alert)
+        self._publish(alert, "waiting")
+        return alert
+
+    def resume(self, alert_id: int, scope, operator: Operator) -> DeviceAlert:
+        alert = self._get(alert_id, scope)
+        if alert.waiting_since is None:
+            raise AlertActionError(409, "The alert is not waiting")
+        now = utcnow_naive()
+        waited = alert_sla.resume(alert, now)
+        alert.updated_at = now
+        self.repo.add_activity(alert.id, "resumed", operator.username,
+                               f"Deadlines moved by {round(waited)} working minutes" if waited >= 1 else None)
+        self.db.commit()
+        self.db.refresh(alert)
+        self._publish(alert, "resumed")
         return alert
 
     def snooze(self, alert_id: int, scope, operator: Operator, *, minutes: Optional[int], until: Optional[datetime],
@@ -157,6 +209,8 @@ class AlertCenterService:
         alert = self._get(alert_id, scope)
         if _value(alert.state) == "resolved":
             raise AlertActionError(409, "Alert already resolved")
+        if alert.recurring and resolution == AlertResolution.FIXED.value and len((note or "").strip()) < 10:
+            raise AlertActionError(422, "This problem keeps coming back: write the root cause and what was changed")
         quiet = QUIET_AFTER_DISMISS_SECONDS if resolution in (AlertResolution.FALSE_POSITIVE.value, AlertResolution.EXPECTED.value) else 0
         resolved = self.repo.resolve(alert.id, cooldown_seconds=quiet, resolution=resolution,
                                      resolved_by=operator.username, note=note)
@@ -169,6 +223,8 @@ class AlertCenterService:
         alert = self._get(alert_id, scope)
         self.repo.add_activity(alert.id, "note", operator.username, text.strip())
         alert.updated_at = utcnow_naive()
+        if _value(alert.state) == "open":
+            alert.first_action_at = alert.first_action_at or alert.updated_at
         self.db.commit()
 
     def bulk(self, ids: List[int], scope, operator: Operator, body) -> Tuple[List[int], List[int]]:
@@ -186,6 +242,10 @@ class AlertCenterService:
                     self.unsnooze(alert_id, scope, operator)
                 elif body.action == "resolve":
                     self.resolve(alert_id, scope, operator, resolution=body.resolution, note=body.note)
+                elif body.action == "wait":
+                    self.wait(alert_id, scope, operator, reason=body.reason or "client", note=body.note)
+                elif body.action == "resume":
+                    self.resume(alert_id, scope, operator)
                 done.append(alert_id)
             except AlertActionError:
                 self.db.rollback()
@@ -416,7 +476,10 @@ class AlertCenterService:
         evidence = self.evidence(alert, device)
         runbook = runbook_for(alert.kind, alert.fingerprint)
         ai = AlertAIService(self.db)
+        incident = self.incident(alert)
+        out.followers = len(incident["followers"]) if incident and incident["lead_id"] == alert.id else 0
         return {
+            "incident": incident,
             "alert": out,
             "description": self.describe(alert, facts, evidence),
             "facts": facts,
@@ -426,6 +489,28 @@ class AlertCenterService:
             "runbook": runbook.as_dict() if runbook else None,
             "analysis": ai.latest_for_alert(alert),
             "ai_enabled": ai.enabled,
+        }
+
+    def incident(self, alert: DeviceAlert) -> Optional[Dict[str, Any]]:
+        """The incident this alert leads or follows: its lead and the open
+        alerts of the other devices."""
+        lead_id = alert.parent_id or alert.id
+        rows = (
+            self.db.query(DeviceAlert.id, DeviceAlert.device_id, Device.hostname, Device.display_name)
+            .join(Device, Device.id == DeviceAlert.device_id)
+            .filter(DeviceAlert.parent_id == lead_id, DeviceAlert.state == AlertState.OPEN.value)
+            .order_by(DeviceAlert.id)
+            .limit(200)
+            .all()
+        )
+        if alert.parent_id is None and not rows:
+            return None
+        lead = self.db.get(DeviceAlert, lead_id) if alert.parent_id else alert
+        lead_device = self.db.get(Device, lead.device_id) if lead is not None else None
+        return {
+            "lead_id": lead_id,
+            "lead_device": ((lead_device.display_name or "").strip() or lead_device.hostname) if lead_device else None,
+            "followers": [{"id": r[0], "device_id": r[1], "device_name": (r[3] or "").strip() or r[2]} for r in rows],
         }
 
     # ── site outages ────────────────────────────────────────────────────────
@@ -475,50 +560,60 @@ class AlertCenterService:
             ))
         return sorted(out, key=lambda a: a.created_at, reverse=True)
 
-    # ── reminders ───────────────────────────────────────────────────────────
+    # ── the duty roster ─────────────────────────────────────────────────────
 
-    def escalate_unowned(self, now: Optional[datetime] = None) -> int:
-        """A P1 nobody took within 30 minutes of working hours is sent again."""
-        from app.services.notification_events import NotificationEvent
-        from app.services.notification_service import NotificationService
-        from app.services.offline_alerts import WorkHours
-
-        now = ensure_utc(now or utcnow())
-        window = WorkHours.from_settings().window(now)
-        if window is None or not (window[0] <= now <= window[1]):
-            return 0
-        naive = now.replace(tzinfo=None)
-        cutoff = naive - timedelta(seconds=ESCALATE_AFTER_SECONDS)
-        due = (
-            self.db.query(DeviceAlert)
-            .filter(
-                DeviceAlert.state == AlertState.OPEN.value,
-                DeviceAlert.priority == 1,
-                DeviceAlert.assigned_to_id.is_(None),
-                DeviceAlert.escalated_at.is_(None),
-                func.coalesce(DeviceAlert.last_seen_at, DeviceAlert.created_at) <= cutoff,
-                func.coalesce(DeviceAlert.last_seen_at, DeviceAlert.created_at) >= window[0].replace(tzinfo=None) - timedelta(hours=16),
-            )
-            .filter((DeviceAlert.snoozed_until.is_(None)) | (DeviceAlert.snoozed_until <= naive))
-            .limit(50)
+    def duty(self) -> Dict[str, Any]:
+        """Who keeps the queue today, and the shifts from a week ago on."""
+        clock = alert_sla.WorkClock()
+        today = alert_sla._local_day(utcnow_naive(), clock)
+        current = alert_sla.duty_shift(self.db)
+        shifts = (
+            self.db.query(AlertDutyShift)
+            .filter(AlertDutyShift.ends_on >= today - timedelta(days=7))
+            .order_by(AlertDutyShift.starts_on, AlertDutyShift.id)
+            .limit(200)
             .all()
         )
-        for alert in due:
-            device = self.db.get(Device, alert.device_id)
-            NotificationService(self.db).dispatch(
-                event_type=NotificationEvent.CRITICAL_ALERT,
-                title=f"Still nobody on it: {alert.message}"[:255],
-                message=f"P1 open for over {ESCALATE_AFTER_SECONDS // 60} minutes without an owner. {alert.detail or ''}".strip(),
-                severity=_value(alert.severity),
-                device_id=alert.device_id,
-                client_id=getattr(device, "client_id", None),
-                payload={"kind": _value(alert.kind), "priority": 1, "alert_id": alert.id, "reminder": True},
-            )
-            alert.escalated_at = naive
-            self.repo.add_activity(alert.id, "escalated", None, "Reminder sent: no owner after 30 minutes")
-        if due:
-            self.db.commit()
-        return len(due)
+        return {
+            "today": today,
+            "current": _shift_out(current) if current else None,
+            "shifts": [_shift_out(s) for s in shifts],
+            "deadlines": [
+                {"priority": p, "ack_minutes": sla.ack_minutes, "resolve_minutes": sla.resolve_minutes,
+                 "round_the_clock_on_servers": p == 1}
+                for p, sla in ((p, alert_sla.sla_for(p, clock)) for p in (1, 2, 3, 4))
+            ],
+            "work_hours": {"days": sorted(clock.hours.days), "start": clock.hours.start.strftime("%H:%M"),
+                           "end": clock.hours.end.strftime("%H:%M"), "zone": str(clock.hours.zone)},
+        }
+
+    def add_shift(self, operator: Operator, body) -> Dict[str, Any]:
+        if body.ends_on < body.starts_on:
+            raise AlertActionError(422, "The shift ends before it starts")
+        if (body.ends_on - body.starts_on).days > 92:
+            raise AlertActionError(422, "A shift is at most three months")
+        for person_id in filter(None, (body.operator_id, body.backup_operator_id)):
+            person = self.db.get(Operator, person_id)
+            if person is None or not person.is_active:
+                raise AlertActionError(404, "Operator not found")
+        if body.backup_operator_id == body.operator_id:
+            raise AlertActionError(422, "The stand-in is someone else")
+        shift = AlertDutyShift(
+            starts_on=body.starts_on, ends_on=body.ends_on, operator_id=body.operator_id,
+            backup_operator_id=body.backup_operator_id, note=(body.note or "").strip() or None,
+            created_by=operator.username, created_at=utcnow_naive(),
+        )
+        self.db.add(shift)
+        self.db.commit()
+        self.db.refresh(shift)
+        return _shift_out(shift)
+
+    def remove_shift(self, shift_id: int) -> None:
+        shift = self.db.get(AlertDutyShift, shift_id)
+        if shift is None:
+            raise AlertActionError(404, "Shift not found")
+        self.db.delete(shift)
+        self.db.commit()
 
     # ── findings ────────────────────────────────────────────────────────────
 
@@ -678,7 +773,107 @@ class AlertCenterService:
             "days": days, "since": since, "rows": out,
             "totals": {"opened": all_open, "noise_pct": round(100.0 * all_noise / all_open, 1) if all_open else 0.0,
                        "issues": len(out)},
+            "deadlines": self._deadline_report(alerts, since, ids),
         }
+
+    def _deadline_report(self, alerts: List[DeviceAlert], since: datetime, ids: List[int]) -> Dict[str, Any]:
+        """Whether the work keeps its deadlines: per priority and per person,
+        time to take and to fix in clock minutes (working hours, or every
+        hour for a P1 on a server), less the time spent waiting."""
+        from app.models.alert import AlertActivity
+
+        clock = alert_sla.WorkClock()
+        now = utcnow_naive()
+        manual = {"fixed", "false_positive", "expected", "duplicate"}
+
+        def mean(values):
+            return round(sum(values) / len(values), 1) if values else None
+
+        def pct(part, whole):
+            return round(100.0 * part / whole, 1) if whole else None
+
+        by_priority: Dict[int, Dict[str, Any]] = {}
+        by_person: Dict[str, Dict[str, Any]] = {}
+        for alert in alerts:
+            if alert.sla_started_at is None or alert.parent_id is not None:
+                continue
+            p = alert.priority or 3
+            row = by_priority.setdefault(p, {"priority": p, "alerts": 0, "owned": 0, "tta": [], "ttr": [],
+                                             "ack_met": 0, "ack_judged": 0, "met": 0, "judged": 0, "overdue_open": 0})
+            row["alerts"] += 1
+            always = bool(alert.sla_24x7)
+            if alert.acknowledged_at is not None:
+                row["owned"] += 1
+                row["tta"].append(clock.between(alert.sla_started_at, alert.acknowledged_at, always))
+            if alert.ack_due_at is not None and (alert.acknowledged_at is not None or alert.ack_due_at <= now):
+                row["ack_judged"] += 1
+                if alert.acknowledged_at is not None and alert.acknowledged_at <= alert.ack_due_at:
+                    row["ack_met"] += 1
+            closed_by_person = alert.resolved_at is not None and alert.resolution in manual
+            if closed_by_person:
+                minutes = max(0.0, clock.between(alert.sla_started_at, alert.resolved_at, always) - (alert.sla_paused_minutes or 0))
+                row["ttr"].append(minutes)
+                row["judged"] += 1
+                on_time = alert.resolve_due_at is None or alert.resolved_at <= alert.resolve_due_at
+                row["met"] += int(on_time)
+                person = by_person.setdefault(alert.resolved_by or "—", {"name": alert.resolved_by or "—", "resolved": 0,
+                                                                        "ttr": [], "met": 0})
+                person["resolved"] += 1
+                person["ttr"].append(minutes)
+                person["met"] += int(on_time)
+            elif _value(alert.state) == "open" and alert_sla.sla_state(alert, now) == "overdue":
+                row["judged"] += 1
+                row["overdue_open"] += 1
+        priorities = []
+        for p in sorted(by_priority):
+            row = by_priority[p]
+            priorities.append({
+                "priority": p, "alerts": row["alerts"], "owned_pct": pct(row["owned"], row["alerts"]),
+                "mtta_minutes": mean(row["tta"]), "mttr_minutes": mean(row["ttr"]),
+                "ack_met_pct": pct(row["ack_met"], row["ack_judged"]), "met_pct": pct(row["met"], row["judged"]),
+                "overdue_open": row["overdue_open"],
+            })
+        people = sorted(
+            ({"name": r["name"], "resolved": r["resolved"], "mttr_minutes": mean(r["ttr"]), "met_pct": pct(r["met"], r["resolved"])}
+             for r in by_person.values()),
+            key=lambda r: -r["resolved"],
+        )
+        fixed = sum(1 for a in alerts if a.resolution == "fixed" and a.resolved_at is not None and a.resolved_at >= since)
+        failed = (
+            self.db.query(func.count(AlertActivity.id))
+            .filter(AlertActivity.action == "fix_failed", AlertActivity.at >= since, AlertActivity.alert_id.in_(ids))
+            .scalar()
+            or 0
+        ) if ids else 0
+        urgent = [r for r in by_priority.values() if r["priority"] <= 2]
+        return {
+            "by_priority": priorities,
+            "by_person": people,
+            "urgent_owned_pct": pct(sum(r["owned"] for r in urgent), sum(r["alerts"] for r in urgent)),
+            "fixed": fixed,
+            "fix_failed": failed,
+            "fix_failed_pct": pct(failed, fixed + failed),
+        }
+
+
+WAITING_LABELS = {
+    AlertWaitingReason.CLIENT.value: "Waiting on the client",
+    AlertWaitingReason.VENDOR.value: "Waiting on a vendor",
+    AlertWaitingReason.PARTS.value: "Waiting on a part",
+    AlertWaitingReason.MAINTENANCE.value: "Waiting for a maintenance window",
+}
+
+
+def _shift_out(shift: AlertDutyShift) -> Dict[str, Any]:
+    def name(person):
+        return (person.display_name or person.username) if person is not None else None
+
+    return {
+        "id": shift.id, "starts_on": shift.starts_on, "ends_on": shift.ends_on,
+        "operator_id": shift.operator_id, "operator_name": name(shift.operator),
+        "backup_operator_id": shift.backup_operator_id, "backup_name": name(shift.backup),
+        "note": shift.note, "created_by": shift.created_by,
+    }
 
 
 def kind_title(kind: str) -> str:

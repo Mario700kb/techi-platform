@@ -1,6 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import { AlertTriangle, CheckCircle2, Layers, RefreshCcw, Search, Sparkles, UserCheck, X } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ClipboardList,
+  Layers,
+  RefreshCcw,
+  Search,
+  Sparkles,
+  UserCheck,
+  X,
+} from "lucide-react";
 
 import {
   analyzeAlertGroup,
@@ -15,7 +25,7 @@ import { useAuth } from "../auth/AuthContext";
 import AlertKindIcon from "../components/AlertKindIcon";
 import AlertDrawer from "../components/alerts/AlertDrawer";
 import { CommandBlock, PriorityChip, ResolveModal, SnoozeMenu } from "../components/alerts/AlertControls";
-import { FindingsView, MutesView, QualityView } from "../components/alerts/AlertSideViews";
+import { DutyView, FindingsView, HandoverModal, MutesView, QualityView } from "../components/alerts/AlertSideViews";
 import RemoteSupportIdsView from "../components/alerts/RemoteSupportIdsView";
 import { Button, EmptyState, Modal, PageHeader, Select, TablePagination } from "../components/ui";
 import { useAppData } from "../contexts/AppDataContext";
@@ -24,18 +34,20 @@ import { useNow } from "../hooks/useNow";
 import { useTabIndicator } from "../hooks/useTabIndicator";
 import type { Alert, AlertAnalysis, AlertCount, AlertGroup, AlertKind, AlertPage, AlertView } from "../types/alert";
 import { ALERT_KIND_LABELS, ALERT_SEVERITY_TONE, RESOLUTION_LABELS } from "../types/alert";
+import { alertDeadline } from "../utils/alertDeadline";
 import { describeAlert } from "../utils/alertText";
 import { formatCount } from "../utils/number";
 import { formatDateTime, formatLocalDateTime, timeAgo } from "../utils/time";
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50];
 
-type Tab = AlertView | "findings" | "rsids" | "quality" | "mutes";
+type Tab = AlertView | "findings" | "rsids" | "quality" | "mutes" | "duty";
 type GroupBy = "none" | "issue" | "client" | "device";
 
 const TABS: { id: Tab; label: string; hint: string }[] = [
   { id: "needs_action", label: "Needs action", hint: "P1–P2 that nobody else has taken" },
   { id: "mine", label: "Mine", hint: "Alerts you took" },
+  { id: "overdue", label: "Overdue", hint: "Past the time to take or to fix them" },
   { id: "open", label: "All open", hint: "Every open alert, most urgent first" },
   { id: "snoozed", label: "Snoozed", hint: "Back when the snooze ends" },
   { id: "resolved", label: "Resolved", hint: "Closed, newest first" },
@@ -43,6 +55,7 @@ const TABS: { id: Tab; label: string; hint: string }[] = [
   { id: "rsids", label: "Remote Support IDs", hint: "IDs as the clients themselves report them" },
   { id: "quality", label: "Quality", hint: "Which rules make noise" },
   { id: "mutes", label: "Mute rules", hint: "Rules that keep alerts from opening" },
+  { id: "duty", label: "Duty", hint: "Who keeps the queue, and the deadlines" },
 ];
 
 interface Filter {
@@ -58,14 +71,15 @@ interface QueueView {
   counts: AlertCount;
 }
 
-const QUEUE_TABS: Tab[] = ["needs_action", "mine", "open", "snoozed", "resolved"];
+const QUEUE_TABS: Tab[] = ["needs_action", "mine", "overdue", "open", "snoozed", "resolved"];
 
 export default function AlertsDesktop() {
   useNow();
   const { latestEvent, reloadAlerts } = useAppData();
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const canOperate = can("operator");
   const [tab, setTab] = useState<Tab>("needs_action");
+  const [handoverOpen, setHandoverOpen] = useState(false);
   const [groupBy, setGroupBy] = useState<GroupBy>("none");
   const [kind, setKind] = useState<string>("all");
   const [filter, setFilter] = useState<Filter | null>(null);
@@ -190,7 +204,8 @@ export default function AlertsDesktop() {
 
   const viewCount = (id: Tab): number | null => {
     if (!counts?.views) return null;
-    if (id === "needs_action" || id === "mine" || id === "open" || id === "snoozed") return counts.views[id] ?? 0;
+    if (id === "needs_action" || id === "mine" || id === "overdue" || id === "open" || id === "snoozed")
+      return counts.views[id] ?? 0;
     return null;
   };
   const kindOptions = [
@@ -218,6 +233,13 @@ export default function AlertsDesktop() {
     },
     { label: "Mine", value: counts?.views?.mine, tone: "var(--th-status-info)", hint: "Alerts you took", tab: "mine" },
     {
+      label: "Overdue",
+      value: counts?.views?.overdue,
+      tone: "var(--th-status-critical)",
+      hint: counts?.views?.waiting ? `${formatCount(counts.views.waiting)} waiting on others` : "Past a deadline",
+      tab: "overdue",
+    },
+    {
       label: "All open",
       value: counts?.views?.open,
       tone: "var(--th-text-muted)",
@@ -225,6 +247,8 @@ export default function AlertsDesktop() {
       tab: "open",
     },
   ];
+
+  const takeAll = (ids: number[]) => void withBusy(ids, () => bulkAlerts({ ids, action: "take" }));
 
   const openSiteOutage = (alert: Alert) =>
     setFilter({ kind: "device_offline", clientId: alert.client_id ?? undefined, label: alert.title ?? "Site offline" });
@@ -246,14 +270,25 @@ export default function AlertsDesktop() {
         title="Alerts"
         description="The work queue: most urgent first. Take an alert, snooze it, or resolve it with a reason."
         actions={
-          <Button size="sm" variant="secondary" onClick={refresh}>
-            <RefreshCcw className="h-3.5 w-3.5" />
-            Refresh
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setHandoverOpen(true)}
+              title="What stays open: owner, deadline and last note, for the next shift"
+            >
+              <ClipboardList className="h-3.5 w-3.5" />
+              Handover
+            </Button>
+            <Button size="sm" variant="secondary" onClick={refresh}>
+              <RefreshCcw className="h-3.5 w-3.5" />
+              Refresh
+            </Button>
+          </div>
         }
       />
 
-      <div className="grid shrink-0 grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid shrink-0 grid-cols-2 gap-3 lg:grid-cols-5">
         {kpis.map((kpi) => (
           <button
             key={kpi.label}
@@ -392,6 +427,8 @@ export default function AlertsDesktop() {
           <QualityView />
         ) : tab === "mutes" ? (
           <MutesView />
+        ) : tab === "duty" ? (
+          <DutyView />
         ) : groupBy !== "none" ? (
           <GroupList
             groups={groupsQuery.data}
@@ -438,9 +475,11 @@ export default function AlertsDesktop() {
                 ? "Nothing needs action"
                 : tab === "mine"
                   ? "You have no alerts"
-                  : tab === "snoozed"
-                    ? "Nothing snoozed"
-                    : "No alerts match"
+                  : tab === "overdue"
+                    ? "Nothing is overdue"
+                    : tab === "snoozed"
+                      ? "Nothing snoozed"
+                      : "No alerts match"
             }
             description={
               tab === "needs_action" ? "No P1 or P2 without an owner. Lower priorities are under All open." : undefined
@@ -455,7 +494,7 @@ export default function AlertsDesktop() {
                 <col />
                 <col className="w-[22%]" />
                 <col className="w-[88px]" />
-                <col className="w-[112px]" />
+                <col className="w-[150px]" />
                 <col className="w-[128px]" />
                 <col className="w-[200px]" />
               </colgroup>
@@ -491,6 +530,8 @@ export default function AlertsDesktop() {
                     alert.device_name ?? (alert.device_id != null ? `Device #${alert.device_id}` : "Enrollment tokens");
                   const seen = tab === "resolved" ? alert.resolved_at : (alert.last_seen_at ?? alert.created_at);
                   const snoozed = alert.snoozed_until && new Date(alert.snoozed_until).getTime() > Date.now();
+                  const deadline = snoozed ? null : alertDeadline(alert);
+                  const toTake = !alert.assigned_to_id || (alert.assigned_to_id === user?.id && !alert.acknowledged_at);
                   return (
                     <tr
                       key={alert.id}
@@ -524,6 +565,22 @@ export default function AlertsDesktop() {
                               {(alert.occurrences ?? 1) > 1 && (
                                 <span className="th-ac-times" title="Came back this many times">
                                   ×{alert.occurrences}
+                                </span>
+                              )}
+                              {(alert.followers ?? 0) > 0 && (
+                                <span
+                                  className="th-ac-times"
+                                  title="One incident: the same problem on other devices of this client follows this alert"
+                                >
+                                  +{alert.followers} devices
+                                </span>
+                              )}
+                              {alert.recurring && (
+                                <span
+                                  className="th-ac-times"
+                                  title="Keeps coming back: closing it as fixed needs the root cause"
+                                >
+                                  Recurring
                                 </span>
                               )}
                             </span>
@@ -573,6 +630,15 @@ export default function AlertsDesktop() {
                             {real ? "No owner" : "—"}
                           </span>
                         )}
+                        {deadline && tab !== "resolved" && (
+                          <span
+                            className="th-alerts-secondary tabular-nums"
+                            style={{ color: deadline.tone }}
+                            title={deadline.title}
+                          >
+                            {deadline.label}
+                          </span>
+                        )}
                       </td>
                       <td className="text-right" title={formatDateTime(seen)}>
                         <span className="th-alerts-primary tabular-nums">{timeAgo(seen)}</span>
@@ -581,12 +647,17 @@ export default function AlertsDesktop() {
                       <td className="text-right" onClick={(e) => e.stopPropagation()}>
                         {real && canOperate && tab !== "resolved" ? (
                           <div className="flex justify-end gap-2">
-                            {!alert.assigned_to_id && (
+                            {toTake && (
                               <Button
                                 size="sm"
                                 variant="secondary"
                                 disabled={busyIds.has(alert.id)}
                                 onClick={() => take(alert.id)}
+                                title={
+                                  alert.assigned_to_id
+                                    ? "Given to you: take it to stop the clock to take it"
+                                    : undefined
+                                }
                               >
                                 Take
                               </Button>
@@ -599,7 +670,19 @@ export default function AlertsDesktop() {
                             )}
                           </div>
                         ) : site ? (
-                          <span className="th-alerts-secondary">Show devices</span>
+                          canOperate && alert.member_ids?.length ? (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              disabled={alert.member_ids.some((id) => busyIds.has(id))}
+                              onClick={() => takeAll(alert.member_ids ?? [])}
+                              title="Take every device alert of this site"
+                            >
+                              Take all
+                            </Button>
+                          ) : (
+                            <span className="th-alerts-secondary">Show devices</span>
+                          )
                         ) : !real ? (
                           <span
                             className="th-alerts-secondary"
@@ -651,6 +734,15 @@ export default function AlertsDesktop() {
       )}
 
       {groupAnalysis && <GroupAnalysisModal state={groupAnalysis} onClose={() => setGroupAnalysis(null)} />}
+      {handoverOpen && (
+        <HandoverModal
+          onClose={() => setHandoverOpen(false)}
+          onOpen={(id) => {
+            setHandoverOpen(false);
+            setOpenId(id);
+          }}
+        />
+      )}
     </section>
   );
 }

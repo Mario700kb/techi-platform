@@ -1,5 +1,5 @@
 from app.models.agent_command_batch import AgentCommandBatch
-from app.models.alert import AlertActivity, AlertAnalysis, AlertMute, DeviceAlert
+from app.models.alert import AlertActivity, AlertAnalysis, AlertDutyShift, AlertMute, DeviceAlert
 from app.models.client import Client
 from app.models.client_document import ClientDocument
 from app.models.client_location import ClientLocation, ClientLocationRule
@@ -52,6 +52,7 @@ __all__ = [
     "Device",
     "AlertActivity",
     "AlertAnalysis",
+    "AlertDutyShift",
     "AlertMute",
     "DeviceAlert",
     "RemoteSupportPeer",

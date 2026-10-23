@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import { BellOff, Check, ChevronDown, Clock, Copy, SquareTerminal } from "lucide-react";
+import { BellOff, Check, ChevronDown, Clock, Copy, Hourglass, SquareTerminal, UserPlus } from "lucide-react";
 
 import type { ManualResolution } from "../../api/alerts";
-import type { Alert, AlertPriority, CommandRisk } from "../../types/alert";
-import { PRIORITY_HINT, PRIORITY_TONE, RISK_LABELS, RISK_TONE } from "../../types/alert";
+import type { Alert, AlertPriority, CommandRisk, WaitingReason } from "../../types/alert";
+import { PRIORITY_HINT, PRIORITY_TONE, RISK_LABELS, RISK_TONE, WAITING_LABELS } from "../../types/alert";
 import { openPowerShellWith } from "../../utils/powershellPrefill";
 import { Button, Modal } from "../ui";
 
@@ -202,12 +202,158 @@ const RESOLUTIONS: { id: ManualResolution; label: string; hint: string; note: st
   },
 ];
 
+/** A menu that stays open until a choice or a click outside. */
+function useMenu() {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [open]);
+  return { open, setOpen, ref };
+}
+
+/** Give the alert to someone else; they hear it in their "Needs action". */
+export function AssignMenu({
+  people,
+  onAssign,
+  disabled,
+}: {
+  people: { id: number; name: string }[];
+  onAssign: (operatorId: number) => void;
+  disabled?: boolean;
+}) {
+  const { open, setOpen, ref } = useMenu();
+  return (
+    <div className="th-ac-menu" ref={ref}>
+      <Button
+        size="sm"
+        variant="secondary"
+        disabled={disabled}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <UserPlus className="h-3.5 w-3.5" />
+        Give to
+        <ChevronDown className="h-3 w-3" />
+      </Button>
+      {open && (
+        <div className="th-ac-menu-list" role="menu">
+          {people.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                onAssign(p.id);
+              }}
+            >
+              {p.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const WAIT_REASONS: WaitingReason[] = ["client", "vendor", "parts", "maintenance"];
+
+/** Waiting on someone else stops the deadlines; it asks who, and a note. */
+export function WaitMenu({
+  onWait,
+  disabled,
+}: {
+  onWait: (reason: WaitingReason, note: string) => void;
+  disabled?: boolean;
+}) {
+  const { open, setOpen, ref } = useMenu();
+  const [reason, setReason] = useState<WaitingReason | null>(null);
+  const [note, setNote] = useState("");
+  return (
+    <div className="th-ac-menu" ref={ref}>
+      <Button
+        size="sm"
+        variant="secondary"
+        disabled={disabled}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        title="Stops the deadlines until work can go on"
+      >
+        <Hourglass className="h-3.5 w-3.5" />
+        Waiting on…
+        <ChevronDown className="h-3 w-3" />
+      </Button>
+      {open && (
+        <div className="th-ac-menu-list" role="menu">
+          {reason == null ? (
+            WAIT_REASONS.map((r) => (
+              <button key={r} type="button" role="menuitem" onClick={() => setReason(r)}>
+                {WAITING_LABELS[r]}
+              </button>
+            ))
+          ) : (
+            <form
+              className="grid gap-2 p-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                setOpen(false);
+                onWait(reason, note);
+                setReason(null);
+                setNote("");
+              }}
+            >
+              <b className="text-[13px]">{WAITING_LABELS[reason]}</b>
+              <input
+                id="alert-wait-note"
+                className="th-input"
+                maxLength={1000}
+                autoFocus
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="On what, and until when"
+                aria-label="What you are waiting for"
+              />
+              <div className="flex justify-end gap-2">
+                <Button size="sm" variant="ghost" type="button" onClick={() => setReason(null)}>
+                  Back
+                </Button>
+                <Button size="sm" type="submit">
+                  Stop the clock
+                </Button>
+              </div>
+            </form>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ResolveModal({
   count,
+  recurring = false,
+  followers = 0,
   onClose,
   onResolve,
 }: {
   count: number;
+  /** Keeps coming back: "Fixed" needs the root cause in the note. */
+  recurring?: boolean;
+  /** An incident's lead: its followers close with it. */
+  followers?: number;
   onClose: () => void;
   onResolve: (resolution: ManualResolution, note: string) => Promise<void> | void;
 }) {
@@ -216,6 +362,8 @@ export function ResolveModal({
   const [resolution, setResolution] = useState<ManualResolution | null>(null);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const needsCause = recurring && resolution === "fixed";
+  const blocked = !resolution || (needsCause && note.trim().length < 10);
   return (
     <Modal
       title={count === 1 ? "Resolve alert" : `Resolve ${count} alerts`}
@@ -238,9 +386,9 @@ export function ResolveModal({
                 setBusy(false);
               }
             }}
-            disabled={busy || !resolution}
+            disabled={busy || blocked}
           >
-            {busy ? "Resolving…" : "Resolve"}
+            {busy ? "Resolving…" : followers > 0 ? `Resolve with ${followers + 1} devices` : "Resolve"}
           </Button>
         </>
       }
@@ -263,8 +411,15 @@ export function ResolveModal({
           </label>
         ))}
       </fieldset>
+      {recurring && (
+        <p className="mt-3 text-[13px]" style={{ color: "var(--th-status-warning)" }}>
+          This problem keeps coming back. To close it as fixed, write the root cause and what was changed.
+        </p>
+      )}
       <label className="mt-3 grid gap-1 text-[13px]">
-        <span className="th-text-muted">Note (optional)</span>
+        <span className="th-text-muted">
+          {needsCause ? "Root cause and what was changed (required)" : "Note (optional)"}
+        </span>
         <textarea
           id="alert-resolve-note"
           className="th-input min-h-[64px]"
