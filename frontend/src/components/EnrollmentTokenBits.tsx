@@ -47,7 +47,7 @@ export function TokenStatusChip({ token }: { token: EnrollmentToken }) {
 export function UsageMeter({ token }: { token: EnrollmentToken }) {
   const pct = usagePercent(token);
   const tone =
-    token.usage_warning === "critical" ? TONE.critical : token.usage_warning ? TONE.warning : "var(--th-accent)";
+    token.usage_warning === "critical" ? TONE.critical : token.usage_warning ? TONE.warning : "var(--th-text-muted)";
   return (
     <span className="inline-flex items-center gap-2.5" title={`${pct}% of max uses`}>
       <span className="th-onb-meter" aria-hidden="true">

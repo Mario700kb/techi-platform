@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import {
+  Activity,
   AlertTriangle,
   Ban,
   Boxes,
@@ -23,13 +24,14 @@ import {
   Router,
   Search,
   Server,
+  Star,
   Terminal,
   Trash2,
   X,
 } from "lucide-react";
 import { fetchText } from "../api/client";
 import { Client, DeviceGroup, getClients, getGroups } from "../api/clients";
-import { AgentPackage, getAgentPackages, getLatestPackage } from "../api/agentPackages";
+import { AgentPackage, getAgentPackages } from "../api/agentPackages";
 import {
   CreateTokenResponse,
   EnrollmentToken,
@@ -54,9 +56,10 @@ import { PlatformFeatures } from "../api/platform";
 import { useCachedQuery } from "../hooks/useCachedQuery";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import { useTabIndicator } from "../hooks/useTabIndicator";
-import { Button, EmptyState, PageHeader, Select, DatePicker } from "../components/ui";
+import { Button, EmptyState, PageHeader, RowMenu, Select, DatePicker } from "../components/ui";
 import TablePagination from "../components/ui/TablePagination";
 import ConfirmationModal from "../components/ConfirmationModal";
+import TokenDiagnostics from "../components/TokenDiagnostics";
 import { CardHead } from "../components/ui/PanelCard";
 import Modal from "../components/ui/Modal";
 import {
@@ -69,7 +72,7 @@ import {
 } from "../components/EnrollmentTokenBits";
 import { TERMS, TONE } from "../utils/deviceStatus";
 import { formatCount } from "../utils/number";
-import { formatLocalDateTime, tiranaInputToUtcIso, timeAgo, utcToTiranaInput } from "../utils/time";
+import { formatLocalDateTime, parseUTC, tiranaInputToUtcIso, timeAgo, utcToTiranaInput } from "../utils/time";
 
 // ── Deployment platform registry (metadata-driven) ─────────────────────────
 // The Deployment dialog renders from this table, gated by the backend Platform
@@ -217,25 +220,47 @@ async function fetchTokenTable(): Promise<TokenTable> {
   return { tokens, clients, groups };
 }
 
-function fetchWindowsPackage(): Promise<AgentPackage | null> {
-  return getLatestPackage("windows-amd64")
-    .catch(() => getLatestPackage("windows"))
-    .catch(() => null);
+const ONE_TIME_STEPS: [string, string][] = [
+  ["Generate a token", "One per site or batch of PCs; the value is shown once."],
+  ["Copy the command", "It appears here, with the bootstrap URL for GPO."],
+  ["Run it on the device", "Elevated PowerShell on Windows; the eye icon in the table shows Linux and MikroTik."],
+];
+
+interface ActivePackages {
+  windows: AgentPackage | null;
+  linux: LinuxPackage[];
 }
 
-// One package per architecture: the installer refuses an architecture
-// without one, so the card shows every version and every gap. One list
-// request instead of a /latest per architecture, which answers 404 for a gap.
-function fetchLinuxPackages(): Promise<LinuxPackage[]> {
+// What a new install downloads: the Endpoint MSI on Windows (not the update
+// bridge, which shares the platform) and one agent binary per Linux
+// architecture, where the installer refuses an architecture without one.
+// One list request; a /latest per platform answers 404 for every gap.
+function fetchActivePackages(): Promise<ActivePackages> {
   return getAgentPackages()
     .catch(() => [] as AgentPackage[])
-    .then((packages) =>
-      LINUX_ARCHES.map((arch) => ({
+    .then((packages) => ({
+      windows:
+        packages.find((p) => p.file_type === "msi" && p.is_active && p.platform === "windows-amd64") ??
+        packages.find((p) => p.file_type === "msi" && p.is_active && p.platform.startsWith("windows")) ??
+        null,
+      linux: LINUX_ARCHES.map((arch) => ({
         arch,
-        pkg:
-          packages.find((p) => p.platform === arch && p.file_type === "agent_binary" && p.is_active) ?? null,
+        pkg: packages.find((p) => p.platform === arch && p.file_type === "agent_binary" && p.is_active) ?? null,
       })),
-    );
+    }));
+}
+
+// "20h ago", "9d ago", "3 mo ago": the age beside a date, never the date again.
+function relativeAge(iso: string): string {
+  const days = (Date.now() - parseUTC(iso).getTime()) / 86_400_000;
+  if (days < 7) return timeAgo(iso);
+  if (days < 60) return `${Math.floor(days)}d ago`;
+  if (days < 730) return `${Math.floor(days / 30)} mo ago`;
+  return `${Math.floor(days / 365)} y ago`;
+}
+
+function formatLinuxPackages(linux: LinuxPackage[]): string {
+  return linux.map(({ arch, pkg }) => `${arch.replace("linux-", "")} ${pkg ? pkg.version : "none"}`).join(" · ");
 }
 
 function fetchRustDeskConfig(): Promise<RustDeskConfig | null> {
@@ -257,8 +282,9 @@ export default function Deployment() {
   });
   const { tokens, clients, groups } = table.data ?? EMPTY_TABLE;
   const rustdesk = useCachedQuery("page.deployment.rustdesk-config", fetchRustDeskConfig).data ?? null;
-  const activePackage = useCachedQuery("page.deployment.package.windows", fetchWindowsPackage).data ?? null;
-  const linuxPackages = useCachedQuery("page.deployment.packages.linux", fetchLinuxPackages).data ?? [];
+  const activePackages = useCachedQuery("page.deployment.packages", fetchActivePackages).data ?? null;
+  const activePackage = activePackages?.windows ?? null;
+  const linuxPackages = activePackages?.linux ?? [];
   const features = usePlatformFeatures();
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState<CopyTarget>(null);
@@ -271,6 +297,7 @@ export default function Deployment() {
     token: EnrollmentToken;
   } | null>(null);
   const [tokenActionBusy, setTokenActionBusy] = useState(false);
+  const [diagnosticsToken, setDiagnosticsToken] = useState<EnrollmentToken | null>(null);
   const [statusFilter, setStatusFilter] = useState<TokenFilter>("all");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -301,6 +328,7 @@ export default function Deployment() {
     () => filteredTokens.slice((page - 1) * pageSize, page * pageSize),
     [filteredTokens, page, pageSize],
   );
+  const showExpires = useMemo(() => filteredTokens.some((t) => t.expires_at), [filteredTokens]);
 
   const loadTokens = table.reload;
 
@@ -337,7 +365,13 @@ export default function Deployment() {
         actions={
           <span className="th-status-chip" style={{ "--chip-tone": TONE.info } as CSSProperties}>
             <i />
-            Windows 10/11 · Server 2019/2022 · Domain Controllers
+            {[
+              "Windows 10/11 · Server 2019/2022",
+              features.FEATURE_LINUX && "Linux",
+              features.FEATURE_MIKROTIK && "MikroTik",
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           </span>
         }
       />
@@ -412,13 +446,17 @@ export default function Deployment() {
               />
             </div>
           ) : (
-            <div className="th-onb-empty">
-              <EmptyState
-                icon={<Terminal className="h-5 w-5" />}
-                title="No command yet"
-                description="Generate a token to reveal its install command. Token values are shown only after create or regenerate."
-              />
-            </div>
+            <ol className="th-onb-body th-onb-steps flex-1">
+              {ONE_TIME_STEPS.map(([title, hint], index) => (
+                <li key={title}>
+                  <span className="th-onb-step">{index + 1}</span>
+                  <span>
+                    {title}
+                    <small>{hint}</small>
+                  </span>
+                </li>
+              ))}
+            </ol>
           )}
         </div>
       </div>
@@ -429,50 +467,37 @@ export default function Deployment() {
           <CardHead
             icon={Package}
             tone={activePackage ? "var(--th-status-online)" : "var(--th-status-warning)"}
-            title="Active deployment package"
+            title="Active deployment packages"
             subtitle="What a new install downloads"
             aside={
-              activePackage ? (
-                <span className="th-status-chip" style={{ "--chip-tone": TONE.online } as CSSProperties}>
-                  <i />
-                  Active
-                </span>
-              ) : undefined
+              <Link to="/onboarding?tab=packages" className="th-onb-link text-[12px]">
+                Packages
+              </Link>
             }
           />
           <div className="th-onb-body flex-1">
-            {activePackage ? (
-              <dl className="th-onb-meta">
-                <div>
-                  <dt>Version</dt>
-                  <dd className="tabular-nums">{activePackage.version}</dd>
-                </div>
-                <div>
-                  <dt>Platform</dt>
-                  <dd className="font-mono !text-[12px]">{activePackage.platform}</dd>
-                </div>
-                <div>
-                  <dt>File</dt>
-                  <dd className="font-mono !text-[12px]" title={activePackage.filename}>
-                    {activePackage.filename}
+            <dl className="th-onb-meta">
+              <div>
+                <dt>Windows · Endpoint MSI</dt>
+                <dd className="tabular-nums" title={activePackage?.filename}>
+                  {activePackage ? activePackage.version : "None active"}
+                </dd>
+              </div>
+              <div>
+                <dt>SHA-256</dt>
+                <dd className="font-mono !text-[12px]" title={activePackage?.sha256 ?? undefined}>
+                  {activePackage?.sha256 ? `${activePackage.sha256.slice(0, 16)}…` : "—"}
+                </dd>
+              </div>
+              {features.FEATURE_LINUX && (
+                <div className="col-span-2">
+                  <dt>Linux agent</dt>
+                  <dd className="font-mono !text-[12px]">
+                    {linuxPackages.length ? formatLinuxPackages(linuxPackages) : "—"}
                   </dd>
                 </div>
-                <div>
-                  <dt>SHA-256</dt>
-                  <dd className="font-mono !text-[12px]" title={activePackage.sha256 ?? undefined}>
-                    {activePackage.sha256 ? `${activePackage.sha256.slice(0, 16)}…` : "—"}
-                  </dd>
-                </div>
-              </dl>
-            ) : (
-              <p className="th-onb-hint">
-                No active Windows package. Upload and activate one in{" "}
-                <Link to="/onboarding?tab=packages" className="th-onb-link">
-                  Packages
-                </Link>
-                .
-              </p>
-            )}
+              )}
+            </dl>
           </div>
         </div>
 
@@ -606,9 +631,9 @@ export default function Deployment() {
                 <col className="w-[120px]" />
                 <col className="w-[160px]" />
                 <col className="w-[20%]" />
-                <col className="w-[120px]" />
-                <col className="w-[120px]" />
-                <col className="w-[200px]" />
+                <col className="w-[150px]" />
+                {showExpires && <col className="w-[150px]" />}
+                <col className="w-[112px]" />
               </colgroup>
               <thead>
                 <tr>
@@ -617,7 +642,7 @@ export default function Deployment() {
                   <th>Usage</th>
                   <th>Client · group</th>
                   <th>Last used</th>
-                  <th>Expires</th>
+                  {showExpires && <th>Expires</th>}
                   <th className="text-right">Actions</th>
                 </tr>
               </thead>
@@ -628,13 +653,22 @@ export default function Deployment() {
                   return (
                     <tr key={row.id} className="th-alerts-row" style={{ "--row": index } as CSSProperties}>
                       <td>
-                        <button
-                          type="button"
-                          className="th-alerts-primary th-alerts-link max-w-full truncate text-left"
-                          onClick={async () => setViewDeployment(await getEnrollmentTokenDeployment(row.id))}
-                        >
-                          {row.name}
-                        </button>
+                        <span className="th-alerts-primary !flex min-w-0 items-center gap-1.5">
+                          {row.is_default && (
+                            <Star
+                              className="h-3.5 w-3.5 flex-none"
+                              style={{ color: "var(--th-accent)", fill: "var(--th-accent)" }}
+                              aria-label="Default deployment token"
+                            />
+                          )}
+                          <button
+                            type="button"
+                            className="th-alerts-link min-w-0 truncate text-left"
+                            onClick={async () => setViewDeployment(await getEnrollmentTokenDeployment(row.id))}
+                          >
+                            {row.name}
+                          </button>
+                        </span>
                         <span className="th-alerts-secondary">
                           <span className="font-mono">{formatTokenPrefix(row.token_prefix)}</span> · created{" "}
                           {formatLocalDateTime(row.created_at)}
@@ -658,20 +692,27 @@ export default function Deployment() {
                       </td>
                       <td>
                         {row.last_used_at ? (
-                          <span className="th-alerts-primary" title={formatLocalDateTime(row.last_used_at)}>
-                            {timeAgo(row.last_used_at)}
-                          </span>
+                          <>
+                            <span className="th-alerts-primary tabular-nums">
+                              {formatLocalDateTime(row.last_used_at)}
+                            </span>
+                            <span className="th-alerts-secondary">{relativeAge(row.last_used_at)}</span>
+                          </>
                         ) : (
                           <span className="th-alerts-secondary">Never</span>
                         )}
                       </td>
-                      <td>
-                        {row.expires_at ? (
-                          <span className="th-alerts-primary">{formatLocalDateTime(row.expires_at)}</span>
-                        ) : (
-                          <span className="th-alerts-secondary">Never</span>
-                        )}
-                      </td>
+                      {showExpires && (
+                        <td>
+                          {row.expires_at ? (
+                            <span className="th-alerts-primary tabular-nums">
+                              {formatLocalDateTime(row.expires_at)}
+                            </span>
+                          ) : (
+                            <span className="th-alerts-secondary">Never</span>
+                          )}
+                        </td>
+                      )}
                       <td>
                         <div className="th-onb-actions">
                           <button
@@ -694,50 +735,38 @@ export default function Deployment() {
                           >
                             {copied === `cmd-${row.id}` ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                           </button>
-                          <button
-                            type="button"
-                            className="th-onb-action"
-                            title="Edit"
-                            aria-label={`Edit ${row.name}`}
-                            onClick={() => setEditToken(row)}
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </button>
-                          <button
-                            type="button"
-                            className="th-onb-action"
-                            title="Regenerate value"
-                            aria-label={`Regenerate ${row.name}`}
-                            onClick={async () => {
-                              const next = await regenerateEnrollmentToken(row.id);
-                              setOneTimeToken(next);
-                              await loadTokens();
-                            }}
-                          >
-                            <RefreshCcw className="h-4 w-4" />
-                          </button>
-                          {row.status !== "revoked" && (
-                            <button
-                              type="button"
-                              className="th-onb-action"
-                              data-tone="danger"
-                              title="Revoke"
-                              aria-label={`Revoke ${row.name}`}
-                              onClick={() => setPendingTokenAction({ kind: "revoke", token: row })}
-                            >
-                              <Ban className="h-4 w-4" />
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            className="th-onb-action"
-                            data-tone="danger"
-                            title="Delete"
-                            aria-label={`Delete ${row.name}`}
-                            onClick={() => setPendingTokenAction({ kind: "delete", token: row })}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                          <RowMenu
+                            label={`More actions for ${row.name}`}
+                            items={[
+                              { label: "Edit", icon: Pencil, onSelect: () => setEditToken(row) },
+                              {
+                                label: "Regenerate value",
+                                icon: RefreshCcw,
+                                onSelect: async () => {
+                                  const next = await regenerateEnrollmentToken(row.id);
+                                  setOneTimeToken(next);
+                                  await loadTokens();
+                                },
+                              },
+                              { label: "Diagnostics", icon: Activity, onSelect: () => setDiagnosticsToken(row) },
+                              ...(row.status !== "revoked"
+                                ? [
+                                    {
+                                      label: "Revoke",
+                                      icon: Ban,
+                                      danger: true,
+                                      onSelect: () => setPendingTokenAction({ kind: "revoke", token: row }),
+                                    },
+                                  ]
+                                : []),
+                              {
+                                label: "Delete",
+                                icon: Trash2,
+                                danger: true,
+                                onSelect: () => setPendingTokenAction({ kind: "delete", token: row }),
+                              },
+                            ]}
+                          />
                         </div>
                       </td>
                     </tr>
@@ -763,6 +792,10 @@ export default function Deployment() {
           />
         )}
       </div>
+
+      {diagnosticsToken && (
+        <TokenDiagnostics token={diagnosticsToken} onClose={() => setDiagnosticsToken(null)} />
+      )}
 
       {pendingTokenAction && (
         <ConfirmationModal
@@ -1037,11 +1070,7 @@ function PlatformSection({
                 <div>
                   <dt>Package source</dt>
                   <dd>
-                    <span className="font-mono !text-[12px]">
-                      {linuxPackages
-                        .map(({ arch, pkg }) => `${arch.replace("linux-", "")} ${pkg ? pkg.version : "none"}`)
-                        .join(" · ")}
-                    </span>
+                    <span className="font-mono !text-[12px]">{formatLinuxPackages(linuxPackages)}</span>
                     {linuxPackages.some(({ pkg }) => !pkg) && (
                       <>
                         {" "}

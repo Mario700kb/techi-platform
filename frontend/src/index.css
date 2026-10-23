@@ -1844,6 +1844,24 @@ a.th-mrow:active {
     font-size: 20px;
     line-height: 26px;
   }
+  .th-onb .th-onb-card.th-onb-summary {
+    padding: 12px;
+  }
+  .th-onb .th-onb-summary:last-child:nth-child(odd) {
+    grid-column: span 2;
+  }
+  .th-onb .th-onb-summary .th-onb-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+  }
+  .th-onb .th-onb-summary .mt-4 {
+    margin-top: 10px;
+  }
+  .th-onb .th-onb-summary [class*="text-[20px]"] {
+    font-size: 17px;
+    line-height: 24px;
+  }
 }
 @media (max-width: 767px) {
   .th-alerts-table[data-mobile="cards"] {
@@ -3180,6 +3198,44 @@ a.th-kpi:hover {
 }
 .th-onb-action[data-active="true"] {
   color: var(--th-status-online);
+}
+/* "What happens next" in place of an empty result card: numbered steps that
+   fill the card the way its content later will. */
+.th-onb-steps {
+  justify-content: center;
+  gap: 18px !important;
+}
+.th-onb-steps > li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--th-text-primary);
+}
+.th-onb-steps > li > span:last-child {
+  display: grid;
+  gap: 2px;
+}
+.th-onb-steps small {
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 18px;
+  color: var(--th-text-muted);
+}
+.th-onb-step {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1px solid var(--th-border-default);
+  background: var(--th-chip-bg);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--th-text-muted);
 }
 /* Package summary: one card per package type, the selected one outlined. */
 .th-onb-summary {
@@ -8706,6 +8762,49 @@ button.th-client-group:hover {
 .th-ac-menu-list button:hover,
 .th-ac-menu-list button:focus-visible {
   background: var(--th-bg-card-hover);
+}
+/* Row "⋯" menu (RowMenu): fixed to the viewport so a scrolling table never clips it. */
+.th-row-menu {
+  position: fixed;
+  z-index: 70;
+  display: grid;
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid var(--th-border-strong);
+  background: var(--th-bg-elevated);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+}
+.th-row-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  text-align: left;
+  color: var(--th-text-primary);
+}
+.th-row-menu button svg {
+  color: var(--th-text-muted);
+}
+.th-row-menu button:hover,
+.th-row-menu button:focus-visible {
+  background: var(--th-bg-card-hover);
+}
+.th-row-menu button[data-tone="danger"],
+.th-row-menu button[data-tone="danger"] svg {
+  color: var(--th-status-critical);
+}
+.th-row-menu button[data-tone="danger"]:hover {
+  background: color-mix(in srgb, var(--th-status-critical) 10%, transparent);
+}
+.th-row-menu button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.th-onb-action[data-open="true"] {
+  color: var(--th-text-primary);
+  background: var(--th-sidebar-nav-hover);
 }
 .th-ac-radio {
   display: flex;

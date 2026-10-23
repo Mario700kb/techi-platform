@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
-  Activity,
   AlertTriangle,
-  Ban,
   Check,
   Copy,
   Download,
@@ -13,12 +12,9 @@ import {
   Plus,
   RefreshCcw,
   RotateCcw,
-  Search,
   ShieldCheck,
   SlidersHorizontal,
-  Star,
   Terminal,
-  Trash2,
   X,
 } from "lucide-react";
 import {
@@ -27,38 +23,25 @@ import {
   EnrollmentBootstrapMode,
   EnrollmentBootstrapPlatform,
   EnrollmentBootstrapResponse,
-  EnrollmentAuditEvent,
   EnrollmentToken,
-  EnrollmentTokenDiagnostics,
   createEnrollmentToken,
-  deleteEnrollmentToken,
   generateEnrollmentBootstrap,
-  getEnrollmentTokenDiagnostics,
-  getEnrollmentTokenEvents,
   getEnrollmentTokens,
   regenerateDefaultToken,
-  revokeEnrollmentToken,
   updateEnrollmentToken,
 } from "../api/enrollmentBootstrap";
 import { Client, DeviceGroup, getClients, getGroups } from "../api/clients";
 import { useAuth } from "../auth/AuthContext";
-import ConfirmationModal from "../components/ConfirmationModal";
 import { API_BASE_URL } from "../api/client";
-import { Button, EmptyState, Modal, PageHeader, Select, DatePicker } from "../components/ui";
-import TablePagination from "../components/ui/TablePagination";
+import { Button, Modal, PageHeader, Select, DatePicker } from "../components/ui";
 import {
   TokenStatusChip,
   UsageMeter,
-  TOKEN_FILTERS,
-  TokenFilter,
   formatTokenPrefix,
-  tokenState,
 } from "../components/EnrollmentTokenBits";
 import { TERMS, TONE } from "../utils/deviceStatus";
 import { useCachedQuery } from "../hooks/useCachedQuery";
-import { useTabIndicator } from "../hooks/useTabIndicator";
-import { formatCount } from "../utils/number";
-import { formatLocalDateTime, timeAgo, tiranaInputToUtcIso } from "../utils/time";
+import { tiranaInputToUtcIso } from "../utils/time";
 
 async function validateBackendReachable(url: string): Promise<void> {
   const base = url.trim().replace(/\/+$/, "");
@@ -72,8 +55,13 @@ type Toast = { id: number; message: string; type: "success" | "error" };
 
 const PLATFORMS: { id: EnrollmentBootstrapPlatform; label: string }[] = [
   { id: "windows", label: "Windows" },
-  { id: "macos", label: "macOS" },
   { id: "linux", label: "Linux" },
+];
+
+const INSTALLER_STEPS: [string, string][] = [
+  ["Choose how it enrolls", "Token enrollment for workgroup PCs and tests, Trusted domain / GPO for domain fleets."],
+  ["Pick the platform and device policy", "Windows or Linux; the Server profile keeps a machine reachable on AC power."],
+  ["Generate and run", "Copy the run command or download the script; run it as Administrator (root on Linux)."],
 ];
 
 const SECURITY_POINTS = [
@@ -83,17 +71,6 @@ const SECURITY_POINTS = [
 ];
 
 const NO_TOKENS: EnrollmentToken[] = [];
-const NO_CLIENT_NAMES: Record<number, string> = {};
-
-function fetchClientNames(): Promise<Record<number, string>> {
-  return getClients()
-    .then((list) => Object.fromEntries(list.map((c) => [c.id, c.name])))
-    .catch(() => ({}));
-}
-
-function isRevocable(token: EnrollmentToken): boolean {
-  return token.status === "active" || token.status === "used";
-}
 
 function downloadTextFile(content: string, filename: string) {
   const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
@@ -202,30 +179,10 @@ export default function EnrollmentBootstrap() {
   const [clients, setClients] = useState<Client[]>([]);
   const [groups, setGroups] = useState<DeviceGroup[]>([]);
 
-  // ── table actions ────────────────────────────────────────────────────────
-  const [revoking, setRevoking] = useState<Set<number>>(new Set());
-  const [revokeTarget, setRevokeTarget] = useState<EnrollmentToken | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<EnrollmentToken | null>(null);
-  const [deleting, setDeleting] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [editMaxUsesTarget, setEditMaxUsesTarget] = useState<EnrollmentToken | null>(null);
   const [editMaxUses, setEditMaxUses] = useState(0);
   const [savingMaxUses, setSavingMaxUses] = useState(false);
-  const [diagnosticsToken, setDiagnosticsToken] = useState<EnrollmentToken | null>(null);
-  const [diagnostics, setDiagnostics] = useState<EnrollmentTokenDiagnostics | null>(null);
-  const [diagnosticsEvents, setDiagnosticsEvents] = useState<EnrollmentAuditEvent[]>([]);
-  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
-  const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
-  const [eventsLoading, setEventsLoading] = useState(false);
-
-  // ── token table view ─────────────────────────────────────────────────────
-  const [statusFilter, setStatusFilter] = useState<TokenFilter>("all");
-  const [tokenSearch, setTokenSearch] = useState("");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
-  const clientNames = useCachedQuery("mem.enrollment.client-names", fetchClientNames).data ?? NO_CLIENT_NAMES;
-  const statusTabsRef = useTabIndicator<HTMLDivElement>(statusFilter);
-
   // ── toasts ───────────────────────────────────────────────────────────────
   const [toasts, setToasts] = useState<Toast[]>([]);
 
@@ -244,65 +201,8 @@ export default function EnrollmentBootstrap() {
     () => activeTokens.find((t) => String(t.id) === tokenId) ?? null,
     [activeTokens, tokenId],
   );
-  const statusCounts = useMemo(() => {
-    const counts = { all: tokens.length, active: 0, unused: 0, used: 0, revoked: 0, expired: 0 } as Record<
-      TokenFilter,
-      number
-    >;
-    for (const t of tokens) counts[tokenState(t)] += 1;
-    return counts;
-  }, [tokens]);
-  const visibleTokens = useMemo(() => {
-    const q = tokenSearch.trim().toLowerCase();
-    return tokens.filter((t) => {
-      if (statusFilter !== "all" && tokenState(t) !== statusFilter) return false;
-      if (!q) return true;
-      const client = t.client_id ? (clientNames[t.client_id] ?? "") : "";
-      return [t.name, t.token_prefix ?? "", client].some((v) => v.toLowerCase().includes(q));
-    });
-  }, [tokens, statusFilter, tokenSearch, clientNames]);
-  const pagedTokens = useMemo(
-    () => visibleTokens.slice((page - 1) * pageSize, page * pageSize),
-    [visibleTokens, page, pageSize],
-  );
   const isLocalhost = backendUrl.includes("localhost") || backendUrl.includes("127.0.0.1");
   const canGenerate = mode === "gpo" || (mode === "token" && activeTokens.length > 0 && !!tokenId);
-
-  const openDiagnostics = async (token: EnrollmentToken) => {
-    setDiagnosticsToken(token);
-    setDiagnostics(null);
-    setDiagnosticsEvents([]);
-    setDiagnosticsError(null);
-    setDiagnosticsLoading(true);
-    try {
-      const [summary, events] = await Promise.all([
-        getEnrollmentTokenDiagnostics(token.id),
-        getEnrollmentTokenEvents(token.id, { limit: 50 }),
-      ]);
-      setDiagnostics(summary);
-      setDiagnosticsEvents(events);
-    } catch (err) {
-      setDiagnosticsError(err instanceof Error ? err.message : "Failed to load token diagnostics");
-    } finally {
-      setDiagnosticsLoading(false);
-    }
-  };
-
-  const loadMoreEvents = async () => {
-    if (!diagnosticsToken || eventsLoading) return;
-    setEventsLoading(true);
-    try {
-      const next = await getEnrollmentTokenEvents(diagnosticsToken.id, {
-        limit: 50,
-        offset: diagnosticsEvents.length,
-      });
-      setDiagnosticsEvents((current) => [...current, ...next]);
-    } catch (err) {
-      setDiagnosticsError(err instanceof Error ? err.message : "Failed to load more enrollment events");
-    } finally {
-      setEventsLoading(false);
-    }
-  };
 
   // ── open create modal ────────────────────────────────────────────────────
   const openCreateModal = async () => {
@@ -389,46 +289,6 @@ export default function EnrollmentBootstrap() {
     setPlaintextToken(pt);
   };
 
-  // ── revoke token ──────────────────────────────────────────────────────────
-  const handleRevoke = async (token: EnrollmentToken) => {
-    setRevoking((prev) => new Set(prev).add(token.id));
-    try {
-      await revokeEnrollmentToken(token.id);
-      await loadTokens();
-      if (tokenId === String(token.id)) setTokenId("");
-      showToast(`Token "${token.name}" revoked`);
-      setRevokeTarget(null);
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : "Revoke failed", "error");
-    } finally {
-      setRevoking((prev) => {
-        const n = new Set(prev);
-        n.delete(token.id);
-        return n;
-      });
-    }
-  };
-
-  const handleDeleteToken = async () => {
-    if (!deleteTarget) return;
-    setDeleting(true);
-    try {
-      await deleteEnrollmentToken(deleteTarget.id, {
-        confirmActive: deleteTarget.status === "active",
-        confirmDefault: deleteTarget.is_default && deleteTarget.status === "active",
-      });
-      await loadTokens();
-      if (tokenId === String(deleteTarget.id)) setTokenId("");
-      if (flashToken?.id === deleteTarget.id) setFlashToken(null);
-      showToast(`Token "${deleteTarget.name}" deleted`);
-      setDeleteTarget(null);
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : "Delete failed", "error");
-    } finally {
-      setDeleting(false);
-    }
-  };
-
   // ── regenerate default token ──────────────────────────────────────────────
   const handleRegenerateDefault = async () => {
     setRegenerating(true);
@@ -512,7 +372,11 @@ export default function EnrollmentBootstrap() {
         description={
           <>
             Generate a one-click installer for new endpoints. Use <strong>Token enrollment</strong> for workgroup PCs
-            and tests, <strong>Trusted domain / GPO</strong> for domain-joined fleets.
+            and tests, <strong>Trusted domain / GPO</strong> for domain-joined fleets. Tokens are managed under{" "}
+            <Link to="/onboarding?tab=tokens" className="th-onb-link">
+              Tokens &amp; commands
+            </Link>
+            .
           </>
         }
         actions={
@@ -568,115 +432,25 @@ export default function EnrollmentBootstrap() {
         </div>
       )}
 
-      {/* ── default token · security model ──────────────────────────────── */}
-      <div className="grid items-stretch gap-4 lg:grid-cols-2">
-        <div className="th-onb-card th-onb-enter" style={{ "--i": 0 } as React.CSSProperties}>
-          <div className="th-onb-card-head">
-            <div className="th-onb-card-title">
-              <span
-                className="th-onb-icon"
-                style={
-                  {
-                    "--onb-tone":
-                      defaultToken?.status === "active" ? "var(--th-status-online)" : "var(--th-status-warning)",
-                  } as React.CSSProperties
-                }
-              >
-                <KeyRound className="h-4 w-4" />
-              </span>
-              <span>
-                Default deployment token
-                <small>Used by installers that do not name a token</small>
-              </span>
-            </div>
-            {defaultToken && <TokenStatusChip token={defaultToken} />}
-          </div>
-          <div className="th-onb-body flex-1 justify-between !gap-4">
-            {defaultToken ? (
-              <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-                <div className="min-w-0">
-                  <div className="th-onb-label">Name</div>
-                  <div className="mt-1 truncate text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>
-                    {defaultToken.name}
-                  </div>
-                </div>
-                <div>
-                  <div className="th-onb-label">Prefix</div>
-                  <code className="mt-1 block font-mono text-[12px]" style={{ color: "var(--th-text-secondary)" }}>
-                    {formatTokenPrefix(defaultToken.token_prefix)}
-                  </code>
-                </div>
-                <div>
-                  <div className="th-onb-label">Usage</div>
-                  <div className="mt-1.5">
-                    <UsageMeter token={defaultToken} />
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <p className="th-onb-hint">No default deployment token exists. Regenerate to create one.</p>
-            )}
-            <div className="flex flex-wrap gap-2">
-              {activeDefault && mode === "token" && (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={handleUseDefault}
-                  disabled={tokenId === String(activeDefault.id)}
-                >
-                  {tokenId === String(activeDefault.id) ? (
-                    <>
-                      <Check className="h-3.5 w-3.5" />
-                      Selected in generator
-                    </>
-                  ) : (
-                    "Use in generator"
-                  )}
-                </Button>
-              )}
-              {canManage && (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => void handleRegenerateDefault()}
-                  disabled={regenerating}
-                >
-                  <RotateCcw className={`h-3.5 w-3.5 ${regenerating ? "animate-spin" : ""}`} />
-                  {regenerating ? "Regenerating…" : "Regenerate"}
-                </Button>
-              )}
-            </div>
-          </div>
+      {flashToken && (
+        <div className="th-onb-note th-onb-reveal" style={{ "--onb-tone": "var(--th-status-warning)" } as React.CSSProperties}>
+          <Info className="h-4 w-4 flex-none" style={{ color: "var(--th-status-warning)" }} />
+          <span className="flex-none text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>
+            Copy the token now; it is not shown again.
+          </span>
+          <code className="th-onb-code min-w-0 flex-1 truncate px-2.5 py-1">{flashToken.plaintext}</code>
+          <Button size="sm" variant="secondary" onClick={() => void copyText("flash", flashToken.plaintext)}>
+            {copied === "flash" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+            {copied === "flash" ? "Copied" : "Copy"}
+          </Button>
+          <button type="button" className="th-onb-action" onClick={() => setFlashToken(null)} aria-label="Dismiss">
+            <X className="h-3.5 w-3.5" />
+          </button>
         </div>
+      )}
 
-        <div className="th-onb-card th-onb-enter" style={{ "--i": 1 } as React.CSSProperties}>
-          <div className="th-onb-card-head">
-            <div className="th-onb-card-title">
-              <span className="th-onb-icon" style={{ "--onb-tone": "var(--th-status-info)" } as React.CSSProperties}>
-                <ShieldCheck className="h-4 w-4" />
-              </span>
-              <span>
-                Security model
-                <small>How managed endpoints stay reachable</small>
-              </span>
-            </div>
-          </div>
-          <ul className="th-onb-body flex-1 !gap-3">
-            {SECURITY_POINTS.map((point) => (
-              <li
-                key={point}
-                className="flex gap-2.5 text-[13px] leading-5"
-                style={{ color: "var(--th-text-secondary)" }}
-              >
-                <Check className="mt-0.5 h-4 w-4 flex-none" style={{ color: "var(--th-status-info)" }} />
-                {point}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
 
-      {/* ── generator · output ──────────────────────────────────────────── */}
+      {/* ── generator · installer, default token, security model ────────── */}
       <div className="grid items-stretch gap-4 xl:grid-cols-2">
         <div className="th-onb-card th-onb-enter" style={{ "--i": 2 } as React.CSSProperties}>
           <div className="th-onb-card-head">
@@ -983,450 +757,239 @@ export default function EnrollmentBootstrap() {
           </div>
         </div>
 
-        <div className="th-onb-card th-onb-enter" style={{ "--i": 3 } as React.CSSProperties}>
-          <div className="th-onb-card-head">
-            <div className="th-onb-card-title">
-              <span
-                className="th-onb-icon"
-                style={
-                  {
-                    "--onb-tone": bootstrap ? "var(--th-status-online)" : "var(--th-text-faint)",
-                  } as React.CSSProperties
-                }
-              >
-                <FileCode2 className="h-4 w-4" />
-              </span>
-              <span>
-                Installer
-                <small>{bootstrap ? "Ready to run as Administrator" : "Appears here once generated"}</small>
-              </span>
-            </div>
-            {bootstrap && (
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => void copyText("script", bootstrap.bootstrap_script)}
+        <div className="flex min-w-0 flex-col gap-4">
+          <div className="th-onb-card th-onb-enter flex-1" style={{ "--i": 3 } as React.CSSProperties}>
+            <div className="th-onb-card-head">
+              <div className="th-onb-card-title">
+                <span
+                  className="th-onb-icon"
+                  style={
+                    {
+                      "--onb-tone": bootstrap ? "var(--th-status-online)" : "var(--th-text-faint)",
+                    } as React.CSSProperties
+                  }
                 >
-                  {copied === "script" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                  {copied === "script" ? "Copied" : "Copy script"}
-                </Button>
-                <Button size="sm" onClick={handleDownloadScript}>
-                  <Download className="h-3.5 w-3.5" />
-                  Download .ps1
-                </Button>
+                  <FileCode2 className="h-4 w-4" />
+                </span>
+                <span>
+                  Installer
+                  <small>
+                  {bootstrap
+                    ? `Ready to run as ${bootstrap.platform === "windows" ? "Administrator" : "root"}`
+                    : "Appears here once generated"}
+                </small>
+                </span>
               </div>
+              {bootstrap && (
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => void copyText("script", bootstrap.bootstrap_script)}
+                  >
+                    {copied === "script" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                    {copied === "script" ? "Copied" : "Copy script"}
+                  </Button>
+                  <Button size="sm" onClick={handleDownloadScript}>
+                    <Download className="h-3.5 w-3.5" />
+                    Download .{(bootstrap.installer_filename || "installer.ps1").split(".").pop()}
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {bootstrap ? (
+              <div className="th-onb-body flex-1 th-onb-reveal">
+                <dl className="th-onb-meta">
+                  <div>
+                    <dt>Target</dt>
+                    <dd>
+                      {bootstrap.mode === "gpo"
+                        ? "Trusted domain / GPO"
+                        : bootstrap.platform === "windows"
+                          ? "Windows service"
+                          : `${bootstrap.platform} bootstrap`}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Platform</dt>
+                    <dd className="capitalize">{bootstrap.platform}</dd>
+                  </div>
+                  <div>
+                    <dt>Backend</dt>
+                    <dd title={bootstrap.backend_url}>{bootstrap.backend_url}</dd>
+                  </div>
+                  <div>
+                    <dt>{bootstrap.mode === "gpo" ? "Enrollment" : "Token"}</dt>
+                    <dd>
+                      {bootstrap.mode === "gpo"
+                        ? "Domain trust"
+                        : selectedToken
+                          ? selectedToken.name
+                          : bootstrap.enrollment_token_id
+                            ? `#${bootstrap.enrollment_token_id}`
+                            : "—"}
+                    </dd>
+                  </div>
+                </dl>
+
+                <div className="th-onb-field">
+                  Run command
+                  <div className="flex items-stretch gap-2">
+                    <code className="th-onb-code min-w-0 flex-1 truncate px-3 py-2">{bootstrap.bootstrap_command}</code>
+                    <button
+                      type="button"
+                      className="th-onb-action !h-auto !w-9 border"
+                      style={{ borderColor: "var(--th-border-subtle)" }}
+                      onClick={() => void copyText("command", bootstrap.bootstrap_command)}
+                      aria-label="Copy run command"
+                    >
+                      {copied === "command" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="th-onb-field">
+                  Script
+                  <pre className="th-onb-code max-h-[320px] overflow-auto whitespace-pre-wrap break-words p-3">
+                    {bootstrap.bootstrap_script}
+                  </pre>
+                </div>
+
+                <OutputBlock
+                  title="Config template (agent.config.json)"
+                  value={bootstrap.config_template}
+                  copied={copied === "config"}
+                  onCopy={() => void copyText("config", bootstrap.config_template)}
+                />
+
+                {bootstrap.preproduction_notice && (
+                  <div className="th-onb-note" style={{ "--onb-tone": "var(--th-status-info)" } as React.CSSProperties}>
+                    <Info className="h-4 w-4" />
+                    <span>{bootstrap.preproduction_notice}</span>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <ol className="th-onb-body th-onb-steps flex-1">
+                {INSTALLER_STEPS.map(([title, hint], index) => (
+                  <li key={title}>
+                    <span className="th-onb-step">{index + 1}</span>
+                    <span>
+                      {title}
+                      <small>{hint}</small>
+                    </span>
+                  </li>
+                ))}
+              </ol>
             )}
           </div>
-
-          {bootstrap ? (
-            <div className="th-onb-body flex-1 th-onb-reveal">
-              <dl className="th-onb-meta">
-                <div>
-                  <dt>Target</dt>
-                  <dd>
-                    {bootstrap.mode === "gpo"
-                      ? "Trusted domain / GPO"
-                      : bootstrap.platform === "windows"
-                        ? "Windows service"
-                        : `${bootstrap.platform} bootstrap`}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Platform</dt>
-                  <dd className="capitalize">{bootstrap.platform}</dd>
-                </div>
-                <div>
-                  <dt>Backend</dt>
-                  <dd title={bootstrap.backend_url}>{bootstrap.backend_url}</dd>
-                </div>
-                <div>
-                  <dt>{bootstrap.mode === "gpo" ? "Enrollment" : "Token"}</dt>
-                  <dd>
-                    {bootstrap.mode === "gpo"
-                      ? "Domain trust"
-                      : selectedToken
-                        ? selectedToken.name
-                        : bootstrap.enrollment_token_id
-                          ? `#${bootstrap.enrollment_token_id}`
-                          : "—"}
-                  </dd>
-                </div>
-              </dl>
-
-              <div className="th-onb-field">
-                Run command
-                <div className="flex items-stretch gap-2">
-                  <code className="th-onb-code min-w-0 flex-1 truncate px-3 py-2">{bootstrap.bootstrap_command}</code>
-                  <button
-                    type="button"
-                    className="th-onb-action !h-auto !w-9 border"
-                    style={{ borderColor: "var(--th-border-subtle)" }}
-                    onClick={() => void copyText("command", bootstrap.bootstrap_command)}
-                    aria-label="Copy run command"
-                  >
-                    {copied === "command" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                  </button>
-                </div>
-              </div>
-
-              <div className="th-onb-field">
-                Script
-                <pre className="th-onb-code max-h-[320px] overflow-auto whitespace-pre-wrap break-words p-3">
-                  {bootstrap.bootstrap_script}
-                </pre>
-              </div>
-
-              <OutputBlock
-                title="Config template (agent.config.json)"
-                value={bootstrap.config_template}
-                copied={copied === "config"}
-                onCopy={() => void copyText("config", bootstrap.config_template)}
-              />
-
-              {bootstrap.preproduction_notice && (
-                <div className="th-onb-note" style={{ "--onb-tone": "var(--th-status-info)" } as React.CSSProperties}>
-                  <Info className="h-4 w-4" />
-                  <span>{bootstrap.preproduction_notice}</span>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="th-onb-empty">
-              <EmptyState
-                icon={<Terminal className="h-5 w-5" />}
-                title="No installer yet"
-                description="Choose the deployment mode, token and device policy, then generate. The PowerShell script and a copy-ready command appear here."
-              />
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── tokens ──────────────────────────────────────────────────────── */}
-      <div className="th-alerts-card th-onb-tokens th-onb-enter" style={{ "--i": 4 } as React.CSSProperties}>
-        <div className="th-onb-card-head">
-          <div className="th-onb-card-title">
-            <span className="th-onb-icon" style={{ "--onb-tone": "var(--th-accent)" } as React.CSSProperties}>
-              <KeyRound className="h-4 w-4" />
-            </span>
-            <span>
-              Enrollment tokens
-              <small>
-                {tokenList.loading
-                  ? "Loading…"
-                  : `${formatCount(tokens.length)} total · ${formatCount(activeTokens.length)} active`}
-              </small>
-            </span>
-          </div>
-          {canManage && (
-            <Button size="sm" onClick={() => void openCreateModal()}>
-              <Plus className="h-3.5 w-3.5" />
-              New token
-            </Button>
-          )}
-        </div>
-
-        {flashToken && (
-          <div className="th-onb-flash th-onb-reveal">
-            <Info className="h-4 w-4 flex-none" style={{ color: "var(--th-status-warning)" }} />
-            <span className="flex-none text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>
-              Copy the token now; it is not shown again.
-            </span>
-            <code className="th-onb-code min-w-0 flex-1 truncate px-2.5 py-1">{flashToken.plaintext}</code>
-            <Button size="sm" variant="secondary" onClick={() => void copyText("flash", flashToken.plaintext)}>
-              {copied === "flash" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-              {copied === "flash" ? "Copied" : "Copy"}
-            </Button>
-            <button type="button" className="th-onb-action" onClick={() => setFlashToken(null)} aria-label="Dismiss">
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        )}
-
-        <div className="th-alerts-toolbar">
-          <div ref={statusTabsRef} role="tablist" aria-label="Token status" className="th-tabs">
-            {TOKEN_FILTERS.map(({ id, label }) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                aria-selected={statusFilter === id}
-                onClick={() => {
-                  setStatusFilter(id);
-                  setPage(1);
-                }}
-                className="th-tab"
-              >
-                {label}
-                <span className="th-tab-count">{formatCount(statusCounts[id])}</span>
-              </button>
-            ))}
-          </div>
-          <div className="pb-2">
-            <label className="th-search th-search-sm w-[260px]">
-              <Search className="h-3.5 w-3.5 flex-none" />
-              <input
-                value={tokenSearch}
-                onChange={(e) => {
-                  setTokenSearch(e.target.value);
-                  setPage(1);
-                }}
-                placeholder="Search tokens or clients"
-                aria-label="Search tokens"
-              />
-              {tokenSearch && (
-                <button
-                  type="button"
-                  onClick={() => setTokenSearch("")}
-                  className="th-explorer-clear"
-                  aria-label="Clear search"
+          <div className="th-onb-card th-onb-enter" style={{ "--i": 4 } as React.CSSProperties}>
+            <div className="th-onb-card-head">
+              <div className="th-onb-card-title">
+                <span
+                  className="th-onb-icon"
+                  style={
+                    {
+                      "--onb-tone":
+                        defaultToken?.status === "active" ? "var(--th-status-online)" : "var(--th-status-warning)",
+                    } as React.CSSProperties
+                  }
                 >
-                  <X className="h-3.5 w-3.5" />
-                </button>
+                  <KeyRound className="h-4 w-4" />
+                </span>
+                <span>
+                  Default deployment token
+                  <small>Used by installers that do not name a token</small>
+                </span>
+              </div>
+              {defaultToken && <TokenStatusChip token={defaultToken} />}
+            </div>
+            <div className="th-onb-body flex-1 justify-between !gap-4">
+              {defaultToken ? (
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+                  <div className="min-w-0">
+                    <div className="th-onb-label">Name</div>
+                    <div className="mt-1 truncate text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>
+                      {defaultToken.name}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="th-onb-label">Prefix</div>
+                    <code className="mt-1 block font-mono text-[12px]" style={{ color: "var(--th-text-secondary)" }}>
+                      {formatTokenPrefix(defaultToken.token_prefix)}
+                    </code>
+                  </div>
+                  <div>
+                    <div className="th-onb-label">Usage</div>
+                    <div className="mt-1.5">
+                      <UsageMeter token={defaultToken} />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <p className="th-onb-hint">No default deployment token exists. Regenerate to create one.</p>
               )}
-            </label>
-          </div>
-        </div>
-
-        {tokenList.loading ? (
-          <div className="th-alerts-scroll" aria-busy="true" aria-label="Loading tokens">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="th-alerts-skeleton" style={{ opacity: 1 - i * 0.12 }} />
-            ))}
-          </div>
-        ) : visibleTokens.length === 0 ? (
-          <EmptyState
-            className="th-fade-in py-10"
-            icon={<KeyRound className="h-5 w-5" />}
-            title={tokens.length === 0 ? "No enrollment tokens yet" : "No tokens match these filters"}
-            action={
-              tokens.length > 0 ? (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => {
-                    setStatusFilter("all");
-                    setTokenSearch("");
-                  }}
-                >
-                  Clear filters
-                </Button>
-              ) : undefined
-            }
-          />
-        ) : (
-          <div className="th-alerts-scroll th-table-scroll">
-            <table className="th-alerts-table">
-              <colgroup>
-                <col />
-                <col className="w-[120px]" />
-                <col className="w-[160px]" />
-                <col className="w-[18%]" />
-                <col className="w-[120px]" />
-                <col className="w-[120px]" />
-                <col className="w-[148px]" />
-                {canManage && <col className="w-[168px]" />}
-              </colgroup>
-              <thead>
-                <tr>
-                  <th>Token</th>
-                  <th>Status</th>
-                  <th>Usage</th>
-                  <th>Client</th>
-                  <th>Last used</th>
-                  <th>Expires</th>
-                  <th>Created</th>
-                  {canManage && <th className="text-right">Actions</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {pagedTokens.map((token, index) => (
-                  <tr
-                    key={token.id}
-                    className="th-alerts-row"
-                    style={{ "--row": index } as React.CSSProperties}
-                    data-selected={tokenId === String(token.id) || undefined}
+              <div className="flex flex-wrap gap-2">
+                {activeDefault && mode === "token" && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={handleUseDefault}
+                    disabled={tokenId === String(activeDefault.id)}
                   >
-                    <td>
-                      <span className="th-alerts-primary flex items-center gap-1.5">
-                        {token.is_default && (
-                          <Star
-                            className="h-3.5 w-3.5 flex-none"
-                            style={{ color: "var(--th-accent)", fill: "var(--th-accent)" }}
-                            aria-label="Default deployment token"
-                          />
-                        )}
-                        {canManage ? (
-                          <button
-                            type="button"
-                            className="th-alerts-link truncate text-left"
-                            onClick={() => void openDiagnostics(token)}
-                          >
-                            {token.name}
-                          </button>
-                        ) : (
-                          <span className="truncate">{token.name}</span>
-                        )}
-                      </span>
-                      <span className="th-alerts-secondary font-mono">{formatTokenPrefix(token.token_prefix)}</span>
-                    </td>
-                    <td>
-                      <TokenStatusChip token={token} />
-                    </td>
-                    <td>
-                      {canManage ? (
-                        <button
-                          type="button"
-                          className="text-left"
-                          onClick={() => openMaxUsesEditor(token)}
-                          title="Change max uses"
-                        >
-                          <UsageMeter token={token} />
-                        </button>
-                      ) : (
-                        <UsageMeter token={token} />
-                      )}
-                    </td>
-                    <td>
-                      {token.client_id ? (
-                        <span
-                          className="th-alerts-primary"
-                          title={token.group_id ? `Group #${token.group_id}` : undefined}
-                        >
-                          {clientNames[token.client_id] ?? `Client #${token.client_id}`}
-                        </span>
-                      ) : (
-                        <span className="th-alerts-secondary">Any client</span>
-                      )}
-                    </td>
-                    <td>
-                      {token.last_used_at ? (
-                        <span className="th-alerts-primary" title={formatLocalDateTime(token.last_used_at)}>
-                          {timeAgo(token.last_used_at)}
-                        </span>
-                      ) : (
-                        <span className="th-alerts-secondary">Never</span>
-                      )}
-                    </td>
-                    <td>
-                      {token.expires_at ? (
-                        <span className="th-alerts-primary">{formatLocalDateTime(token.expires_at)}</span>
-                      ) : (
-                        <span className="th-alerts-secondary">Never</span>
-                      )}
-                    </td>
-                    <td>
-                      <span className="th-alerts-secondary !mt-0 tabular-nums">
-                        {formatLocalDateTime(token.created_at)}
-                      </span>
-                    </td>
-                    {canManage && (
-                      <td>
-                        <div className="th-onb-actions">
-                          <button
-                            type="button"
-                            className="th-onb-action"
-                            title="Diagnostics"
-                            aria-label={`Diagnostics for ${token.name}`}
-                            onClick={() => void openDiagnostics(token)}
-                          >
-                            <Activity className="h-4 w-4" />
-                          </button>
-                          {flashToken?.id === token.id && (
-                            <button
-                              type="button"
-                              className="th-onb-action"
-                              title="Copy plaintext token"
-                              aria-label={`Copy ${token.name}`}
-                              onClick={() => void copyText(`row-${token.id}`, flashToken.plaintext)}
-                            >
-                              {copied === `row-${token.id}` ? (
-                                <Check className="h-4 w-4" />
-                              ) : (
-                                <Copy className="h-4 w-4" />
-                              )}
-                            </button>
-                          )}
-                          {token.is_default && (
-                            <button
-                              type="button"
-                              className="th-onb-action"
-                              title="Regenerate"
-                              aria-label="Regenerate default token"
-                              disabled={regenerating}
-                              onClick={() => void handleRegenerateDefault()}
-                            >
-                              <RotateCcw className={`h-4 w-4 ${regenerating ? "animate-spin" : ""}`} />
-                            </button>
-                          )}
-                          {isRevocable(token) && (
-                            <button
-                              type="button"
-                              className="th-onb-action"
-                              data-tone="danger"
-                              title="Revoke"
-                              aria-label={`Revoke ${token.name}`}
-                              disabled={revoking.has(token.id)}
-                              onClick={() => setRevokeTarget(token)}
-                            >
-                              <Ban className="h-4 w-4" />
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            className="th-onb-action"
-                            data-tone="danger"
-                            title="Delete"
-                            aria-label={`Delete ${token.name}`}
-                            disabled={deleting}
-                            onClick={() => setDeleteTarget(token)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
+                    {tokenId === String(activeDefault.id) ? (
+                      <>
+                        <Check className="h-3.5 w-3.5" />
+                        Selected in generator
+                      </>
+                    ) : (
+                      "Use in generator"
                     )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                  </Button>
+                )}
+                {canManage && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => void handleRegenerateDefault()}
+                    disabled={regenerating}
+                  >
+                    <RotateCcw className={`h-3.5 w-3.5 ${regenerating ? "animate-spin" : ""}`} />
+                    {regenerating ? "Regenerating…" : "Regenerate"}
+                  </Button>
+                )}
+              </div>
+            </div>
           </div>
-        )}
 
-        {visibleTokens.length > 0 && (
-          <TablePagination
-            page={page}
-            pageSize={pageSize}
-            total={visibleTokens.length}
-            onPageChange={setPage}
-            onPageSizeChange={(size) => {
-              setPageSize(size);
-              setPage(1);
-            }}
-            pageSizeOptions={[25, 50, 100]}
-            itemLabel="tokens"
-          />
-        )}
+          <div className="th-onb-card th-onb-enter" style={{ "--i": 5 } as React.CSSProperties}>
+            <div className="th-onb-card-head">
+              <div className="th-onb-card-title">
+                <span className="th-onb-icon" style={{ "--onb-tone": "var(--th-status-info)" } as React.CSSProperties}>
+                  <ShieldCheck className="h-4 w-4" />
+                </span>
+                <span>
+                  Security model
+                  <small>How managed endpoints stay reachable</small>
+                </span>
+              </div>
+            </div>
+            <ul className="th-onb-body flex-1 !gap-3">
+              {SECURITY_POINTS.map((point) => (
+                <li
+                  key={point}
+                  className="flex gap-2.5 text-[13px] leading-5"
+                  style={{ color: "var(--th-text-secondary)" }}
+                >
+                  <Check className="mt-0.5 h-4 w-4 flex-none" style={{ color: "var(--th-status-info)" }} />
+                  {point}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
       </div>
-
-      {diagnosticsToken && (
-        <TokenDiagnosticsDrawer
-          token={diagnosticsToken}
-          diagnostics={diagnostics}
-          events={diagnosticsEvents}
-          loading={diagnosticsLoading}
-          eventsLoading={eventsLoading}
-          error={diagnosticsError}
-          onLoadMore={() => void loadMoreEvents()}
-          onClose={() => {
-            setDiagnosticsToken(null);
-            setDiagnostics(null);
-            setDiagnosticsEvents([]);
-            setDiagnosticsError(null);
-          }}
-        />
-      )}
 
       {/* ── New token ─────────────────────────────────────────────────────────── */}
       {createOpen && (
@@ -1557,41 +1120,6 @@ export default function EnrollmentBootstrap() {
         </Modal>
       )}
 
-      {revokeTarget && (
-        <ConfirmationModal
-          title="Revoke enrollment token"
-          confirmLabel={revoking.has(revokeTarget.id) ? "Revoking" : "Revoke"}
-          loading={revoking.has(revokeTarget.id)}
-          onClose={() => setRevokeTarget(null)}
-          onConfirm={() => void handleRevoke(revokeTarget)}
-        >
-          Revoke{" "}
-          <span className="font-semibold" style={{ color: "var(--th-text-primary)" }}>
-            {revokeTarget.name}
-          </span>
-          ? Existing installers with this token will stop enrolling new devices.
-        </ConfirmationModal>
-      )}
-
-      {deleteTarget && (
-        <ConfirmationModal
-          title="Delete enrollment token"
-          confirmLabel={deleting ? "Deleting" : "Delete"}
-          loading={deleting}
-          onClose={() => setDeleteTarget(null)}
-          onConfirm={() => void handleDeleteToken()}
-        >
-          Permanently delete{" "}
-          <span className="font-semibold" style={{ color: "var(--th-text-primary)" }}>
-            {deleteTarget.name}
-          </span>
-          ?{deleteTarget.status === "active" && " This token is active and this action cannot be undone."}
-          {deleteTarget.is_default &&
-            deleteTarget.status === "active" &&
-            " Regenerate or revoke the Default Deployment token first unless you are intentionally removing it."}
-        </ConfirmationModal>
-      )}
-
       {/* ── Toasts ───────────────────────────────────────────────────────────── */}
       <div className="pointer-events-none fixed bottom-4 right-4 z-[110] flex flex-col gap-2" aria-live="polite">
         {toasts.map((toast) => {
@@ -1618,189 +1146,6 @@ export default function EnrollmentBootstrap() {
         })}
       </div>
     </section>
-  );
-}
-
-function diagnosticValue(value?: number | null): string {
-  return value === null || value === undefined ? "Unknown" : String(value);
-}
-
-function resultBadgeClass(result: EnrollmentAuditEvent["result"]): string {
-  if (result === "failed") return "border-red-400/25 bg-red-400/10 text-red-300";
-  if (result === "duplicate" || result === "updated_existing") {
-    return "border-amber-400/25 bg-amber-400/10 text-amber-300";
-  }
-  if (result === "ignored") return "border-slate-500/25 bg-slate-500/10 text-slate-400";
-  return "border-emerald-400/25 bg-emerald-400/10 text-emerald-300";
-}
-
-function TokenDiagnosticsDrawer({
-  token,
-  diagnostics,
-  events,
-  loading,
-  eventsLoading,
-  error,
-  onLoadMore,
-  onClose,
-}: {
-  token: EnrollmentToken;
-  diagnostics: EnrollmentTokenDiagnostics | null;
-  events: EnrollmentAuditEvent[];
-  loading: boolean;
-  eventsLoading: boolean;
-  error: string | null;
-  onLoadMore: () => void;
-  onClose: () => void;
-}) {
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  const metrics = [
-    ["Uses", `${token.use_count} / ${token.max_uses}`],
-    ["Unique devices", diagnosticValue(diagnostics?.unique_devices)],
-    ["Duplicate / re-enrollments", diagnosticValue(diagnostics?.duplicate_enrollments)],
-    ["Failed attempts", diagnosticValue(diagnostics?.failed_events)],
-    ["Orphaned uses", diagnosticValue(diagnostics?.orphaned_uses)],
-    ["Archived devices", diagnosticValue(diagnostics?.archived_devices)],
-  ];
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex justify-end bg-[var(--th-scrim)] backdrop-blur-sm"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <aside
-        className="flex h-full w-full max-w-6xl flex-col border-l border-[color:var(--th-border-default)] bg-[var(--th-bg-surface)] shadow-2xl"
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Token diagnostics: ${token.name}`}
-      >
-        <div className="flex items-start justify-between border-b border-[color:var(--th-border-subtle)] px-5 py-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-techi-orange">Token Diagnostics</p>
-            <h2 className="mt-1 text-lg font-semibold text-slate-100">{token.name}</h2>
-            <p className="mt-1 font-mono text-xs text-slate-500">{formatTokenPrefix(token.token_prefix)}</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-2 text-slate-500 hover:bg-[var(--th-chip-bg)] hover:text-slate-100"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto p-5">
-          {loading && (
-            <div className="flex items-center justify-center gap-2 py-20 text-sm text-slate-400">
-              <LoaderCircle className="h-4 w-4 animate-spin" />
-              Loading diagnostics…
-            </div>
-          )}
-          {error && (
-            <div className="mb-4 rounded-lg border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-200">
-              {error}
-            </div>
-          )}
-          {!loading && diagnostics && (
-            <>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {metrics.map(([label, value]) => (
-                  <div key={label} className="premium-card-soft p-4">
-                    <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</p>
-                    <p className="mt-2 text-xl font-semibold text-slate-100">{value}</p>
-                  </div>
-                ))}
-              </div>
-
-              {diagnostics.inference_note && (
-                <div className="mt-4 flex gap-2 rounded-lg border border-blue-400/15 bg-blue-400/[0.06] p-3 text-xs leading-5 text-blue-100">
-                  <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-300" />
-                  <span>
-                    {diagnostics.inferred && <strong className="mr-1">Inferred:</strong>}
-                    {diagnostics.inference_note}
-                  </span>
-                </div>
-              )}
-
-              <div className="mt-6 overflow-hidden rounded-xl border border-[color:var(--th-border-subtle)]">
-                <div className="border-b border-[color:var(--th-border-subtle)] px-4 py-3">
-                  <h3 className="text-sm font-semibold text-slate-100">Enrollment History</h3>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[1050px] text-left text-xs">
-                    <thead className="th-table-head">
-                      <tr className="uppercase tracking-wide text-slate-500">
-                        <th className="px-3 py-3">Time</th>
-                        <th className="px-3 py-3">Hostname</th>
-                        <th className="px-3 py-3">User</th>
-                        <th className="px-3 py-3">Device</th>
-                        <th className="px-3 py-3">RustDesk ID</th>
-                        <th className="px-3 py-3">Result</th>
-                        <th className="px-3 py-3">Reason</th>
-                        <th className="px-3 py-3">IP</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[color:var(--th-border-subtle)]">
-                      {!events.length && (
-                        <tr>
-                          <td colSpan={8} className="px-3 py-10 text-center text-slate-500">
-                            No enrollment audit events recorded.
-                          </td>
-                        </tr>
-                      )}
-                      {events.map((event) => (
-                        <tr key={event.id} className="text-slate-300">
-                          <td className="whitespace-nowrap px-3 py-3 text-slate-500">
-                            {formatLocalDateTime(event.created_at)}
-                          </td>
-                          <td className="px-3 py-3 font-semibold text-slate-100">{event.hostname || "—"}</td>
-                          <td className="px-3 py-3">{event.username || "—"}</td>
-                          <td className="px-3 py-3">{event.device_id ? `#${event.device_id}` : "—"}</td>
-                          <td className="px-3 py-3 font-mono">{event.rustdesk_id || "—"}</td>
-                          <td className="px-3 py-3">
-                            <span
-                              className={`inline-flex rounded-full border px-2 py-0.5 font-semibold ${resultBadgeClass(event.result)}`}
-                            >
-                              {event.result.replace("_", " ")}
-                            </span>
-                          </td>
-                          <td
-                            className="max-w-[240px] truncate px-3 py-3"
-                            title={event.raw_error || event.reason || ""}
-                          >
-                            {event.reason || event.raw_error || "—"}
-                          </td>
-                          <td className="px-3 py-3 font-mono text-slate-400">
-                            {event.public_ip || event.local_ip || "—"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                {events.length > 0 && events.length % 50 === 0 && (
-                  <div className="flex justify-center border-t border-[color:var(--th-border-subtle)] p-3">
-                    <Button size="sm" onClick={onLoadMore} disabled={eventsLoading} variant="secondary">
-                      {eventsLoading ? "Loading…" : "Load more"}
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-      </aside>
-    </div>
   );
 }
 

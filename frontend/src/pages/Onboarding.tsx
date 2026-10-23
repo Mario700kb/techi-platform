@@ -10,7 +10,7 @@ export type OnboardingTab = "packages" | "tokens" | "installer";
 const TABS: { id: OnboardingTab; step: number; label: string; hint: string }[] = [
   { id: "packages", step: 1, label: "Packages", hint: "Upload and activate agent installers" },
   { id: "tokens", step: 2, label: "Tokens & commands", hint: "Enrollment tokens and GPO / manual commands" },
-  { id: "installer", step: 3, label: "Installer", hint: "One-click PowerShell installer" },
+  { id: "installer", step: 3, label: "Installer", hint: "One-click installer for Windows and Linux" },
 ];
 
 /**

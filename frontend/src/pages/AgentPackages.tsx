@@ -31,7 +31,6 @@ import ConfirmationModal from "../components/ConfirmationModal";
 import { Button, EmptyState, PageHeader, Select } from "../components/ui";
 import { useCachedQuery } from "../hooks/useCachedQuery";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
-import { useTabIndicator } from "../hooks/useTabIndicator";
 import { TONE } from "../utils/deviceStatus";
 import { formatCount } from "../utils/number";
 import { formatLocalDateTime } from "../utils/time";
@@ -106,6 +105,13 @@ const PACKAGE_TYPES: PackageType[] = [
 
 const ACTIVE_TONE = { "--chip-tone": TONE.online } as CSSProperties;
 const INACTIVE_TONE = { "--chip-tone": TONE.neutral } as CSSProperties;
+const PARTIAL_TONE = { "--chip-tone": TONE.warning } as CSSProperties;
+
+function archLine(platforms: AgentPackagePlatform[], active: AgentPackage[]): string {
+  return platforms
+    .map((pl) => `${pl.replace("linux-", "")} ${active.find((p) => p.platform === pl)?.version ?? "—"}`)
+    .join(" · ");
+}
 
 export default function AgentPackages() {
   const { can } = useAuth();
@@ -135,7 +141,6 @@ export default function AgentPackages() {
   const fileInput = useRef<HTMLInputElement>(null);
 
   const type = types.find((t) => t.id === typeId) ?? types[0];
-  const typeTabsRef = useTabIndicator<HTMLDivElement>(type.id);
   const byType = useMemo(() => {
     const map = {} as Record<TypeId, AgentPackage[]>;
     for (const t of PACKAGE_TYPES) {
@@ -232,9 +237,16 @@ export default function AgentPackages() {
       />
 
       {/* ── what is live, per package type ──────────────────────────────── */}
-      <div className={`grid gap-4 sm:grid-cols-2 ${types.length === 5 ? "xl:grid-cols-5" : "xl:grid-cols-4"}`}>
+      <div
+        role="group"
+        aria-label="Package type"
+        className={`grid grid-cols-2 gap-2 sm:gap-4 ${types.length === 5 ? "xl:grid-cols-5" : "xl:grid-cols-4"}`}
+      >
         {types.map((t, index) => {
           const active = byType[t.id].filter((p) => p.is_active);
+          const perArch = t.id === "linux_binary";
+          const missing = perArch ? t.platforms.filter((pl) => !active.some((p) => p.platform === pl)) : [];
+          const partial = perArch && active.length > 0 && missing.length > 0;
           const Icon = t.icon;
           return (
             <button
@@ -252,9 +264,16 @@ export default function AgentPackages() {
                 >
                   <Icon className="h-4 w-4" />
                 </span>
-                <span className="th-status-chip" style={active.length ? ACTIVE_TONE : INACTIVE_TONE}>
+                <span
+                  className="th-status-chip"
+                  style={partial ? PARTIAL_TONE : active.length ? ACTIVE_TONE : INACTIVE_TONE}
+                >
                   <i />
-                  {active.length ? "Active" : "None active"}
+                  {partial
+                    ? `${t.platforms.length - missing.length}/${t.platforms.length} active`
+                    : active.length
+                      ? "Active"
+                      : "None active"}
                 </span>
               </div>
               <div className="mt-4 text-[13px] font-medium" style={{ color: "var(--th-text-secondary)" }}>
@@ -273,12 +292,20 @@ export default function AgentPackages() {
                         .filter((v, i, all) => all.indexOf(v) === i)
                         .join(" · ")}
               </div>
-              <div className="mt-1 truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+              <div
+                className="mt-1 truncate text-[12px]"
+                style={{ color: "var(--th-text-muted)" }}
+                title={perArch ? archLine(t.platforms, active) : undefined}
+              >
                 {active.length === 0
                   ? `${formatCount(byType[t.id].length)} uploaded`
-                  : active.length === 1
-                    ? `${active[0].platform} · ${formatLocalDateTime(active[0].uploaded_at)}`
-                    : active.map((p) => p.platform).join(", ")}
+                  : perArch
+                    ? missing.length === 0 && new Set(active.map((p) => p.version)).size === 1
+                      ? t.platforms.map((pl) => pl.replace("linux-", "")).join(" · ")
+                      : archLine(t.platforms, active)
+                    : active.length === 1
+                      ? `${active[0].platform} · ${formatLocalDateTime(active[0].uploaded_at)}`
+                      : active.map((p) => p.platform).join(", ")}
               </div>
             </button>
           );
@@ -308,7 +335,9 @@ export default function AgentPackages() {
             </span>
             <span>
               {type.label}
-              <small>{type.hint}</small>
+              <small>
+                {formatCount(rows.length)} uploaded · {type.hint}
+              </small>
             </span>
           </div>
           {canManage && (
@@ -321,24 +350,6 @@ export default function AgentPackages() {
               {uploadOpen ? "Close" : "Upload"}
             </Button>
           )}
-        </div>
-
-        <div className="th-alerts-toolbar">
-          <div ref={typeTabsRef} role="tablist" aria-label="Package type" className="th-tabs">
-            {types.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                role="tab"
-                aria-selected={t.id === type.id}
-                onClick={() => selectType(t.id)}
-                className="th-tab"
-              >
-                {t.label}
-                <span className="th-tab-count">{formatCount(byType[t.id].length)}</span>
-              </button>
-            ))}
-          </div>
         </div>
 
         {canManage && uploadOpen && (

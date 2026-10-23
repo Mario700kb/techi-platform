@@ -11,3 +11,5 @@ export { default as Modal } from "./Modal";
 export { default as DatePicker } from "./DatePicker";
 export { default as Kv } from "./KeyValue";
 export { default as SectionHeader } from "./SectionHeader";
+export { default as RowMenu } from "./RowMenu";
+export type { RowMenuItem } from "./RowMenu";
