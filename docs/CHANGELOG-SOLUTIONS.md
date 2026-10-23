@@ -5,6 +5,32 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-23] ONBOARDING-REDESIGN-2026-10-23 — One token table, balanced Installer, correct packages (`e4fcd49`)
+
+**Frontend deployed 12:08 (Tirana).**
+- Owner's review of Onboarding. Wrong content fixed: "Active deployment
+  package" showed `TECHI-Agent-Update-2.1.35.msi` (the update bridge,
+  picked by `/packages/latest?platform=windows-amd64` without a file type)
+  as what a new install downloads; it now shows the Endpoint MSI and the
+  Linux agent per architecture, from one `/agent-packages` request. The
+  header chip names Linux and MikroTik; the Installer no longer offers
+  macOS.
+- One token table, under Tokens & commands: default token starred, Last
+  used as date + age, Expires only when a token expires, neutral usage bar
+  until a warning, Edit / Regenerate / Diagnostics / Revoke / Delete in a
+  row menu (`RowMenu`, fixed to the viewport). The Installer's own table
+  (different columns and actions) is gone; its diagnostics drawer moved to
+  `components/TokenDiagnostics`.
+- Installer: Generator beside Installer, default token and security model;
+  empty result cards show three numbered steps instead of a blank box.
+- Packages: the summary cards are the only type selector (the duplicate tab
+  row is gone); the Linux card shows coverage ("2/3 active") and each
+  architecture; two cards per row on phones.
+- 441 unit tests (new `Deployment.test.tsx`); checked by screenshot in dark
+  and light, desktop and phone. Rollback
+  `techi-platform-frontend:pre-onboarding-redesign-b8520c8`; `nginx -t`,
+  guard and smoke passed.
+
 ## [2026-10-23] LINUX-PKG-LIST-2026-10-23 — Deployment card: no 404 for an architecture without a package (`be82577`)
 
 **Frontend deployed 11:37 (Tirana).**
