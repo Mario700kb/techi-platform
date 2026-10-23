@@ -565,3 +565,12 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+
+/* Command mode: the prompt is part of the screen, as in a terminal — the
+   caret shows where typing goes, not the app's focus ring. */
+.ps-cmd-prompt,
+.ps-cmd-prompt:focus,
+.ps-cmd-prompt:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}

@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import type { MutableRefObject } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import type { KeyboardEvent, MutableRefObject } from "react";
 import { Loader2 } from "lucide-react";
 
 import { ApiError } from "../../api/client";
@@ -37,6 +37,8 @@ function failure(err: unknown): { text: string; ended: boolean } {
  * terminal, so the console around it (command bar, saved scripts, session
  * details, the command list) works unchanged. The folder is carried from one
  * command to the next; a command cannot be answered or stopped while it runs.
+ * As in the live console, commands are typed straight into the screen, at the
+ * prompt; the command bar under it works as well.
  */
 export default function CommandModeScreen({
   deviceId,
@@ -67,6 +69,15 @@ export default function CommandModeScreen({
   const ended = useRef(false);
   const seq = useRef(0);
   const screen = useRef<HTMLDivElement | null>(null);
+  const input = useRef<HTMLInputElement | null>(null);
+  const inputId = useId();
+  const [opened, setOpened] = useState(false);
+  const [isEnded, setIsEnded] = useState(false);
+  const [promptCwd, setPromptCwd] = useState(START_CWD);
+  const [draft, setDraft] = useState("");
+  // This session's commands for ↑/↓ at the prompt (from the prompt and the bar).
+  const history = useRef<string[]>([]);
+  const cursor = useRef<number | null>(null);
   const callbacks = useRef({ onOpen, onActivity, onClosed, onTitleChange });
   callbacks.current = { onOpen, onActivity, onClosed, onTitleChange };
 
@@ -78,6 +89,7 @@ export default function CommandModeScreen({
     ended.current = true;
     busy.current = false;
     setRunning(null);
+    setIsEnded(true);
     callbacks.current.onClosed(message);
   };
 
@@ -102,7 +114,10 @@ export default function CommandModeScreen({
     try {
       const result = await execute(command);
       if (!result) return null;
-      if (result.cwd) cwd.current = result.cwd;
+      if (result.cwd) {
+        cwd.current = result.cwd;
+        setPromptCwd(result.cwd);
+      }
       if (!quiet) {
         if (result.output) print(result.output);
         if (result.stderr) print(result.stderr, "error");
@@ -135,28 +150,73 @@ export default function CommandModeScreen({
     }
   };
 
+  /** A command from the prompt or the bar: typed while one runs, it waits its turn. */
+  const enqueue = (command: string) => {
+    if (history.current[history.current.length - 1] !== command) history.current.push(command);
+    cursor.current = null;
+    queue.current.push(command);
+    if (!busy.current) void drain();
+  };
+
+  const stopNote = () =>
+    print("A running command cannot be stopped in command mode; it ends by itself within 5 minutes.", "muted");
+
+  const onPromptKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      const command = draft;
+      setDraft("");
+      if (command.trim()) enqueue(command);
+      else print(`PS ${cwd.current ?? START_CWD}>`, "prompt");
+      return;
+    }
+    if (e.key === "c" && e.ctrlKey && !window.getSelection()?.toString()) {
+      e.preventDefault();
+      if (draft) {
+        print(`PS ${cwd.current ?? START_CWD}> ${draft}^C`, "prompt");
+        setDraft("");
+      } else stopNote();
+      return;
+    }
+    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      const list = history.current;
+      if (list.length === 0) return;
+      e.preventDefault();
+      const at = cursor.current;
+      const next =
+        e.key === "ArrowUp" ? (at === null ? list.length - 1 : Math.max(0, at - 1)) : at === null ? null : at + 1;
+      if (next === null || next >= list.length) {
+        cursor.current = null;
+        setDraft("");
+      } else {
+        cursor.current = next;
+        setDraft(list[next]);
+      }
+    }
+  };
+
+  const focusPrompt = () => input.current?.focus({ preventScroll: true });
+
   useEffect(() => {
     handleRef.current = {
       send: (data: string) => {
         if (ended.current) return false;
         if (data === "\x03") {
-          print("A running command cannot be stopped in command mode; it ends by itself within 5 minutes.", "muted");
+          stopNote();
           return true;
         }
         const command = fromConsoleInput(data);
         if (!command.trim()) return true;
-        // Typed while one runs: it waits its turn, as in a console.
-        queue.current.push(command);
-        if (!busy.current) void drain();
+        enqueue(command);
         return true;
       },
       close: () => {
         if (ended.current) return;
         ended.current = true;
+        setIsEnded(true);
         void closeCommandModeSession(deviceId, sessionId).catch(() => undefined);
       },
-      // Input goes through the command bar; the output has nothing to focus.
-      focus: () => undefined,
+      focus: focusPrompt,
     };
     return () => {
       handleRef.current = null;
@@ -182,6 +242,7 @@ export default function CommandModeScreen({
       const reported = result.output.trim().split("\n")[0]?.trim();
       if (reported && /^[0-9][0-9.]*$/.test(reported)) version.current = reported;
       print(`Connected · PowerShell ${version.current}`, "muted");
+      setOpened(true);
       callbacks.current.onOpen();
       void drain();
       callbacks.current.onTitleChange(`techi;${version.current};0;0;0;`);
@@ -197,12 +258,24 @@ export default function CommandModeScreen({
 
   useEffect(() => {
     screen.current?.scrollTo?.({ top: screen.current.scrollHeight });
-  }, [lines, running]);
+  }, [lines, running, draft]);
+
+  // Ready to type as soon as the device answered, like the live console.
+  useEffect(() => {
+    if (opened) focusPrompt();
+  }, [opened]);
 
   const theme = CONSOLE_THEME;
+  const showPrompt = opened && !isEnded && !running;
   return (
+    // A click anywhere on the screen puts the cursor at the prompt, as in the
+    // live console; keyboard users reach the prompt itself with Tab.
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div
       ref={screen}
+      onMouseUp={() => {
+        if (showPrompt && !window.getSelection()?.toString()) focusPrompt();
+      }}
       className="h-full overflow-auto px-3 py-2 text-[12.5px] leading-[1.45]"
       style={{ fontFamily: CONSOLE_FONT, color: theme.foreground, background: theme.background }}
       aria-label="PowerShell output"
@@ -231,6 +304,31 @@ export default function CommandModeScreen({
         <div className="flex items-center gap-2" style={{ color: theme.brightBlack }}>
           <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
           Running on the device… {Math.round((Date.now() - running.since) / 1000)} s
+        </div>
+      )}
+      {showPrompt && (
+        <div className="flex items-baseline whitespace-pre">
+          <label htmlFor={inputId} style={{ color: theme.blue }}>
+            PS {promptCwd}&gt;{" "}
+          </label>
+          <input
+            id={inputId}
+            ref={input}
+            value={draft}
+            onChange={(e) => {
+              setDraft(e.target.value);
+              cursor.current = null;
+            }}
+            onKeyDown={onPromptKey}
+            spellCheck={false}
+            autoCapitalize="off"
+            autoComplete="off"
+            autoCorrect="off"
+            aria-label="PowerShell command"
+            className="ps-cmd-prompt min-w-0 flex-1 border-0 bg-transparent p-0"
+            style={{ font: "inherit", color: theme.foreground, caretColor: theme.cursor }}
+            data-testid="command-mode-prompt"
+          />
         </div>
       )}
     </div>
