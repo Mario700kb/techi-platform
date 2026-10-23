@@ -5,6 +5,22 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-23] LINUX-2139-PACKAGES-2026-10-23 — Linux agent 2.1.39 active on amd64, arm64 and armhf
+
+**Packages activated 13:07 (Tirana), with the owner's permission.**
+- Agent 2.1.39 from CI run 39855667238 (`577d488`) registered through
+  `AgentPackageService` in the backend container and activated for all three
+  Linux architectures: amd64 `702cf8f6…` (package `6a7e0d7e…`), arm64
+  `d7a92ac2…` (`9b71f32f…`), armhf `96a3737a…` (`ec5c2358…`). 2.1.33 (amd64)
+  and 2.1.38 (armhf) stay as inactive rollback packages.
+- Closes the two gaps found in the Linux production review: aarch64 had no
+  active package (download 404, installer refused) and amd64 served 2.1.33,
+  older than Remote Support on Linux.
+- Manifest backup `agent_packages/manifest.json.bak-pre-linux-2139-20261023-130609`.
+  Public downloads for all three return the CI bytes; the installer embeds the
+  new checksums. Heartbeats never carry `agent_update`, so no device updated
+  itself; existing Linux agents move with "Update agent".
+
 ## [2026-10-23] DEPLOY-DIALOG-2026-10-23 — Deployment commands: one platform at a time (`20fde45`)
 
 **Frontend deployed 13:02 (Tirana).**
