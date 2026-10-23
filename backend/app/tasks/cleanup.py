@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.models.device_heartbeat import DeviceHeartbeat
 import logging
+from app.core.config import settings
 from app.core.time import utcnow_naive
 
 logger = logging.getLogger(__name__)
@@ -211,6 +212,8 @@ def find_stale_alerts(db: Session) -> list:
     from app.services.alert_rules import RECONNECT_WINDOW_SECONDS, STALE_WHEN_OFFLINE
 
     reconnect_cutoff = utcnow_naive() - timedelta(seconds=RECONNECT_WINDOW_SECONDS)
+    # A full disk outlives a night off, not a device that has gone away.
+    long_gone = utcnow_naive() - timedelta(days=max(1, settings.OFFLINE_ALERT_ABSENT_DAYS))
     rows = (
         db.query(DeviceAlert, Device)
         .join(Device, Device.id == DeviceAlert.device_id)
@@ -221,7 +224,10 @@ def find_stale_alerts(db: Session) -> list:
     for alert, device in rows:
         if device.is_archived and alert.kind != AlertKind.ARCHIVED_CHECKIN:
             stale.append((alert, "device_archived"))
-        elif device.status == DeviceStatus.OFFLINE and alert.kind in STALE_WHEN_OFFLINE:
+        elif device.status == DeviceStatus.OFFLINE and (
+            alert.kind in STALE_WHEN_OFFLINE
+            or (alert.kind == AlertKind.LOW_DISK and (device.last_seen is None or device.last_seen < long_gone))
+        ):
             stale.append((alert, "device_offline"))
         elif alert.kind == AlertKind.REPEATED_RECONNECTS and alert.created_at < reconnect_cutoff:
             stale.append((alert, "reconnects_settled"))

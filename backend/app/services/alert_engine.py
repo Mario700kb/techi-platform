@@ -392,14 +392,14 @@ class AlertEngine:
         else:
             self._resolve(device.id, AlertKind.RUSTDESK_SYNC_FAILURE, reason="sync_recovered")
 
-    def evaluate_reconnect(self, device, recent_online_count: int) -> None:
-        if recent_online_count >= RECONNECT_THRESHOLD:
+    def evaluate_reconnect(self, device, drops: int) -> None:
+        if drops >= RECONNECT_THRESHOLD:
             hostname = device.hostname or f"device-{device.id}"
             self._open_alert(
                 device_id=device.id,
                 kind=AlertKind.REPEATED_RECONNECTS,
                 severity=AlertSeverity.WARNING,
-                message=f"{hostname} reconnected {recent_online_count}× in the last 10 minutes",
+                message=f"{hostname} lost its connection {drops}× in the last 10 minutes",
                 device=device,
             )
         else:

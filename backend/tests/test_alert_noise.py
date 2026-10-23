@@ -139,11 +139,50 @@ def test_a_disk_hovering_at_the_line_does_not_flap(db, device):
 
 def test_reconnect_alert_closes_once_reconnects_settle(db, device):
     engine = AlertEngine(db)
-    engine.evaluate_reconnect(device, recent_online_count=4)
+    engine.evaluate_reconnect(device, drops=4)
     assert _open(db, device, AlertKind.REPEATED_RECONNECTS) is not None
 
-    engine.evaluate_reconnect(device, recent_online_count=0)
+    engine.evaluate_reconnect(device, drops=0)
     assert _open(db, device, AlertKind.REPEATED_RECONNECTS) is None
+
+
+def test_sleeping_and_waking_is_not_a_dropped_connection(db, device):
+    from app.models.device_status_history import DeviceStatusHistory
+    from app.repositories.device_status_history_repository import DeviceStatusHistoryRepository
+
+    now = utcnow().replace(tzinfo=None)
+    for i, reason in enumerate(["agent_sleep", "agent_sleep", "agent_sleep", "agent_shutdown", "agent_channel_lost"]):
+        db.add(DeviceStatusHistory(device_id=device.id, previous_status=DeviceStatus.ONLINE, new_status=DeviceStatus.OFFLINE,
+                                   reason=reason, created_at=now - timedelta(minutes=i)))
+        db.add(DeviceStatusHistory(device_id=device.id, previous_status=DeviceStatus.OFFLINE, new_status=DeviceStatus.ONLINE,
+                                   reason="agent_channel_connected", created_at=now - timedelta(minutes=i, seconds=-30)))
+    db.commit()
+    since = now - timedelta(minutes=10)
+    assert DeviceStatusHistoryRepository(db).count_recent_connection_drops(device.id, since=since) == 1
+
+
+def test_a_full_disk_stays_one_alert_while_the_pc_is_off_overnight(db, device):
+    engine = AlertEngine(db)
+    engine.evaluate_telemetry(device, cpu_percent=None, ram_percent=None, disk_percent=96.0)
+    alert = _open(db, device, AlertKind.LOW_DISK)
+
+    device.last_seen = (utcnow() - timedelta(hours=1)).replace(tzinfo=None)
+    db.commit()
+    DeviceStatusService(db).reconcile_stale_devices()
+    assert _open(db, device, AlertKind.LOW_DISK) is not None
+
+    engine.evaluate_telemetry(device, cpu_percent=None, ram_percent=None, disk_percent=96.0)
+    db.refresh(alert)
+    assert alert.state == AlertState.OPEN and (alert.occurrences or 1) == 1
+
+
+def test_a_virtual_disk_error_counter_is_not_a_disk_problem():
+    from app.schemas.device_health import PhysicalDisk
+
+    assert PhysicalDisk(name="Virtual HD", read_errors=6399).problem is None
+    assert PhysicalDisk(name="Msft Disk", bus="Virtual", wear_pct=99).problem is None
+    assert PhysicalDisk(name="Virtual HD", health="unhealthy").problem == "Unhealthy"
+    assert PhysicalDisk(name="ST2000DM001-1ER164", read_errors=216).problem == "216 uncorrected errors"
 
 
 def test_going_offline_closes_readings_alerts(db, device):
@@ -189,6 +228,11 @@ def test_the_nightly_sweep_closes_what_nothing_else_would(db):
     archived_checkin = _stale_alert(db, archived, AlertKind.ARCHIVED_CHECKIN, timedelta(days=1))
     old_reconnect = _stale_alert(db, online, AlertKind.REPEATED_RECONNECTS, timedelta(days=90))
     live_disk = _stale_alert(db, online, AlertKind.LOW_DISK, timedelta(days=90))
+    off_overnight = Device(hostname="night", rustdesk_id="5", status=DeviceStatus.OFFLINE,
+                           last_seen=datetime.utcnow() - timedelta(hours=10))
+    db.add(off_overnight)
+    db.commit()
+    disk_overnight = _stale_alert(db, off_overnight, AlertKind.LOW_DISK, timedelta(days=3))
 
     reasons = {alert.id: reason for alert, reason in find_stale_alerts(db)}
     assert reasons == {
@@ -198,6 +242,6 @@ def test_the_nightly_sweep_closes_what_nothing_else_would(db):
     }
 
     assert resolve_stale_alerts(db) == 3
-    for kept in (offline_alert, archived_checkin, live_disk):
+    for kept in (offline_alert, archived_checkin, live_disk, disk_overnight):
         db.refresh(kept)
         assert kept.state == AlertState.OPEN

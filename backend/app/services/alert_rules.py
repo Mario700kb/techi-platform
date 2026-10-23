@@ -68,11 +68,13 @@ RECONNECT_THRESHOLD = 3
 
 # Alerts that describe live readings. When the device stops reporting they
 # describe nothing current, so they close instead of staying open forever.
+# Not a full disk (it is as full when the PC is switched on again: closing it
+# opened it again every morning, 111 of 154 in Oct 2026) nor dropped
+# connections (going offline is part of the problem); both close when the
+# device reports them over.
 STALE_WHEN_OFFLINE = (
     AlertKind.HIGH_CPU,
     AlertKind.HIGH_RAM,
-    AlertKind.LOW_DISK,
-    AlertKind.REPEATED_RECONNECTS,
     AlertKind.HEARTBEAT_STALE,
     AlertKind.TELEMETRY_MISSING,
     AlertKind.DISK_BUSY,
@@ -128,11 +130,16 @@ class EventGroupRule:
     pc_min_count: int | None = None
     # Escalates to critical on a server or at this many occurrences.
     critical_from: int | None = None
+    # False: on a PC it is a finding (the Findings view), not an alert.
+    pc_alert: bool = True
 
 
 EVENT_GROUPS: dict[str, EventGroupRule] = {
-    # Power lost or button held: one on a PC is not a problem, a pattern is.
-    "shutdown": EventGroupRule("shutdown", "Unexpected shutdown", 24, 1, None, pc_window_h=24 * 7, pc_min_count=2),
+    # Power lost or button held: one on a PC is not a problem, a pattern is,
+    # and one to fix on a plan (UPS, power strip, the user): 87 PCs had one
+    # open in Oct 2026, none of them an incident.
+    "shutdown": EventGroupRule("shutdown", "Unexpected shutdown", 24, 1, None, pc_window_h=24 * 7, pc_min_count=2,
+                               pc_alert=False),
     "bsod": EventGroupRule("bsod", "Blue screen", 24, 1, None, critical_from=2),
     "hardware": EventGroupRule("hardware", "Fatal hardware error", 24, 1, AlertSeverity.CRITICAL),
     "disk_bad": EventGroupRule("disk_bad", "Disk errors", 24, 1, AlertSeverity.CRITICAL),

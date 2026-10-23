@@ -676,8 +676,8 @@ class DeviceHeartbeatService:
         engine.evaluate_archived_checkin(device)
         engine.evaluate_rustdesk_sync(device)
         window_start = utcnow() - timedelta(seconds=RECONNECT_WINDOW_SECONDS)
-        count = DeviceStatusHistoryRepository(self.db).count_recent_online_transitions(device.id, since=window_start)
-        engine.evaluate_reconnect(device, count)
+        drops = DeviceStatusHistoryRepository(self.db).count_recent_connection_drops(device.id, since=window_start)
+        engine.evaluate_reconnect(device, drops)
 
     def _maybe_emit_rustdesk_repaired(self, device, previous_count: Optional[int]) -> None:
         current_count = device.rustdesk_repair_count or 0

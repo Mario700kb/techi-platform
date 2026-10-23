@@ -180,6 +180,10 @@ class PhysicalDisk(_Lenient):
         return _bounded_int(value, 0, 10**12)
 
     @property
+    def virtual(self) -> bool:
+        return (self.bus or "").lower() == "virtual" or "virtual" in self.name.lower()
+
+    @property
     def problem(self) -> Optional[str]:
         """Why this disk needs attention, or None."""
         if self.predict_failure:
@@ -188,6 +192,11 @@ class PhysicalDisk(_Lenient):
             return "Unhealthy"
         if self.health == "warning":
             return "Warning"
+        if self.virtual:
+            # A virtual disk's error and wear counters are the hypervisor's
+            # bookkeeping, not media: 52 of 70 disk alerts were "Virtual HD"
+            # error counts that came and went.
+            return None
         if self.read_errors or self.write_errors:
             total = (self.read_errors or 0) + (self.write_errors or 0)
             return f"{total} uncorrected error{'s' if total != 1 else ''}"
