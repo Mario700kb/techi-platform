@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -50,8 +50,7 @@ describe("AlertsMobile", () => {
     vi.restoreAllMocks();
   });
 
-  it("counts by severity, filters, and hides a dismissed alert until the undo window ends", () => {
-    vi.useFakeTimers();
+  it("counts by severity, filters, and resolves only with a reason", async () => {
     const resolve = vi.spyOn(alertsApi, "resolveAlert").mockResolvedValue(undefined as never);
     render(
       <MemoryRouter>
@@ -67,17 +66,23 @@ describe("AlertsMobile", () => {
     expect(screen.queryByText("Offline for 26 hours")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: /All/ }));
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Dismiss" })[0]);
-    expect(screen.queryByText("Disk C: above 90%")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Resolve" })[0]);
+    const confirm = within(screen.getByRole("dialog")).getByRole("button", { name: "Resolve" });
+    expect(confirm).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.getByText("Disk C: above 90%")).toBeInTheDocument();
     expect(resolve).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss all (2)" }));
-    act(() => {
-      vi.advanceTimersByTime(5000);
+    fireEvent.click(screen.getByRole("button", { name: "Resolve all (2)" }));
+    fireEvent.click(screen.getByLabelText(/False alarm/));
+    fireEvent.change(screen.getByPlaceholderText("Why nothing was wrong"), { target: { value: "backup window" } });
+    await act(async () => {
+      fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Resolve" }));
     });
-    expect(resolve).toHaveBeenCalledTimes(2);
+
+    expect(resolve).toHaveBeenCalledWith(1, "false_positive", "backup window");
+    expect(resolve).toHaveBeenCalledWith(2, "false_positive", "backup window");
+    expect(screen.queryByText("Disk C: above 90%")).not.toBeInTheDocument();
     expect(reloadAlerts).toHaveBeenCalled();
   });
 });

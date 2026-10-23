@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -15,9 +15,9 @@ import {
 } from "lucide-react";
 import AlertKindIcon from "../components/AlertKindIcon";
 import AlertDrawer from "../components/alerts/AlertDrawer";
-import { PriorityChip } from "../components/alerts/AlertControls";
+import { PriorityChip, ResolveModal } from "../components/alerts/AlertControls";
 import { useAppData } from "../contexts/AppDataContext";
-import { resolveAlert } from "../api/alerts";
+import { ManualResolution, resolveAlert } from "../api/alerts";
 import { Alert, ALERT_SEVERITY_TONE } from "../types/alert";
 import { describeAlert } from "../utils/alertText";
 import { parseUTC } from "../utils/time";
@@ -26,10 +26,9 @@ import { Button, EmptyState, PageHeader } from "../components/ui";
 
 /**
  * Alerts — Mobile UI 2.0 (docs/reference/MOBILE-DESIGN-SPEC.md — Alerts).
- * Grouped by device (not a flat "Device #93" list — audit finding), each
- * alert dismiss is undo-able for 5s (resolveAlert is only actually called
- * once the undo window elapses — there is no "reopen" endpoint, so undo
- * works by deferring the call rather than reversing it).
+ * Grouped by device (not a flat "Device #93" list — audit finding). Resolve
+ * asks why, as on desktop: a reason the Quality view can count, not a
+ * silent "fixed".
  */
 
 function timeAgo(iso: string): string {
@@ -73,11 +72,11 @@ interface DeviceLabel {
 
 function AlertItem({
   alert,
-  onDismiss,
+  onResolve,
   onOpen,
 }: {
   alert: Alert;
-  onDismiss: (id: number) => void;
+  onResolve: (id: number) => void;
   onOpen: (id: number) => void;
 }) {
   const color = ALERT_SEVERITY_TONE[alert.severity] ?? ALERT_SEVERITY_TONE.info;
@@ -108,9 +107,9 @@ function AlertItem({
               Details
             </button>
           )}
-          <button type="button" onClick={() => onDismiss(alert.id)} className="th-malert-dismiss">
+          <button type="button" onClick={() => onResolve(alert.id)} className="th-malert-dismiss">
             <Check className="h-3.5 w-3.5" />
-            Dismiss
+            Resolve
           </button>
         </div>
       </div>
@@ -122,16 +121,16 @@ function AlertGroup({
   deviceId,
   label,
   alerts,
-  onDismiss,
-  onDismissAll,
+  onResolve,
+  onResolveAll,
   onOpenDevice,
   onOpenAlert,
 }: {
   deviceId: number | null;
   label: DeviceLabel;
   alerts: Alert[];
-  onDismiss: (id: number) => void;
-  onDismissAll: (ids: number[]) => void;
+  onResolve: (id: number) => void;
+  onResolveAll: (ids: number[]) => void;
   onOpenDevice: (deviceId: number) => void;
   onOpenAlert: (id: number) => void;
 }) {
@@ -170,12 +169,12 @@ function AlertGroup({
         </button>
       </div>
       {alerts.map((a) => (
-        <AlertItem key={a.id} alert={a} onDismiss={onDismiss} onOpen={onOpenAlert} />
+        <AlertItem key={a.id} alert={a} onResolve={onResolve} onOpen={onOpenAlert} />
       ))}
       {alerts.length > 1 && (
-        <button type="button" onClick={() => onDismissAll(alerts.map((a) => a.id))} className="th-malert-all">
+        <button type="button" onClick={() => onResolveAll(alerts.map((a) => a.id))} className="th-malert-all">
           <CheckCheck className="h-4 w-4" />
-          Dismiss all ({alerts.length})
+          Resolve all ({alerts.length})
         </button>
       )}
     </section>
@@ -189,59 +188,22 @@ export default function AlertsMobile() {
   const [activeFilter, setActiveFilter] = useState<FilterId>("all");
   const [hiddenIds, setHiddenIds] = useState<Set<number>>(new Set());
   const [snackMessage, setSnackMessage] = useState<string | null>(null);
-
-  const pendingRef = useRef<{ ids: number[]; timer: number } | null>(null);
+  const [resolving, setResolving] = useState<number[] | null>(null);
 
   const filtered = useMemo(
     () => applyFilter(alerts, activeFilter).filter((a) => !hiddenIds.has(a.id)),
     [alerts, activeFilter, hiddenIds],
   );
 
-  const flushPending = () => {
-    const pending = pendingRef.current;
-    if (!pending) return;
-    window.clearTimeout(pending.timer);
-    pendingRef.current = null;
-    for (const id of pending.ids) void resolveAlert(id).catch(() => undefined);
-    reloadAlerts();
-  };
-
-  const dismissIds = (ids: number[]) => {
-    // A new dismiss commits any prior pending one immediately.
-    flushPending();
+  const resolveIds = async (ids: number[], resolution: ManualResolution, note: string) => {
+    await Promise.all(ids.map((id) => resolveAlert(id, resolution, note).catch(() => undefined)));
     setHiddenIds((prev) => new Set([...prev, ...ids]));
-    const timer = window.setTimeout(() => {
-      pendingRef.current = null;
-      for (const id of ids) void resolveAlert(id).catch(() => undefined);
-      reloadAlerts();
-    }, 5000);
-    pendingRef.current = { ids, timer };
-    setSnackMessage(ids.length > 1 ? `${ids.length} alerts dismissed` : "Alert dismissed");
-  };
-
-  const handleUndo = () => {
-    const pending = pendingRef.current;
-    if (!pending) return;
-    window.clearTimeout(pending.timer);
-    pendingRef.current = null;
-    setHiddenIds((prev) => {
-      const next = new Set(prev);
-      for (const id of pending.ids) next.delete(id);
-      return next;
-    });
-    setSnackMessage(null);
-  };
-
-  const handleReload = async () => {
-    flushPending();
+    setResolving(null);
+    setSnackMessage(ids.length > 1 ? `${ids.length} alerts resolved` : "Alert resolved");
     reloadAlerts();
   };
 
-  // Commit any pending dismissal if the user navigates away. Through a ref,
-  // so the unmount cleanup runs the latest flushPending, not the first one.
-  const flushRef = useRef(flushPending);
-  flushRef.current = flushPending;
-  useEffect(() => () => flushRef.current(), []);
+  const handleReload = () => reloadAlerts();
 
   const groups = useMemo(() => {
     const byDevice = new Map<number | "token", Alert[]>();
@@ -384,8 +346,8 @@ export default function AlertsMobile() {
                 : { name: "Enrollment tokens", client: null }
             }
             alerts={groupAlerts}
-            onDismiss={(id) => dismissIds([id])}
-            onDismissAll={dismissIds}
+            onResolve={(id) => setResolving([id])}
+            onResolveAll={setResolving}
             onOpenDevice={(id) => navigate(`/devices/${id}`)}
             onOpenAlert={setOpenAlertId}
           />
@@ -405,13 +367,15 @@ export default function AlertsMobile() {
 
       <AlertDrawer alertId={openAlertId} onClose={() => setOpenAlertId(null)} onChanged={reloadAlerts} />
 
-      <Snackbar
-        open={snackMessage !== null}
-        message={snackMessage ?? ""}
-        actionLabel="Undo"
-        onAction={handleUndo}
-        onClose={() => setSnackMessage(null)}
-      />
+      {resolving && (
+        <ResolveModal
+          count={resolving.length}
+          onClose={() => setResolving(null)}
+          onResolve={(resolution, note) => resolveIds(resolving, resolution, note)}
+        />
+      )}
+
+      <Snackbar open={snackMessage !== null} message={snackMessage ?? ""} onClose={() => setSnackMessage(null)} />
     </div>
   );
 }

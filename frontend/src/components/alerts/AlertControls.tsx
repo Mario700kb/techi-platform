@@ -175,19 +175,31 @@ export function SnoozeMenu({
   );
 }
 
-const RESOLUTIONS: { id: ManualResolution; label: string; hint: string }[] = [
-  { id: "fixed", label: "Fixed", hint: "The cause was found and fixed. If it comes back, it reopens counted." },
+const RESOLUTIONS: { id: ManualResolution; label: string; hint: string; note: string }[] = [
+  {
+    id: "fixed",
+    label: "Fixed",
+    hint: "The cause was found and fixed. If it comes back, it reopens counted.",
+    note: "What fixed it",
+  },
   {
     id: "false_positive",
     label: "False alarm",
     hint: "Nothing was wrong. Stays closed for a day; add a mute rule if the rule is wrong.",
+    note: "Why nothing was wrong",
   },
   {
     id: "expected",
     label: "Expected",
     hint: "Known and accepted (planned work, a busy server). Stays closed for a day.",
+    note: "What it was",
   },
-  { id: "duplicate", label: "Duplicate", hint: "Another alert covers the same problem." },
+  {
+    id: "duplicate",
+    label: "Duplicate",
+    hint: "Another alert covers the same problem.",
+    note: "Which alert covers it",
+  },
 ];
 
 export function ResolveModal({
@@ -199,7 +211,9 @@ export function ResolveModal({
   onClose: () => void;
   onResolve: (resolution: ManualResolution, note: string) => Promise<void> | void;
 }) {
-  const [resolution, setResolution] = useState<ManualResolution>("fixed");
+  // No reason is chosen for the operator: a preselected "Fixed" was what
+  // every resolve said, and the Quality view could not tell noise from work.
+  const [resolution, setResolution] = useState<ManualResolution | null>(null);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   return (
@@ -216,6 +230,7 @@ export function ResolveModal({
           </Button>
           <Button
             onClick={async () => {
+              if (!resolution) return;
               setBusy(true);
               try {
                 await onResolve(resolution, note);
@@ -223,7 +238,7 @@ export function ResolveModal({
                 setBusy(false);
               }
             }}
-            disabled={busy}
+            disabled={busy || !resolution}
           >
             {busy ? "Resolving…" : "Resolve"}
           </Button>
@@ -256,7 +271,7 @@ export function ResolveModal({
           maxLength={1000}
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          placeholder="What was done"
+          placeholder={RESOLUTIONS.find((r) => r.id === resolution)?.note ?? "What was done"}
         />
       </label>
     </Modal>
