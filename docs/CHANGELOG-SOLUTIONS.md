@@ -5,6 +5,35 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-23] ALERT-NOISE-2-2026-10-23 — Sleep, nights off, virtual disks and PC power cuts stop alerting (`0c1a9cd`)
+
+**Backend ready 16:03:00, frontend 16:05 (Tirana).**
+- Per-rule analysis of 3437 alert openings (19–23 Oct), after ALERT-NOISE:
+  - `repeated_reconnects` (458 openings, 17 devices): 1370 of 1487 drops
+    behind them were the agent saying it went to sleep ("Director": 482
+    sleeps a day). Only drops the agent did not announce count now.
+  - `low_disk` (179): 111 of 154 closed when the PC went offline and reopened
+    in the morning. A full disk stays one alert overnight; the nightly sweep
+    closes it after `OFFLINE_ALERT_ABSENT_DAYS` (7) away.
+  - `disk_health` (70): 52 were "Virtual HD" error counters. A virtual disk's
+    error and wear counters are no longer a problem; SMART failure and
+    Unhealthy still are.
+  - `evt:shutdown` on PCs (87 alerts, ~110 openings): now a finding
+    ("Unexpected shutdowns" in Findings); servers still alert. Open PC alerts
+    close with each PC's next health report.
+  - "Offline during working hours" (50 of 317): not for a workstation whose
+    agent reported sleep, hibernate or shutdown; "not seen for 7 days" stays.
+    After the deploy, the 15 open "offline during working hours" alerts of
+    workstations that had reported sleep or shutdown were closed
+    (`offline_policy`), with the owner's OK; others left as they were.
+    One was SRV-FIER, a server classified as a workstation.
+- Not changed: `no_antivirus` right after boot (33) needs the agent to read
+  the posture again 15 minutes after start; left as a proposal.
+- Dump `/opt/backups/techi/pre-alert-noise-2-20261023-155512.sql.gz`
+  (191 MB, `gzip -t` OK); rollback `techi-platform-{backend,frontend}:pre-alert-noise-2-e515405`;
+  no migration. Both images built before the restart; backend ready 12 s after
+  start, 0 tracebacks; `nginx -t`, guard and smoke passed. Disk 2.0 GB free (92%).
+
 ## [2026-10-23] ALERT-NOISE-2026-10-23 — No alerts for a PC waking up; resolving asks why (`e515405`)
 
 **Backend ready 15:35:45, frontend 15:38 (Tirana).**
