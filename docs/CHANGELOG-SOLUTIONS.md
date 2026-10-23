@@ -5,6 +5,46 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-23] ALERT-SLA-2026-10-23 — Every alert has an owner, a deadline and an escalation path (`44a3ca1`)
+
+**Migration 20:25, backend ready 20:26:15, frontend 20:27:58 (Tirana).**
+- Why: 19–23 Oct, 3437 alert openings, 3 taken by an operator, 0 notes. The
+  structure (doc "Ndjekja e alerteve TECHI") gives each alert a pronar, an
+  afat and a shkallë përshkallëzimi.
+- Deadlines stamped once at open/reopen (`alert_sla.py`): P1 take 15 min /
+  fix 4 h, P2 1 h / 8 h, P3 1 / 3 working days, P4 10 working days; working
+  hours (Mon–Fri 08:00–17:00 Tirana), every hour for a P1 on a server.
+- Escalation in a 60 s sweep that reads only open alerts whose
+  `next_check_at` passed (partial index, Index Scan verified): ½ time to
+  take unowned → the dispatcher of the day; not taken → dispatcher and
+  stand-in; ½ time to fix with no note / PowerShell / script / Remote
+  Support session → owner; deadline missed → manager. P3/P4 are only
+  marked. The 30-minute P1 reminder in the monitor sweep is gone.
+- Waiting on the client, a vendor, a part or a maintenance window stops
+  the clock; the time waited moves the deadlines. Same problem on 3+
+  devices of a client within 15 min = one incident (followers take the
+  lead's owner, close with it). Back 5× in 7 days or after "fixed" =
+  recurring: "fixed" then needs the root cause (10+ characters).
+- UI: Overdue tab/card, deadline line per alert, Duty tab (roster and
+  deadline table), Handover (copy as text; also sent 16:45 as
+  `alert_handover`), drawer Give to / Waiting on… / Resume / incident,
+  deadline metrics in Quality (MTTA/MTTR in clock minutes, taken/fixed in
+  time, P1–P2 owned, fixes that did not hold, by person).
+- After the deploy the first sweep (20:28:11) started the clock of the 163
+  open alerts (13 P1, all servers, 24/7; 54 P2; 96 P3), 0 escalated at
+  once. No dispatcher shift and no notification channel exist yet: steps
+  are recorded in the alert history but reach no one outside the app.
+- Migration `x2y3z4a5b6c7` alone with `PGOPTIONS='-c lock_timeout=5000'`,
+  first attempt; tested up/down/up on a local PostgreSQL before. Dump
+  `/opt/backups/techi/pre-alert-sla-20261023-195631.sql.gz` (199 MB,
+  `gzip -t` OK); rollback `techi-platform-{backend,frontend}:pre-alert-sla-0c1a9cd`
+  (backend needs `alembic downgrade w1x2y3z4a5b6` first). Both images built
+  before the restart (load peak 2.8); fleet reconnect 352 + 148 devices in
+  the first two minutes, load 4.1 → 1.2; 0 tracebacks; `nginx -t`, guard
+  and smoke passed. Pytest 1765, Vitest 450, new e2e `alert-deadlines`.
+  `client-profile.spec.ts:77` fails on the previous code too. Disk 1.6 GB
+  free (94%).
+
 ## [2026-10-23] ALERT-NOISE-2-2026-10-23 — Sleep, nights off, virtual disks and PC power cuts stop alerting (`0c1a9cd`)
 
 **Backend ready 16:03:00, frontend 16:05 (Tirana).**
