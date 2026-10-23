@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 import { fetchText } from "../api/client";
 import { Client, DeviceGroup, getClients, getGroups } from "../api/clients";
-import { AgentPackage, getLatestPackage } from "../api/agentPackages";
+import { AgentPackage, getAgentPackages, getLatestPackage } from "../api/agentPackages";
 import {
   CreateTokenResponse,
   EnrollmentToken,
@@ -224,15 +224,18 @@ function fetchWindowsPackage(): Promise<AgentPackage | null> {
 }
 
 // One package per architecture: the installer refuses an architecture
-// without one, so the card shows every version and every gap.
+// without one, so the card shows every version and every gap. One list
+// request instead of a /latest per architecture, which answers 404 for a gap.
 function fetchLinuxPackages(): Promise<LinuxPackage[]> {
-  return Promise.all(
-    LINUX_ARCHES.map((arch) =>
-      getLatestPackage(arch)
-        .then((pkg) => ({ arch, pkg }))
-        .catch(() => ({ arch, pkg: null })),
-    ),
-  );
+  return getAgentPackages()
+    .catch(() => [] as AgentPackage[])
+    .then((packages) =>
+      LINUX_ARCHES.map((arch) => ({
+        arch,
+        pkg:
+          packages.find((p) => p.platform === arch && p.file_type === "agent_binary" && p.is_active) ?? null,
+      })),
+    );
 }
 
 function fetchRustDeskConfig(): Promise<RustDeskConfig | null> {
