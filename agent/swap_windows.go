@@ -285,9 +285,10 @@ func killAgentProcesses(targetExe string) {
 
 // serviceDeleteWait bounds the wait for a TechiAgent service that the SCM
 // has marked for deletion (an MSI upgrade removed the old product while
-// something still held a handle to it). Starting or recreating it fails with
-// ERROR_SERVICE_MARKED_FOR_DELETE until the last handle closes; the MSI used
-// to give up at once with 1920 and roll back with 1603.
+// something still held a handle to it). Until the last handle closes,
+// configuring it fails with ERROR_SERVICE_MARKED_FOR_DELETE and starting it
+// fails with ERROR_SERVICE_DISABLED (seen in CI run 40112328325); the MSI
+// used to give up at once with 1920 and roll back with 1603.
 const serviceDeleteWait = 2 * time.Minute
 
 // ensureAgentServiceRunning recreates the TechiAgent service if it is
@@ -296,12 +297,16 @@ const serviceDeleteWait = 2 * time.Minute
 // recreated.
 func ensureAgentServiceRunning(m *mgr.Mgr, targetExe string) error {
 	deadline := time.Now().Add(serviceDeleteWait)
+	logged := false
 	for {
 		err := startAgentServiceOnce(m, targetExe)
 		if err == nil || !errors.Is(err, windows.ERROR_SERVICE_MARKED_FOR_DELETE) || time.Now().After(deadline) {
 			return err
 		}
-		writeDeployLog("[self_update]", "service marked for deletion; waiting for the SCM to release it")
+		if !logged {
+			writeDeployLog("[self_update]", "service marked for deletion; waiting for the SCM to release it")
+			logged = true
+		}
 		// An old service process that never finished stopping keeps it alive.
 		killAgentProcesses(targetExe)
 		time.Sleep(3 * time.Second)
@@ -329,6 +334,10 @@ func startAgentServiceOnce(m *mgr.Mgr, targetExe string) error {
 		{Type: mgr.ServiceRestart, Delay: 5 * time.Minute},
 	}
 	if err := service.SetRecoveryActions(recoveryActions, 86400); err != nil {
+		// The reliable sign of a pending delete: Start reports it as "disabled".
+		if errors.Is(err, windows.ERROR_SERVICE_MARKED_FOR_DELETE) {
+			return fmt.Errorf("service recovery actions: %w", err)
+		}
 		writeDeployLog("[self_update]", "warning: recovery actions not applied: "+err.Error())
 	}
 

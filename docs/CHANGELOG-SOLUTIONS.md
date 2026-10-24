@@ -43,6 +43,13 @@ byte-identical to `HEAD` on amd64, arm64 and armhf (`-buildvcs=false`).
   backup and new exe, nothing brought back after uninstall, upgrade while a
   service handle is held). Windows build and test compile verified locally in
   Docker; the Windows tests and MSI scenarios run only in CI.
+- First CI run (40112328325): build, Go tests on Windows and MSI scenarios 1–7
+  passed; scenario 8 reproduced the field failure — upgrade exit 1603, rolled
+  back to 2.1.20 with the agent still running. While the delete is pending,
+  `StartService` answers ERROR_SERVICE_DISABLED (1058), not 1072, so the wait
+  never started; only `ChangeServiceConfig2` (recovery actions) reports
+  ERROR_SERVICE_MARKED_FOR_DELETE. The wait now keys on that, and scenario 8
+  requires the wait to be logged.
 - `agent/VERSION` 2.1.40. Release plan: CI build, upload and activate
   (changes no PC), then `self_update` on 12, 924, 781, 985 and 24 h of
   observation before any wave; Adpascucci excluded until its deploy.log is read.

@@ -308,7 +308,7 @@ Check (Wait-ServiceRunning 'TechiAgent' 90) 'TechiAgent service running after th
 Check ((Get-InstalledVersion) -eq $ExpectedVersion) "upgraded version is $ExpectedVersion (got '$(Get-InstalledVersion)')"
 $new = @(Get-DeployLogLines | Select-Object -Skip $before.Count)
 $waited = @($new | Where-Object { $_ -like '*service marked for deletion*' }).Count
-Write-Host "  info  EnsureServiceCreated waited for a pending delete $waited time(s)"
+Check ($waited -gt 0) 'EnsureServiceCreated met the pending delete and waited it out (the scenario reproduced the field 1603)'
 Stop-Process -Id $svcHolder.Id -Force -ErrorAction SilentlyContinue
 
 Copy-Item $DeployLog $LogDir -ErrorAction SilentlyContinue
