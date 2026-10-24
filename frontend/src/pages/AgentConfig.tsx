@@ -57,8 +57,35 @@ function intervalsFrom(cfg: AgentConfig) {
   };
 }
 
+/** Inventory parts the platform turns on or off per platform (agents from 2.1.42 / 2.1.45). */
+const COLLECT_PARTS = [
+  ["software", "Software"],
+  ["services", "Services"],
+  ["processes", "Processes"],
+] as const;
+type CollectPart = (typeof COLLECT_PARTS)[number][0];
+const collectKey = (part: CollectPart, platform: string) => `${part}.${platform}`;
+
+/** Every part × platform switch, keyed "software.windows". */
 function softwareFrom(cfg: AgentConfig): Record<string, boolean> {
-  return Object.fromEntries(SOFTWARE_ROWS.map(([id]) => [id, cfg.platform_collect_software?.[id] ?? true]));
+  const maps: Record<CollectPart, Record<string, boolean> | undefined> = {
+    software: cfg.platform_collect_software,
+    services: cfg.platform_collect_services,
+    processes: cfg.platform_collect_processes,
+  };
+  return Object.fromEntries(
+    COLLECT_PARTS.flatMap(([part]) => SOFTWARE_ROWS.map(([id]) => [collectKey(part, id), maps[part]?.[id] ?? true])),
+  );
+}
+
+function collectBody(inputs: Record<string, boolean>) {
+  const map = (part: CollectPart) =>
+    Object.fromEntries(SOFTWARE_ROWS.map(([id]) => [id, inputs[collectKey(part, id)] ?? true]));
+  return {
+    platform_collect_software: map("software"),
+    platform_collect_services: map("services"),
+    platform_collect_processes: map("processes"),
+  };
 }
 
 function keepEdits(current: Record<string, string>, seeded: Record<string, string>, next: Record<string, string>) {
@@ -112,9 +139,9 @@ export default function AgentConfigPage() {
       const nextSoftware = softwareFrom(config);
       setSoftwareInputs(
         Object.fromEntries(
-          SOFTWARE_ROWS.map(([id]) => [
-            id,
-            softwareInputs[id] === seededSoftware[id] ? nextSoftware[id] : softwareInputs[id],
+          Object.keys(nextSoftware).map((key) => [
+            key,
+            softwareInputs[key] === seededSoftware[key] ? nextSoftware[key] : softwareInputs[key],
           ]),
         ),
       );
@@ -162,7 +189,7 @@ export default function AgentConfigPage() {
     );
   const remoteDirty = config !== null && managedPasswordEnabled !== config.remote_support_managed_password_enabled;
   const softwareDirty =
-    config !== null && SOFTWARE_ROWS.some(([id]) => softwareInputs[id] !== softwareFrom(config)[id]);
+    config !== null && Object.entries(softwareFrom(config)).some(([key, value]) => softwareInputs[key] !== value);
 
   const savePolicy = () => {
     if (problems.length) return;
@@ -196,10 +223,10 @@ export default function AgentConfigPage() {
   const saveSoftware = () =>
     void softwareState.run(
       async () => {
-        apply(await putAgentConfig({ platform_collect_software: softwareInputs }));
+        apply(await putAgentConfig(collectBody(softwareInputs)));
       },
-      "Saved; agents from 2.1.42 pick it up on their next heartbeat",
-      "Failed to save the software collection setting",
+      "Saved; agents pick it up on their next heartbeat",
+      "Failed to save the inventory collection setting",
     );
 
   async function copyScript(seconds: number, target: CopyTarget) {
@@ -454,38 +481,58 @@ export default function AgentConfigPage() {
             />
           </div>
 
-          {/* ── installed software ─────────────────────────────────────── */}
+          {/* ── inventory collection ───────────────────────────────────── */}
           <div className="th-onb-card th-onb-enter" style={{ "--i": 6 } as CSSProperties}>
             <CardHead
               icon={Package}
               tone={TONE.info}
-              title="Installed software"
-              subtitle="The software list on each device, and its Uninstall"
+              title="Inventory collection"
+              subtitle="The device page's lists, and the actions that work from them"
             />
-            <div className="th-onb-body flex-1 space-y-3">
-              {SOFTWARE_ROWS.map(([id, label]) => (
-                <div key={id} className="flex items-start justify-between gap-4">
-                  <span>
-                    <span className="block text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>
-                      Collect on {label}
-                    </span>
-                    <span className="mt-0.5 block text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-                      Read once an hour from the device. Agents before 2.1.42 keep their own setting.
-                    </span>
-                  </span>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={softwareInputs[id] ?? true}
-                    aria-label={`Collect installed software on ${label}`}
-                    className="th-onb-switch mt-0.5 flex-none"
-                    disabled={loading}
-                    onClick={() => setSoftwareInputs((prev) => ({ ...prev, [id]: !(prev[id] ?? true) }))}
-                  >
-                    <i />
-                  </button>
-                </div>
-              ))}
+            <div className="th-onb-body flex-1">
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr style={{ color: "var(--th-text-muted)" }}>
+                    <th className="pb-2 text-left text-[12px] font-medium">Platform</th>
+                    {COLLECT_PARTS.map(([part, label]) => (
+                      <th key={part} className="pb-2 text-center text-[12px] font-medium">
+                        {label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {SOFTWARE_ROWS.map(([id, label]) => (
+                    <tr key={id}>
+                      <td className="py-1.5 font-medium" style={{ color: "var(--th-text-primary)" }}>
+                        {label}
+                      </td>
+                      {COLLECT_PARTS.map(([part, partLabel]) => {
+                        const key = collectKey(part, id);
+                        return (
+                          <td key={part} className="py-1.5 text-center">
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={softwareInputs[key] ?? true}
+                              aria-label={`Collect ${partLabel.toLowerCase()} on ${label}`}
+                              className="th-onb-switch"
+                              disabled={loading}
+                              onClick={() => setSoftwareInputs((prev) => ({ ...prev, [key]: !(prev[key] ?? true) }))}
+                            >
+                              <i />
+                            </button>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="th-onb-hint mt-2">
+                Software and services are read once an hour, processes every 15 minutes. Agents before 2.1.45 keep their
+                own setting for services and processes (before 2.1.42, for software too).
+              </p>
             </div>
             <SaveFooter
               dirty={softwareDirty}

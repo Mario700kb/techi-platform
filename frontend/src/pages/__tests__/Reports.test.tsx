@@ -177,7 +177,9 @@ describe("Client reports: catalog and preview", () => {
       "lifecycle",
       "security_posture",
     ]);
-    expect(cards[0]).toHaveAttribute("aria-pressed", "true");
+    // The first report is chosen once the page's data has arrived: wait for it
+    // (a slow CI runner checked before that and failed now and then).
+    await waitFor(() => expect(within(grid).getAllByRole("button")[0]).toHaveAttribute("aria-pressed", "true"));
     expect(cards[3]).toHaveTextContent("Needs agent 2.1.31");
 
     expect(await screen.findByRole("heading", { name: "Executive summary" })).toBeInTheDocument();

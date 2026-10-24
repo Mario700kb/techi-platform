@@ -9,6 +9,9 @@ export interface AgentConfig {
   remote_support_managed_password_enabled: boolean;
   /** Whether agents collect installed software, per platform (agent 2.1.42). */
   platform_collect_software?: Record<string, boolean>;
+  /** Services and processes the same way (agent 2.1.45). */
+  platform_collect_services?: Record<string, boolean>;
+  platform_collect_processes?: Record<string, boolean>;
   /** Capacity context and the limits the PUT enforces. */
   active_device_count: number;
   projected_requests_per_second: number;
@@ -23,6 +26,8 @@ export interface AgentConfigUpdate {
   platform_inventory_intervals?: Record<string, number>;
   remote_support_managed_password_enabled?: boolean;
   platform_collect_software?: Record<string, boolean>;
+  platform_collect_services?: Record<string, boolean>;
+  platform_collect_processes?: Record<string, boolean>;
 }
 
 export async function getAgentConfig(): Promise<AgentConfig> {

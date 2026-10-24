@@ -58,25 +58,28 @@ describe("AgentConfig", () => {
     ).toBeNull();
   });
 
-  it("turns installed-software collection off for one platform and saves only that", async () => {
+  it("turns one inventory part off for one platform and saves the whole table", async () => {
     vi.spyOn(configApi, "getAgentConfig").mockResolvedValue({
       ...CONFIG,
       platform_collect_software: { windows: true, linux: true, macos: true },
+      platform_collect_services: { windows: true, linux: true, macos: true },
+      platform_collect_processes: { windows: true, linux: true, macos: true },
     });
-    const put = vi.spyOn(configApi, "putAgentConfig").mockResolvedValue({
-      ...CONFIG,
-      platform_collect_software: { windows: true, linux: false, macos: true },
-    });
+    const put = vi.spyOn(configApi, "putAgentConfig").mockResolvedValue(CONFIG);
     vi.spyOn(commandsApi, "getCommandHistory").mockResolvedValue([]);
     vi.spyOn(clientsApi, "getClients").mockResolvedValue([]);
     render(<AgentConfigPage />);
 
-    const linux = await screen.findByRole("switch", { name: "Collect installed software on Linux" });
-    expect(linux).toHaveAttribute("aria-checked", "true");
-    fireEvent.click(linux);
-    expect(linux).toHaveAttribute("aria-checked", "false");
-    const card = linux.closest(".th-onb-card") as HTMLElement;
+    const linuxProcesses = await screen.findByRole("switch", { name: "Collect processes on Linux" });
+    expect(linuxProcesses).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(linuxProcesses);
+    expect(linuxProcesses).toHaveAttribute("aria-checked", "false");
+    const card = linuxProcesses.closest(".th-onb-card") as HTMLElement;
     fireEvent.click(within(card).getByRole("button", { name: "Save" }));
-    expect(put).toHaveBeenCalledWith({ platform_collect_software: { windows: true, linux: false, macos: true } });
+    expect(put).toHaveBeenCalledWith({
+      platform_collect_software: { windows: true, linux: true, macos: true },
+      platform_collect_services: { windows: true, linux: true, macos: true },
+      platform_collect_processes: { windows: true, linux: false, macos: true },
+    });
   });
 });
