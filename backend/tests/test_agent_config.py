@@ -326,3 +326,15 @@ class TestCollectSoftware:
 
     def test_only_admins_change_it(self):
         assert _make_client("operator").put("/agent-config", json={"platform_collect_software": {"windows": False}}).status_code == 403
+
+    def test_services_and_processes_are_set_the_same_way(self):
+        client = _make_client("admin")
+        body = client.get("/agent-config").json()
+        assert body["platform_collect_services"] == {"windows": True, "linux": True, "macos": True}
+        assert body["platform_collect_processes"] == {"windows": True, "linux": True, "macos": True}
+        r = client.put("/agent-config", json={"platform_collect_processes": {"windows": False}})
+        assert r.status_code == 200, r.text
+        assert svc.get_collect("processes", "windows") is False
+        assert svc.get_collect("services", "windows") is True
+        assert svc.get_collect("software", "windows") is True
+        assert client.put("/agent-config", json={"platform_collect_services": {"windows": 1}}).status_code == 422

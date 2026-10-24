@@ -40,6 +40,9 @@ class AgentConfigResponse(BaseModel):
     platform_inventory_intervals: Dict[str, int]
     # Whether agents collect installed software, per platform (agent 2.1.42).
     platform_collect_software: Dict[str, bool] = {}
+    # Services and processes the same way (agent 2.1.45).
+    platform_collect_services: Dict[str, bool] = {}
+    platform_collect_processes: Dict[str, bool] = {}
     online_threshold_minutes: int
     stale_threshold_minutes: int
     remote_support_managed_password_enabled: bool
@@ -75,6 +78,14 @@ class AgentConfigUpdate(BaseModel):
     platform_collect_software: Optional[Dict[str, StrictBool]] = Field(
         None,
         description="Per-platform: whether agents collect installed software",
+    )
+    platform_collect_services: Optional[Dict[str, StrictBool]] = Field(
+        None,
+        description="Per-platform: whether agents collect services",
+    )
+    platform_collect_processes: Optional[Dict[str, StrictBool]] = Field(
+        None,
+        description="Per-platform: whether agents collect processes",
     )
 
 
@@ -194,6 +205,8 @@ def put_agent_config(
             platform_inventory_intervals=body.platform_inventory_intervals,
             remote_support_managed_password_enabled=body.remote_support_managed_password_enabled,
             platform_collect_software=body.platform_collect_software,
+            platform_collect_services=body.platform_collect_services,
+            platform_collect_processes=body.platform_collect_processes,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))

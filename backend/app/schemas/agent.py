@@ -136,6 +136,9 @@ class AgentHeartbeatResponse(BaseModel):
     monitoring_policy: Optional[dict] = None
     # Whether to collect installed software (Agent config; agents >= 2.1.42).
     collect_software: Optional[bool] = None
+    # Services and processes the same way (agents >= 2.1.45).
+    collect_services: Optional[bool] = None
+    collect_processes: Optional[bool] = None
 
 
 class AgentPowerEventPayload(BaseModel):
