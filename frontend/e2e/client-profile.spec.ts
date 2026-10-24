@@ -82,10 +82,11 @@ test("a client's device connects from its row and opens the drawer in place", as
 
   const row = page.locator("tr.th-cp-row", { hasText: "NW-RECEPTION-01" });
   await expect(row.getByRole("button", { name: "Connect to NW-RECEPTION-01" })).toBeEnabled();
-  // Offline devices keep the button but cannot connect.
+  // Offline devices can still be connected to (9ae7796): Remote Support may
+  // reach a PC the platform has not heard from.
   await expect(
     page.locator("tr.th-cp-row", { hasText: "BH-WH-SCANNER" }).getByRole("button", { name: /Connect to/ }),
-  ).toBeDisabled();
+  ).toBeEnabled();
   await page.screenshot({ path: test.info().outputPath("profile-devices.png") });
 
   await row.locator("td").first().click();
