@@ -18,6 +18,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -28,6 +29,7 @@ import (
 	"time"
 
 	gopsprocess "github.com/shirou/gopsutil/v3/process"
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
 )
@@ -78,11 +80,12 @@ func runBinarySwapCommand(args []string) int {
 	taskName := fs.String("swap-task", "", "one-shot scheduled task name to delete when done")
 	apiURL := fs.String("swap-api-url", "", "api url used only when creating a fresh config")
 	enrollmentToken := fs.String("swap-enrollment-token", "", "enrollment token used only when no config exists")
+	confirmWindow := fs.Duration("swap-confirm-window", swapConfirmWindow, "how long to watch the new agent before keeping it unconfirmed")
 	if err := fs.Parse(args); err != nil {
 		return 1
 	}
 
-	err := performBinarySwap(*target, *apiURL, *enrollmentToken)
+	err := performBinarySwap(*target, *apiURL, *enrollmentToken, *confirmWindow)
 	if *taskName != "" {
 		deleteScheduledTask(*taskName)
 	}
@@ -94,9 +97,10 @@ func runBinarySwapCommand(args []string) int {
 }
 
 // performBinarySwap replaces targetExe with the currently running executable:
-// stop service -> backup -> copy self over target -> start service, with
-// rollback to the backup if the service does not come back.
-func performBinarySwap(targetExe string, apiURL string, enrollmentToken string) error {
+// stop service -> backup -> copy self over target -> start service -> watch
+// the new agent (swap_guard_windows.go). It rolls back to the backup only on
+// a definite failure, and keeps the backup in every case.
+func performBinarySwap(targetExe string, apiURL string, enrollmentToken string, confirmWindow time.Duration) error {
 	self, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("cannot resolve own path: %w", err)
@@ -116,51 +120,109 @@ func performBinarySwap(targetExe string, apiURL string, enrollmentToken string) 
 	}
 	defer m.Disconnect()
 
+	// A second self_update inside the confirm window would race the first
+	// swap's rollback and clear its marker.
+	if swapInProgress() {
+		return fmt.Errorf("another swap is in progress; try again later")
+	}
+	writeSwapMarker()
+	defer clearSwapMarker()
+
 	if err := stopAgentServiceAndProcesses(m, targetExe); err != nil {
 		return err
 	}
 
 	backup := filepath.Join(filepath.Dir(targetExe), agentBackupExeName)
 	if _, err := os.Stat(targetExe); err == nil {
-		if err := copyFileSync(targetExe, backup); err != nil {
+		if err := copyFileWithRetry(targetExe, backup, "[self_update]"); err != nil {
+			// The old exe is untouched; bring its service back before giving up.
+			if serr := ensureAgentServiceRunning(m, targetExe); serr != nil {
+				writeDeployLog("[self_update]", "restart after failed backup: "+serr.Error())
+			}
 			return fmt.Errorf("backup failed: %w", err)
 		}
 		writeDeployLog("[self_update]", "backup written path="+backup)
+	} else {
+		writeDeployLog("[self_update]", "no exe at target before swap; nothing to back up")
 	}
 
-	if err := copyFileSync(self, targetExe); err != nil {
-		rollbackBinarySwap(m, backup, targetExe)
+	if err := copyFileWithRetry(self, targetExe, "[self_update]"); err != nil {
+		rollbackBinarySwap(m, backup, targetExe, self)
 		return fmt.Errorf("install new exe failed: %w", err)
 	}
+	installedAt := time.Now()
 	writeDeployLog("[self_update]", fmt.Sprintf("installed: %s -> %s", self, targetExe))
 
 	if err := ensureAgentServiceRunning(m, targetExe); err != nil {
 		writeDeployLog("[self_update]", "service failed after swap: "+err.Error())
-		rollbackBinarySwap(m, backup, targetExe)
+		rollbackBinarySwap(m, backup, targetExe, self)
 		return fmt.Errorf("service not running after swap: %w", err)
 	}
 
-	_ = os.Remove(backup)
-	writeDeployLog("[self_update]", "complete: binary swap succeeded")
+	verdict, reason := watchNewAgent(m, targetExe, installedAt, confirmWindow)
+	switch verdict {
+	case swapConfirmed:
+		writeDeployLog("[self_update]", "complete: "+reason+"; previous exe kept at "+backup)
+	case swapUnconfirmed:
+		writeDeployLog("[self_update]", fmt.Sprintf("complete, not confirmed within %s (%s); keeping the new version and the backup", confirmWindow, reason))
+	default:
+		writeDeployLog("[self_update]", "new agent failed: "+reason)
+		rollbackBinarySwap(m, backup, targetExe, self)
+		return fmt.Errorf("new agent failed: %s", reason)
+	}
 	return nil
 }
 
-func rollbackBinarySwap(m *mgr.Mgr, backup string, targetExe string) {
-	writeDeployLog("[self_update]", fmt.Sprintf("rollback: restoring %s -> %s", backup, targetExe))
-	if _, err := os.Stat(backup); err != nil {
-		writeDeployLog("[self_update]", "rollback: no backup found")
+// watchNewAgent polls the machine until the swap guard reaches a verdict.
+func watchNewAgent(m *mgr.Mgr, targetExe string, installedAt time.Time, window time.Duration) (swapVerdict, string) {
+	w := newSwapWatch(installedAt, window)
+	for {
+		o := swapObservation{Now: time.Now()}
+		_, err := os.Stat(targetExe)
+		o.ExeExists = !os.IsNotExist(err)
+		if service, err := m.OpenService(serviceName); err == nil {
+			status, qerr := service.Query()
+			service.Close()
+			o.ServiceRunning = qerr == nil && status.State == svc.Running
+		}
+		if status, err := readLifecycleStatus(); err == nil {
+			o.Lifecycle = status
+		}
+		if verdict, reason := w.observe(o); verdict != swapPending {
+			return verdict, reason
+		}
+		time.Sleep(swapPollInterval)
+	}
+}
+
+// rollbackBinarySwap puts the previous exe back. Without a backup it copies
+// the new exe over the target again (a failed copy may have left it
+// truncated), so the PC is never left with no agent at all.
+func rollbackBinarySwap(m *mgr.Mgr, backup string, targetExe string, self string) {
+	killAgentProcesses(targetExe)
+	source := agentExeRestoreSource(backup, self, fileExists)
+	switch {
+	case source == backup:
+		writeDeployLog("[self_update]", fmt.Sprintf("rollback: restoring %s -> %s", backup, targetExe))
+	case source != "":
+		writeDeployLog("[self_update]", "rollback: no backup found; reinstalling "+source)
+	case fileExists(targetExe):
+		writeDeployLog("[self_update]", "rollback: no backup and no new exe; starting the exe in place")
+	default:
+		writeDeployLog("[self_update]", "rollback: no backup and no exe to restore")
 		return
 	}
-	killAgentProcesses(targetExe)
-	if err := copyFileSync(backup, targetExe); err != nil {
-		writeDeployLog("[self_update]", "rollback error: "+err.Error())
-		return
+	if source != "" {
+		if err := copyFileWithRetry(source, targetExe, "[self_update]"); err != nil {
+			writeDeployLog("[self_update]", "rollback error: "+err.Error())
+			return
+		}
 	}
 	if err := ensureAgentServiceRunning(m, targetExe); err != nil {
 		writeDeployLog("[self_update]", "rollback: service start failed: "+err.Error())
 		return
 	}
-	writeDeployLog("[self_update]", "rollback: backup restored and service running")
+	writeDeployLog("[self_update]", "rollback: done and service running")
 }
 
 // stopAgentServiceAndProcesses stops TechiAgent, waits until it is fully
@@ -221,15 +283,38 @@ func killAgentProcesses(targetExe string) {
 	}
 }
 
+// serviceDeleteWait bounds the wait for a TechiAgent service that the SCM
+// has marked for deletion (an MSI upgrade removed the old product while
+// something still held a handle to it). Starting or recreating it fails with
+// ERROR_SERVICE_MARKED_FOR_DELETE until the last handle closes; the MSI used
+// to give up at once with 1920 and roll back with 1603.
+const serviceDeleteWait = 2 * time.Minute
+
 // ensureAgentServiceRunning recreates the TechiAgent service if it is
 // missing, reapplies the SCM failure actions, starts it, and verifies it
-// reaches Running.
+// reaches Running. A service marked for deletion is waited out, then
+// recreated.
 func ensureAgentServiceRunning(m *mgr.Mgr, targetExe string) error {
+	deadline := time.Now().Add(serviceDeleteWait)
+	for {
+		err := startAgentServiceOnce(m, targetExe)
+		if err == nil || !errors.Is(err, windows.ERROR_SERVICE_MARKED_FOR_DELETE) || time.Now().After(deadline) {
+			return err
+		}
+		writeDeployLog("[self_update]", "service marked for deletion; waiting for the SCM to release it")
+		// An old service process that never finished stopping keeps it alive.
+		killAgentProcesses(targetExe)
+		time.Sleep(3 * time.Second)
+	}
+}
+
+func startAgentServiceOnce(m *mgr.Mgr, targetExe string) error {
 	service, err := m.OpenService(serviceName)
 	if err != nil {
 		writeDeployLog("[self_update]", "service missing; recreating")
 		service, err = m.CreateService(serviceName, targetExe, mgr.Config{
 			DisplayName: agentServiceDisplayName,
+			Description: "TECHI Platform endpoint monitoring and management agent",
 			StartType:   mgr.StartAutomatic,
 		})
 		if err != nil {
@@ -252,6 +337,9 @@ func ensureAgentServiceRunning(m *mgr.Mgr, targetExe string) error {
 		return nil
 	}
 	if err := service.Start(); err != nil {
+		if errors.Is(err, windows.ERROR_SERVICE_MARKED_FOR_DELETE) {
+			return fmt.Errorf("service start: %w", err)
+		}
 		writeDeployLog("[self_update]", "service start error: "+err.Error())
 	}
 	deadline := time.Now().Add(30 * time.Second)
@@ -316,8 +404,10 @@ func ensureFreshAgentConfig(apiURL string, enrollmentToken string) {
 // ------------------------------------------------------------------ //
 
 // runWatchdogCheckCommand is executed by the "TECHI Agent Watchdog"
-// scheduled task: recreate the service if it vanished while the exe still
-// exists, reapply recovery actions, and start it when stopped.
+// scheduled task (from its own copy of the agent, see watchdog_windows.go)
+// and by the MSI's EnsureServiceCreated: put back a missing exe while the
+// service is registered, recreate the service if it vanished while the exe
+// still exists, reapply recovery actions, and start it when stopped.
 func runWatchdogCheckCommand() int {
 	targetExe := agentTargetExePath()
 	m, err := mgr.Connect()
@@ -327,16 +417,40 @@ func runWatchdogCheckCommand() int {
 	}
 	defer m.Disconnect()
 
+	if swapInProgress() {
+		writeDeployLog("[watchdog]", "self-update swap in progress; agent service left alone")
+		ensureRemoteSupportRunningFromWatchdog(m)
+		return 0
+	}
+
+	registered := false
+	if service, err := m.OpenService(serviceName); err == nil {
+		registered = true
+		service.Close()
+	}
+	_, statErr := os.Stat(targetExe)
+	exeMissing := os.IsNotExist(statErr)
+
+	if !registered && exeMissing {
+		// The MSI uninstall removes the service and the exe but not this task.
+		writeDeployLog("[watchdog]", "service and exe both missing: agent uninstalled; removing the watchdog task")
+		deleteScheduledTask(agentWatchdogTaskName)
+		removeAgentLeftovers()
+		return 0
+	}
+	if exeMissing {
+		if err := restoreMissingAgentExe(targetExe); err != nil {
+			writeDeployLog("[watchdog]", "exe missing and not restored: "+err.Error())
+			return 1
+		}
+	}
+
 	agentRC := 0
-	if _, err := m.OpenService(serviceName); err != nil {
-		if _, serr := os.Stat(targetExe); serr != nil {
-			writeDeployLog("[watchdog]", "service missing and exe missing; cannot recover")
-		} else {
-			writeDeployLog("[watchdog]", "service missing; recreating")
-			if err := ensureAgentServiceRunning(m, targetExe); err != nil {
-				writeDeployLog("[watchdog]", "service not running: "+err.Error())
-				agentRC = 1
-			}
+	if !registered {
+		writeDeployLog("[watchdog]", "service missing; recreating")
+		if err := ensureAgentServiceRunning(m, targetExe); err != nil {
+			writeDeployLog("[watchdog]", "service not running: "+err.Error())
+			agentRC = 1
 		}
 	} else if err := ensureAgentServiceRunning(m, targetExe); err != nil {
 		writeDeployLog("[watchdog]", "service not running: "+err.Error())
@@ -356,6 +470,42 @@ func runWatchdogCheckCommand() int {
 	// is the agent's job (rustdesk_manage.go ensureRustDeskService).
 	ensureRemoteSupportRunningFromWatchdog(m)
 	return agentRC
+}
+
+// restoreMissingAgentExe copies an exe back over a missing techi-agent.exe
+// (see agentExeRestoreSource for the order).
+func restoreMissingAgentExe(targetExe string) error {
+	self, err := os.Executable()
+	if err != nil {
+		self = ""
+	}
+	if strings.EqualFold(self, targetExe) {
+		self = ""
+	}
+	source := agentExeRestoreSource(agentBackupExePath(), self, fileExists)
+	if source == "" {
+		return fmt.Errorf("no backup and no watchdog copy")
+	}
+	writeDeployLog("[watchdog]", "agent exe missing; restoring from "+source)
+	if err := copyFileWithRetry(source, targetExe, "[watchdog]"); err != nil {
+		return err
+	}
+	writeDeployLog("[watchdog]", "agent exe restored")
+	return nil
+}
+
+// removeAgentLeftovers deletes what the MSI does not own after an uninstall:
+// the swap backup now, the running watchdog copy at the next reboot.
+func removeAgentLeftovers() {
+	_ = os.Remove(agentBackupExePath())
+	_ = os.Remove(swapMarkerPath())
+	self, err := os.Executable()
+	if err != nil || !strings.EqualFold(filepath.Base(self), agentWatchdogExeName) {
+		return
+	}
+	if p, err := windows.UTF16PtrFromString(self); err == nil {
+		_ = windows.MoveFileEx(p, nil, windows.MOVEFILE_DELAY_UNTIL_REBOOT)
+	}
 }
 
 // lifecycleStaleAfter marks an initializing agent as wedged: while starting

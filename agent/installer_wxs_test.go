@@ -159,3 +159,41 @@ func TestRemoteSupportStopsBeforeTheOldProductIsRemoved(t *testing.T) {
 		}
 	}
 }
+
+// TestAgentServiceStartWaitsOutAPendingDelete guards the 1920 → 1603 failure
+// (RISK-UPDATE-001): an upgrade that removes the old product while something
+// holds a TechiAgent handle leaves the service marked for deletion, and
+// StartServices failed at once. Only EnsureServiceCreated may start the
+// agent, after StartServices, and it must fail the install if the agent never
+// runs.
+func TestAgentServiceStartWaitsOutAPendingDelete(t *testing.T) {
+	wxs := readWxs(t, "installer/installer.wxs")
+
+	control := regexp.MustCompile(`(?s)<ServiceControl Id="StartTechiAgent"[^>]*/>`).FindString(wxs)
+	if control == "" {
+		t.Fatal("StartTechiAgent ServiceControl not found")
+	}
+	if strings.Contains(control, "Start=") {
+		t.Fatalf("StartServices must not start TechiAgent (no wait for a pending delete): %s", control)
+	}
+	for _, want := range []string{`Stop="both"`, `Remove="uninstall"`} {
+		if !strings.Contains(control, want) {
+			t.Fatalf("StartTechiAgent lost %s: %s", want, control)
+		}
+	}
+
+	install := regexp.MustCompile(`(?s)<ServiceInstall Id="TechiAgentService"[^>]*/>`).FindString(wxs)
+	if !strings.Contains(install, `Vital="no"`) {
+		t.Fatalf("a service marked for deletion must not fail InstallServices: %s", install)
+	}
+
+	ensure := regexp.MustCompile(`(?s)<CustomAction Id="EnsureServiceCreated"[^>]*/>`).FindString(wxs)
+	for _, want := range []string{`watchdog-check`, `Execute="deferred"`, `Impersonate="no"`, `Return="check"`} {
+		if !strings.Contains(ensure, want) {
+			t.Fatalf("EnsureServiceCreated missing %s: %s", want, ensure)
+		}
+	}
+	if !strings.Contains(wxs, `<Custom Action="EnsureServiceCreated" After="StartServices"    Condition="NOT REMOVE"/>`) {
+		t.Fatal("EnsureServiceCreated must run after StartServices on every install")
+	}
+}

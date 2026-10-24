@@ -188,6 +188,11 @@
               Source="$(var.SourceDir)\techi-agent.exe"
               Name="techi-agent.exe"
               KeyPath="yes"/>
+        <!-- Vital="no" dhe pa Start="install" (RISK-UPDATE-001): kur upgrade-i heq produktin e
+             vjeter ndersa dikush mban ende nje handle te TechiAgent, SCM e lë service-in "marked
+             for deletion"; InstallServices/StartServices deshtonin menjehere (1920 → 1603).
+             Service-in e nis EnsureServiceCreated, qe e pret lirimin deri ne 2 min dhe e rikrijon;
+             ai ka Return="check", keshtu nje agent qe s'niset prape e deshton instalimin. -->
         <ServiceInstall Id="TechiAgentService"
                         Name="TechiAgent"
                         DisplayName="TECHI Agent"
@@ -195,10 +200,10 @@
                         Type="ownProcess"
                         Start="auto"
                         ErrorControl="ignore"
+                        Vital="no"
                         Account="LocalSystem"/>
         <ServiceControl Id="StartTechiAgent"
                         Name="TechiAgent"
-                        Start="install"
                         Stop="both"
                         Remove="uninstall"
                         Wait="yes"/>
@@ -324,17 +329,18 @@
                   Impersonate="no"
                   Return="ignore"/>
 
-    <!-- EnsureServiceCreated: rrjet sigurie kundër race-condition SCM (DeleteServices i produktit
-         të vjetër + InstallServices i produktit të ri për të njëjtin emër service-i brenda së
-         njëjtës transaksion MSI). Verifikon TechiAgent pas StartServices; nëse mungon dhe exe
-         ekziston, e rikrijon, i vendos recovery actions dhe e nis — logjika është
-         `techi-agent.exe watchdog-check` (kod natif Go, shih swap_windows.go), pa PowerShell. -->
+    <!-- EnsureServiceCreated: e vetmja qe e nis TechiAgent gjate instalimit. Mbulon race-condition
+         SCM (DeleteServices i produktit të vjetër + InstallServices i produktit të ri për të njëjtin
+         emër service-i brenda së njëjtës transaksion MSI): pret deri ne 2 min nese service-i eshte
+         "marked for deletion", e rikrijon nese mungon, i vendos recovery actions dhe e nis — logjika
+         është `techi-agent.exe watchdog-check` (kod natif Go, shih swap_windows.go), pa PowerShell.
+         Return="check": nese agjenti nuk arrin Running, instalimi deshton si me pare me StartServices. -->
     <CustomAction Id="EnsureServiceCreated"
                   Directory="SystemFolder"
                   ExeCommand="&quot;[INSTALLFOLDER]techi-agent.exe&quot; watchdog-check"
                   Execute="deferred"
                   Impersonate="no"
-                  Return="ignore"/>
+                  Return="check"/>
 
     <!-- SetServiceRecovery: restart automatik pas dështimit (sc.exe direkt, pa PS wrapper) -->
     <CustomAction Id="SetServiceRecovery"

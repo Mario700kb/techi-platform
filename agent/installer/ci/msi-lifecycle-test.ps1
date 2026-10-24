@@ -10,7 +10,15 @@
        stopped by the MSI, new payload in place, agent configuration kept,
        api-server still the platform;
     4. the agent sets the platform api-server where none is set, and keeps
-       one someone else chose.
+       one someone else chose;
+    5. the watchdog task runs its own copy of the agent and puts back a
+       techi-agent.exe that disappeared (antivirus);
+    6. a self-update swap that cannot reach the platform keeps the new exe,
+       keeps the backup and leaves the service running;
+    7. after an uninstall the watchdog removes its task and brings nothing
+       back;
+    8. upgrade over the baseline while another process holds a handle to the
+       TechiAgent service (marked for deletion): exit 0, service running.
   The agent and Remote Support are pointed at 127.0.0.1 so nothing reaches
   production. Runs under Windows PowerShell 5.1 (Add-Type -OutputType needs it).
 #>
@@ -193,6 +201,115 @@ $after = @(Get-ApiServers)
 $after | ForEach-Object { Write-Host "  after agent  $($_.Path) api-server='$($_.ApiServer)'" }
 Check (@($after | Where-Object { $_.Path -ne $upgraded[0].Path -and $_.ApiServer -ne $PlatformApi }).Count -eq 0) 'one agent cycle set the platform api-server where it was missing'
 Check (@($after | Where-Object { $_.Path -eq $upgraded[0].Path -and $_.ApiServer -eq $foreign }).Count -eq 1) 'an api-server someone else chose was kept'
+
+function Wait-Path([string]$Path, [int]$Seconds) {
+    $deadline = (Get-Date).AddSeconds($Seconds)
+    while ((Get-Date) -lt $deadline) {
+        if (Test-Path $Path) { return $true }
+        Start-Sleep -Seconds 2
+    }
+    return $false
+}
+
+function Get-WatchdogTaskXml {
+    # Under 'Stop', Windows PowerShell 5.1 turns a native command's stderr into
+    # a terminating error even when redirected; a missing task is expected here.
+    $ErrorActionPreference = 'Continue'
+    $xml = & schtasks.exe /Query /TN 'TECHI Agent Watchdog' /XML 2>$null
+    if ($LASTEXITCODE -ne 0) { return '' }
+    return ($xml -join "`n")
+}
+
+$agentDir = Join-Path $env:ProgramData 'TechiAgent'
+$watchdogExe = Join-Path $agentDir 'techi-agent-watchdog.exe'
+$backupExe = Join-Path $agentDir 'techi-agent-old.exe'
+
+Write-Host '== 5. the watchdog puts back a missing techi-agent.exe'
+Check (Wait-Path $watchdogExe 90) 'the agent wrote its watchdog copy'
+Check ((Get-WatchdogTaskXml) -match 'techi-agent-watchdog\.exe') 'the watchdog task runs the watchdog copy'
+Stop-Service -Name 'TechiAgent' -Force
+Start-Sleep -Seconds 3
+Remove-Item -LiteralPath $agentExe -Force
+Check (-not (Test-Path $agentExe)) 'techi-agent.exe removed (as antivirus would)'
+$before = Get-DeployLogLines
+& schtasks.exe /Run /TN 'TECHI Agent Watchdog' | Out-Null
+Check (Wait-Path $agentExe 90) 'the watchdog restored techi-agent.exe'
+Check (Wait-ServiceRunning 'TechiAgent' 90) 'TechiAgent service running after the restore'
+$new = @(Get-DeployLogLines | Select-Object -Skip $before.Count)
+Check (@($new | Where-Object { $_ -like '*agent exe missing; restoring from*' }).Count -gt 0) 'the restore was logged'
+
+Write-Host '== 6. self-update swap without a platform keeps the new exe and the backup'
+$cacheDir = Join-Path $agentDir 'cache'
+New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
+$newExe = Join-Path $cacheDir 'techi-agent-ci.exe'
+Copy-Item -LiteralPath $agentExe -Destination $newExe -Force
+Remove-Item -LiteralPath $backupExe -Force -ErrorAction SilentlyContinue
+$before = Get-DeployLogLines
+$swap = Start-Process -FilePath $newExe -ArgumentList @('swap-binary', '-swap-target', "`"$agentExe`"", '-swap-confirm-window', '45s') -Wait -PassThru -NoNewWindow
+Check ($swap.ExitCode -eq 0) "swap exits 0 (got $($swap.ExitCode))"
+$new = @(Get-DeployLogLines | Select-Object -Skip $before.Count)
+$new | ForEach-Object { Write-Host "  deploy  $_" }
+Check (@($new | Where-Object { $_ -like '*not confirmed within*keeping the new version and the backup*' }).Count -gt 0) 'an unreachable platform keeps the swap, never rolls it back'
+Check (@($new | Where-Object { $_ -like '*rollback*' }).Count -eq 0) 'no rollback'
+Check (Test-Path $backupExe) 'the previous exe is kept as techi-agent-old.exe'
+Check (-not (Test-Path (Join-Path $agentDir 'swap.inprogress'))) 'the swap marker is cleared'
+Check (Wait-ServiceRunning 'TechiAgent' 30) 'TechiAgent service running after the swap'
+
+Write-Host '== 7. after an uninstall the watchdog brings nothing back'
+$r = Invoke-Msi @('/x', "`"$NewMsi`"") 'uninstall-2'
+Check ($r.Code -eq 0) "uninstall exits 0 (got $($r.Code))"
+if (Test-Path $watchdogExe) {
+    $before = Get-DeployLogLines
+    Start-Process -FilePath $watchdogExe -ArgumentList 'watchdog-check' -Wait -NoNewWindow | Out-Null
+    $new = @(Get-DeployLogLines | Select-Object -Skip $before.Count)
+    Check (@($new | Where-Object { $_ -like '*agent uninstalled; removing the watchdog task*' }).Count -gt 0) 'the watchdog saw the uninstall'
+} else {
+    Write-Host '  note  no watchdog copy left after uninstall'
+}
+Check ($null -eq (Get-Service -Name 'TechiAgent' -ErrorAction SilentlyContinue)) 'TechiAgent service not recreated'
+Check (-not (Test-Path $agentExe)) 'techi-agent.exe not brought back'
+Check ((Get-WatchdogTaskXml) -eq '') 'the watchdog task is gone'
+Check (-not (Test-Path $backupExe)) 'the swap backup is gone'
+Remove-RemoteSupportConfig
+
+Write-Host '== 8. upgrade over the baseline while a TechiAgent service handle is held'
+$r = Invoke-Msi (@('/i', "`"$BaselineMsi`"") + $Props) 'baseline-install-2'
+if ($r.Code -ne 0) { throw "baseline install failed with $($r.Code); see $($r.Log)" }
+Wait-ServiceRunning 'TechiAgent' 90 | Out-Null
+$svcHolderExe = Join-Path $env:RUNNER_TEMP 'svc-holder.exe'
+Add-Type -OutputType ConsoleApplication -OutputAssembly $svcHolderExe -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Threading;
+public static class SvcHolder {
+    [DllImport("advapi32.dll", SetLastError = true)] static extern IntPtr OpenSCManager(string machine, string db, uint access);
+    [DllImport("advapi32.dll", SetLastError = true)] static extern IntPtr OpenService(IntPtr scm, string name, uint access);
+    [DllImport("advapi32.dll")] static extern bool CloseServiceHandle(IntPtr h);
+    public static int Main(string[] args) {
+        IntPtr scm = OpenSCManager(null, null, 0x0001);
+        if (scm == IntPtr.Zero) return 2;
+        IntPtr svc = OpenService(scm, args[0], 0x0004);
+        if (svc == IntPtr.Zero) return 3;
+        Thread.Sleep(int.Parse(args[1]) * 1000);
+        CloseServiceHandle(svc);
+        CloseServiceHandle(scm);
+        return 0;
+    }
+}
+'@
+$svcHolder = Start-Process -FilePath $svcHolderExe -ArgumentList @('TechiAgent', '30') -PassThru -WindowStyle Hidden
+Start-Sleep -Seconds 2
+if ($svcHolder.HasExited) { throw "service handle holder exited early with $($svcHolder.ExitCode)" }
+Write-Host "  holder pid=$($svcHolder.Id) holds a TechiAgent service handle for 30 s"
+$before = Get-DeployLogLines
+$r = Invoke-Msi (@('/i', "`"$NewMsi`"") + $Props) 'upgrade-held-service'
+Check ($r.Code -eq 0) "upgrade with a held service handle exits 0, no 1920/1603 (got $($r.Code))"
+Check (Wait-ServiceRunning 'TechiAgent' 90) 'TechiAgent service running after the upgrade'
+Check ((Get-InstalledVersion) -eq $ExpectedVersion) "upgraded version is $ExpectedVersion (got '$(Get-InstalledVersion)')"
+$new = @(Get-DeployLogLines | Select-Object -Skip $before.Count)
+$waited = @($new | Where-Object { $_ -like '*service marked for deletion*' }).Count
+Write-Host "  info  EnsureServiceCreated waited for a pending delete $waited time(s)"
+Stop-Process -Id $svcHolder.Id -Force -ErrorAction SilentlyContinue
 
 Copy-Item $DeployLog $LogDir -ErrorAction SilentlyContinue
 if ($failures.Count -gt 0) {
