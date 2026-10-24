@@ -89,6 +89,12 @@ def _matches(policy: dict, device: Device) -> bool:
     return False
 
 
+def device_in_scope(scope: str, scope_value: Optional[str], device: Device) -> bool:
+    """The policies' scope rule (default, device_type, client, group) for other
+    features that target devices the same way (Automation)."""
+    return _matches({"scope": scope, "scope_value": scope_value}, device)
+
+
 def effective_policy(db: Session, device: Device) -> EffectivePolicy:
     matching = sorted(
         (p for p in _policies(db) if _matches(p, device)),

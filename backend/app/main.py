@@ -200,6 +200,36 @@ def _run_alert_sla_sweep() -> None:
         db.close()
 
 
+AUTOMATION_SWEEP_INTERVAL_S = 60
+# After a restart the fleet reconnects first; a wave waits for it.
+AUTOMATION_SWEEP_FIRST_DELAY_S = 180
+
+
+def _run_automation_sweep() -> None:
+    """Scheduled agent updates: start the tasks that came due, move every
+    running run to its next wave or to its end."""
+    from app.db.session import SessionLocal
+    from app.services.automation_service import sweep
+
+    db = SessionLocal()
+    try:
+        result = sweep(db)
+        if result["started"]:
+            logger.info("Automation: %d run(s) started, %d running", result["started"], result["running"])
+    except Exception:
+        logger.exception("Automation sweep failed")
+        db.rollback()
+    finally:
+        db.close()
+
+
+async def _automation_scheduler() -> None:
+    await asyncio.sleep(AUTOMATION_SWEEP_FIRST_DELAY_S)
+    while True:
+        await asyncio.to_thread(_run_automation_sweep)
+        await asyncio.sleep(AUTOMATION_SWEEP_INTERVAL_S)
+
+
 async def _alert_sla_scheduler() -> None:
     await asyncio.sleep(ALERT_SLA_SWEEP_FIRST_DELAY_S)
     while True:
@@ -309,6 +339,7 @@ async def lifespan(app: FastAPI):
     monitor_sweep_task = asyncio.create_task(_monitor_sweep_scheduler())
     presence_flush_task = asyncio.create_task(_presence_flush_scheduler())
     alert_sla_task = asyncio.create_task(_alert_sla_scheduler())
+    automation_task = asyncio.create_task(_automation_scheduler())
     # Only runs when the feature is actually reachable — flag OFF stays
     # zero-extra-behavior (no new periodic queries).
     if feature_enabled("FEATURE_TERMINAL"):
@@ -337,7 +368,8 @@ async def lifespan(app: FastAPI):
 
     cancel_presence_checks()
 
-    for task in (cleanup_task, location_sweep_task, monitor_sweep_task, presence_flush_task, alert_sla_task):
+    for task in (cleanup_task, location_sweep_task, monitor_sweep_task, presence_flush_task, alert_sla_task,
+                 automation_task):
         task.cancel()
         try:
             await task

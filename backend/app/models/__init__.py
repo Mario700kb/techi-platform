@@ -1,4 +1,5 @@
 from app.models.agent_command_batch import AgentCommandBatch
+from app.models.automation import AutomationRun, AutomationTask
 from app.models.alert import AlertActivity, AlertAnalysis, AlertDutyShift, AlertMute, DeviceAlert
 from app.models.client import Client
 from app.models.client_document import ClientDocument
@@ -37,6 +38,8 @@ from app.models.console_script import ConsoleScript
 from app.models.vault_credential import VaultCredential, VaultCredentialAssignment, VaultCredentialUsage
 
 __all__ = [
+    "AutomationRun",
+    "AutomationTask",
     "Team",
     "TeamClientAccess",
     "TeamDeviceAccess",
