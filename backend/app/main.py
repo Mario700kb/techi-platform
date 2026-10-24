@@ -230,6 +230,34 @@ async def _automation_scheduler() -> None:
         await asyncio.sleep(AUTOMATION_SWEEP_INTERVAL_S)
 
 
+ACTION_EXPIRY_SWEEP_INTERVAL_S = 60
+
+
+def _run_action_expiry_sweep() -> None:
+    """Remote actions past their timeout become expired even when nobody
+    reads them (lazy expiry covers only what is read)."""
+    from app.db.session import SessionLocal
+    from app.repositories.remote_action_repository import RemoteActionRepository
+
+    db = SessionLocal()
+    try:
+        expired = RemoteActionRepository(db).expire_overdue()
+        if expired:
+            logger.info("Actions: %d expired past their timeout", expired)
+    except Exception:
+        logger.exception("Action expiry sweep failed")
+        db.rollback()
+    finally:
+        db.close()
+
+
+async def _action_expiry_scheduler() -> None:
+    await asyncio.sleep(AUTOMATION_SWEEP_FIRST_DELAY_S)
+    while True:
+        await asyncio.to_thread(_run_action_expiry_sweep)
+        await asyncio.sleep(ACTION_EXPIRY_SWEEP_INTERVAL_S)
+
+
 async def _alert_sla_scheduler() -> None:
     await asyncio.sleep(ALERT_SLA_SWEEP_FIRST_DELAY_S)
     while True:
@@ -340,6 +368,7 @@ async def lifespan(app: FastAPI):
     presence_flush_task = asyncio.create_task(_presence_flush_scheduler())
     alert_sla_task = asyncio.create_task(_alert_sla_scheduler())
     automation_task = asyncio.create_task(_automation_scheduler())
+    action_expiry_task = asyncio.create_task(_action_expiry_scheduler())
     # Only runs when the feature is actually reachable — flag OFF stays
     # zero-extra-behavior (no new periodic queries).
     if feature_enabled("FEATURE_TERMINAL"):
@@ -369,7 +398,7 @@ async def lifespan(app: FastAPI):
     cancel_presence_checks()
 
     for task in (cleanup_task, location_sweep_task, monitor_sweep_task, presence_flush_task, alert_sla_task,
-                 automation_task):
+                 automation_task, action_expiry_task):
         task.cancel()
         try:
             await task

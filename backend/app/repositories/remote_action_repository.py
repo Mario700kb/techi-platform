@@ -192,18 +192,36 @@ class RemoteActionRepository:
     # Lazy expiration                                                      #
     # ------------------------------------------------------------------ #
 
-    def _expire_if_needed(self, action: RemoteAction) -> RemoteAction:
+    def _overdue(self, action: RemoteAction) -> bool:
         if action.status not in EXPIRABLE_STATUSES:
-            return action
+            return False
         created_at = ensure_utc(action.created_at)
         if created_at is None:
-            return action
-        deadline = created_at + timedelta(seconds=action.execution_timeout_seconds)
-        if utcnow() > deadline:
-            logger.info("[action] expired action #%d (type=%s device=%d)", action.id, action.action_type, action.device_id)
-            action.status = ActionStatus.EXPIRED
-            action.expired_at = utcnow()
-            self.db.add(action)
+            return False
+        return utcnow() > created_at + timedelta(seconds=action.execution_timeout_seconds)
+
+    def _mark_expired(self, action: RemoteAction) -> None:
+        logger.info("[action] expired action #%d (type=%s device=%d)", action.id, action.action_type, action.device_id)
+        action.status = ActionStatus.EXPIRED
+        action.expired_at = utcnow()
+        self.db.add(action)
+
+    def _expire_if_needed(self, action: RemoteAction) -> RemoteAction:
+        if self._overdue(action):
+            self._mark_expired(action)
             self.db.commit()
             self.db.refresh(action)
         return action
+
+    def expire_overdue(self) -> int:
+        """Expire every open action past its timeout, read or not — an agent
+        that died mid-update leaves its action "running" otherwise, and
+        reports and counts that read the table directly would believe it."""
+        expired = 0
+        for action in self.db.query(RemoteAction).filter(RemoteAction.status.in_(list(EXPIRABLE_STATUSES))).all():
+            if self._overdue(action):
+                self._mark_expired(action)
+                expired += 1
+        if expired:
+            self.db.commit()
+        return expired
