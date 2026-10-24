@@ -43,7 +43,7 @@ import {
   statusColor,
   statusDotColor,
 } from "../api/actions";
-import { AnimatedNumber, Button, EmptyState, PageHeader, TablePagination } from "../components/ui";
+import { AnimatedNumber, Button, EmptyState, PageHeader, SkeletonRows, TablePagination } from "../components/ui";
 import { formatLocalDateTime, timeAgo } from "../utils/time";
 import { formatCount } from "../utils/number";
 import { freshnessTone, humanize, TERMS, TONE } from "../utils/deviceStatus";
@@ -849,9 +849,7 @@ export default function Dashboard() {
               </Link>
             </div>
             {loading ? (
-              <p className="flex-1 px-5 py-8 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>
-                Loading…
-              </p>
+              <SkeletonRows rows={4} />
             ) : devicesByCategory.length === 0 ? (
               <EmptyState className="flex-1" icon={<Monitor className="h-5 w-5" />} title="No devices to group" />
             ) : (
@@ -1013,9 +1011,7 @@ export default function Dashboard() {
             {!insights && insightsFailed ? (
               <SectionError what="problem devices" onRetry={loadInsights} />
             ) : !insights ? (
-              <p className="flex-1 px-5 py-8 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>
-                Loading…
-              </p>
+              <SkeletonRows rows={4} />
             ) : insights.problem_devices.length === 0 ? (
               <EmptyState
                 className="flex-1"
@@ -1318,9 +1314,7 @@ function OperatorsPanel({
         </span>
       </div>
       {loading ? (
-        <p className="flex-1 px-5 py-8 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>
-          Loading…
-        </p>
+        <SkeletonRows rows={4} />
       ) : operators.length === 0 && failed ? (
         <SectionError what="operators" onRetry={onRetry} />
       ) : operators.length === 0 ? (

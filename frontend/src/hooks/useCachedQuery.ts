@@ -84,3 +84,20 @@ export function useCachedQuery<T>(key: string | null, fetcher: () => Promise<T>)
     setData,
   };
 }
+
+const inFlight = new Map<string, Promise<void>>();
+
+/**
+ * Loads a query into the cache ahead of time — when the pointer rests on what
+ * opens it — so it opens with data instead of a skeleton. Skipped while a copy
+ * younger than maxAgeMs is cached or the same key is already loading; errors
+ * are left for the real query to show.
+ */
+export function prefetchQuery<T>(key: string, fetcher: () => Promise<T>, maxAgeMs = 30_000): void {
+  if (inFlight.has(key) || appCache.get<T>(key, maxAgeMs) !== null) return;
+  const request = fetcher()
+    .then((value) => appCache.set(key, value))
+    .catch(() => undefined)
+    .finally(() => inFlight.delete(key));
+  inFlight.set(key, request);
+}

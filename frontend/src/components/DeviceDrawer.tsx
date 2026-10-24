@@ -111,6 +111,7 @@ import { addQueuedAction } from "../utils/remoteActions";
 import { isActiveUpdate, upsertAction, updateTargetVersion } from "../utils/agentUpdate";
 import { AgentUpdateCompact } from "./AgentUpdateProgress";
 import { useDeviceLive } from "../hooks/useDeviceLive";
+import { deviceActionsKey } from "../utils/devicePrefetch";
 
 interface DeviceDrawerProps {
   device: Device;
@@ -306,9 +307,7 @@ export default function DeviceDrawer({
     loading: actionsLoading,
     reload: loadActions,
     setData: setActionsData,
-  } = useCachedQuery(openedFor === device.id ? `page.device.${device.id}.actions` : null, () =>
-    getDeviceActions(device.id),
-  );
+  } = useCachedQuery(openedFor === device.id ? deviceActionsKey(device.id) : null, () => getDeviceActions(device.id));
   // Why the last action the operator asked for was not queued (shown in
   // Maintenance); a conflict names the action in the way so it can be cancelled.
   const [actionProblem, setActionProblem] = useState<{

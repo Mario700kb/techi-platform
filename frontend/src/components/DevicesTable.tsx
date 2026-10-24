@@ -77,6 +77,7 @@ import ConnectMenu from "./ConnectMenu";
 import { CONNECT_REFRESH_EVENT, ConnectRowStatus, getConnectStatuses } from "../api/connect";
 import { detectOperatorOS } from "../utils/operatorOs";
 import { useNewKeys } from "../hooks/useLiveChange";
+import { cancelDevicePrefetch, prefetchDeviceOnHover } from "../utils/devicePrefetch";
 
 export type { ActiveActionEntry };
 
@@ -1351,6 +1352,8 @@ const DevicesTable = memo(function DevicesTable({
                         style={{ "--row": Math.min(rowIndex, 12) } as React.CSSProperties}
                         data-selected={selectedIds.has(device.id)}
                         onClick={() => onDeviceSelect?.(device)}
+                        onPointerEnter={(event) => prefetchDeviceOnHover(device.id, event.pointerType)}
+                        onPointerLeave={cancelDevicePrefetch}
                       >
                         {canOperate && (
                           <td className="w-[36px] px-2 py-1.5 align-middle" onClick={(e) => e.stopPropagation()}>

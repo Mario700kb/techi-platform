@@ -21,7 +21,7 @@ import {
 import { Client, DeviceGroup, getClients, getGroups } from "../api/clients";
 import ConfirmationModal from "../components/ConfirmationModal";
 import { DEVICE_CATEGORIES } from "../components/monitoring/policyForm";
-import { Button, DatePicker, EmptyState, Modal, PageHeader, Select } from "../components/ui";
+import { Button, DatePicker, EmptyState, Modal, PageHeader, Select, SkeletonRows } from "../components/ui";
 import type { SelectOption } from "../components/ui";
 import { useCachedQuery } from "../hooks/useCachedQuery";
 import { TONE } from "../utils/deviceStatus";
@@ -730,6 +730,11 @@ export default function AutomationPage() {
             title="Couldn't load the tasks"
             description={tasksQuery.error}
           />
+        </div>
+      )}
+      {tasksQuery.loading && (
+        <div className="th-onb-card">
+          <SkeletonRows rows={3} />
         </div>
       )}
       {!tasksQuery.error && tasksQuery.data && tasks.length === 0 && (

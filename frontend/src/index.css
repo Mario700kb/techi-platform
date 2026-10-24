@@ -2897,25 +2897,33 @@ a.th-kpi:hover {
   font-weight: 650;
   font-variant-numeric: tabular-nums;
 }
+/* Skeleton rows: a highlight sweeps across each placeholder, moved with
+   transform so the shimmer stays on the compositor. */
 .th-alerts-skeleton {
+  position: relative;
+  overflow: hidden;
   height: 57px;
   margin: 0 16px;
   border-bottom: 1px solid var(--th-border-subtle);
+}
+.th-alerts-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
   background: linear-gradient(90deg, transparent, var(--th-chip-bg), transparent);
-  background-size: 200% 100%;
+  transform: translateX(-100%);
   animation: th-alerts-shimmer 1.4s ease-in-out infinite;
 }
 @keyframes th-alerts-shimmer {
-  from {
-    background-position: 100% 0;
-  }
   to {
-    background-position: -100% 0;
+    transform: translateX(100%);
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .th-alerts-skeleton {
+  .th-alerts-skeleton::after {
     animation: none;
+    transform: none;
+    opacity: 0.5;
   }
 }
 
