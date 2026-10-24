@@ -5,6 +5,22 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-24] PACKAGES-2.1.40-2026-10-24 — agent, Endpoint MSI and Update Bridge at 2.1.40
+
+On the owner's word ("ngarkoi ti"), 19:06 Tirana: the three Windows packages
+from CI run 40113754747 (`d69ff11`; build, Go tests on Windows and all eight
+MSI lifecycle scenarios green, 50 checks) uploaded through
+`AgentPackageService` inside the backend and activated after each SHA-256
+matched CI: agent binary `38048c97…` (package `c2895442…`), Endpoint MSI
+`9054f8d9…` (`7aca3b12…`), Update Bridge MSI `814dcb1f…` (`672805fe…`), all
+`windows-amd64`. The 2.1.35 packages are kept inactive for rollback; manifest
+backup `manifest.json.bak-pre-2.1.40-20261024-190559`. Activation went
+through the service, so it has no audit-log row (RISK-SUPPLY-001). Verified
+from outside: `api-rdp…/platform/windows-amd64/download` serves the CI hash,
+`active-version` answers 2.1.40. No device was sent an update; no backend or
+frontend change, no restart, no dump. Linux stays 2.1.39 (CI run 40113754747's
+Linux sibling was built, not uploaded).
+
 ## [2026-10-24] AGENT-2.1.40-PREP-2026-10-24 — Self-update can no longer leave a Windows PC without an agent; not built, not released
 
 **Source only; no deploy, no package.** Phase 1 of the 9/10 plan, closing the

@@ -39,9 +39,9 @@ Activating a package updates no device; only a `self_update` command (single or 
 
 | Package | Active | Since | Kept inactive | Evidence |
 |---|---|---|---|---|
-| Windows agent binary | `2.1.35` (`d6e1179b…`) | 2026-10-20 00:10 | 2.1.34 | `RS-IDENTITY-FILE-2026-10-20` |
-| Windows Endpoint MSI | `2.1.35` (`27aae294…`) | 2026-10-20 00:10 | 2.1.34 | `RS-IDENTITY-FILE-2026-10-20` |
-| Agent Update Bridge MSI (agents < 2.1.1 only) | `2.1.35` (`2a3eff00…`) | 2026-10-20 00:10 | 2.1.34 | `RS-IDENTITY-FILE-2026-10-20` |
+| Windows agent binary | `2.1.40` (`38048c97…`) | 2026-10-24 19:06 | 2.1.35 | `PACKAGES-2.1.40-2026-10-24` |
+| Windows Endpoint MSI | `2.1.40` (`9054f8d9…`) | 2026-10-24 19:06 | 2.1.35 | `PACKAGES-2.1.40-2026-10-24` |
+| Agent Update Bridge MSI (agents < 2.1.1 only) | `2.1.40` (`814dcb1f…`) | 2026-10-24 19:06 | 2.1.35 | `PACKAGES-2.1.40-2026-10-24` |
 | Linux amd64 / arm64 / armhf | `2.1.39` | 2026-10-23 13:22 | 2.1.33 (amd64), 2.1.38 (armhf) | `LINUX-2139-PACKAGES-2026-10-23` |
 | Remote Support MSI | `1.4.6.0` | — | — | Provenance conflict, see RISK-SUPPLY-001 |
 
@@ -117,7 +117,7 @@ AI analysis in the alert center is off until `ANTHROPIC_API_KEY` is set.
 | RISK-SEC-002 | `/api/v1/agent/heartbeat` has no authentication | High | Password and pending actions are released only to a caller that knows the device's 144-bit `agent_id`; that is a non-expiring bearer secret with no replay protection, and the endpoint has no rate limit | Roadmap Phase 2 |
 | RISK-SEC-001 | Shared default Remote Support password | High | Removed from scripts and code (2026-10-12); still in Git history and `installer.wxs`; served only to agents < 2.1.5 | Roadmap Phase 2 |
 | RISK-SUPPLY-001 | Remote Support MSI provenance | High | Several 1.4.6 MSIs with different hashes; package activation writes no audit record | Roadmap Phase 2 |
-| RISK-UPDATE-001 | Windows self-update can leave a PC without an agent | High | 12 of 792 updates on 2026-10-22, all at Adpascucci. Backup EXE deleted after a 30 s service check without waiting for a heartbeat; watchdog runs the EXE it protects; no restore from the download cache; MSI fails 1920→1603 on a service marked for deletion. Fixed in source 2.1.40, not built or released | Roadmap Phase 1 |
+| RISK-UPDATE-001 | Windows self-update can leave a PC without an agent | High | 12 of 792 updates on 2026-10-22, all at Adpascucci. Backup EXE deleted after a 30 s service check without waiting for a heartbeat; watchdog runs the EXE it protects; no restore from the download cache; MSI fails 1920→1603 on a service marked for deletion. Fixed in 2.1.40, active since 2026-10-24 19:06; no device updated yet | Roadmap Phase 1: pilot on 12, 924, 781, 985 |
 | RISK-CAP-001 | Single vCPU is the capacity ceiling | High | ~900 devices at 300 s use the budget; a 180 s interval collapsed the host on 2026-08-03. Jitter now spreads the burst; not re-measured since the 2.1.35 rollout | Roadmap Phase 3: re-measure, then decide |
 | RISK-CAP-003 | Windows interval floor near the online ceiling | Medium | Floor = devices ÷ 3.0 req/s; at ~940 Windows devices it passes the 313 s ceiling and the policy editor has no valid value | Re-measure peak after jitter; raise the budget only on evidence |
 | RISK-STORAGE-001 | Disk at ~89% | Medium | Every deploy adds a rollback image set and builds on the host | Roadmap Phase 3: build images in CI |
