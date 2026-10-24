@@ -4,6 +4,7 @@ import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, X } from "lucide-
 import clsx from "clsx";
 import { APP_TIME_ZONE, DISPLAY_LOCALE } from "../../utils/time";
 import Button from "./Button";
+import { useExitAnimation } from "../../hooks/useExitAnimation";
 
 interface DatePickerProps {
   /** "YYYY-MM-DD", or "YYYY-MM-DDTHH:MM" with withTime; "" when empty. Same strings as the native inputs. */
@@ -116,6 +117,7 @@ export default function DatePicker({
   const [pos, setPos] = useState({ top: 0, left: 0, up: false });
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const panelExitRef = useExitAnimation(panelRef);
   const dialogId = useId();
   const minDay = min ? fromKey(min) : null;
   const maxDay = max ? fromKey(max) : null;
@@ -272,7 +274,7 @@ export default function DatePicker({
       {open &&
         createPortal(
           <div
-            ref={panelRef}
+            ref={panelExitRef}
             id={dialogId}
             role="dialog"
             aria-label={withTime ? "Choose date and time" : "Choose date"}

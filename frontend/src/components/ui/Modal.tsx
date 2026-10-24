@@ -3,6 +3,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { useExitAnimation } from "../../hooks/useExitAnimation";
 
 export type ModalTone = "accent" | "danger" | "warning" | "info";
 export type ModalSize = "sm" | "md" | "lg" | "xl";
@@ -53,6 +54,7 @@ export default function Modal({
 }: ModalProps) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  const exitRef = useExitAnimation<HTMLDivElement>();
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   const busyRef = useRef(busy);
@@ -100,6 +102,7 @@ export default function Modal({
 
   return createPortal(
     <div
+      ref={exitRef}
       className="th-modal-scrim"
       role="presentation"
       onMouseDown={(event) => {

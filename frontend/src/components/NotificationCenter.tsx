@@ -23,6 +23,7 @@ import {
 import { Alert, ALERT_KIND_LABELS, AlertKind } from "../types/alert";
 import { resolveAlert } from "../api/alerts";
 import { timeAgo } from "../utils/time";
+import { useExitAnimation } from "../hooks/useExitAnimation";
 
 interface NotificationCenterProps {
   alerts: Alert[];
@@ -92,6 +93,7 @@ export default function NotificationCenter({
 
   const buttonRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const panelExitRef = useExitAnimation(panelRef);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const panelPositionRef = useRef<PanelPosition | null>(null);
   const frameRef = useRef<number | null>(null);
@@ -247,7 +249,7 @@ export default function NotificationCenter({
 
       {createPortal(
         <div
-          ref={panelRef}
+          ref={panelExitRef}
           role="dialog"
           aria-label="Alert notifications"
           style={{

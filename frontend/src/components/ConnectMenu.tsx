@@ -15,6 +15,7 @@ import { getConnectUrl } from "../api/remoteSupport";
 import { buildRustDeskFallbackUrlFromTechiUrl, clickProtocolUrl, launchConnect } from "../services/rustdeskLaunch";
 import { detectOperatorOS } from "../utils/operatorOs";
 import { ConnectButton } from "./ui";
+import { useExitAnimation } from "../hooks/useExitAnimation";
 
 const EmbeddedSSHModal = lazy(() => import("./EmbeddedSSHModal"));
 
@@ -162,6 +163,7 @@ export default function ConnectMenu({
   const [sshModalOpen, setSshModalOpen] = useState(false);
   const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
   const ref = useRef<HTMLDivElement | null>(null);
+  const menuExitRef = useExitAnimation<HTMLDivElement>();
   const operatorOS = detectOperatorOS();
 
   interface LoadedData {
@@ -458,7 +460,8 @@ export default function ConnectMenu({
 
   const menuBody = methods && (
     <div
-      className={`${isRow ? "fixed" : "absolute right-0 mt-1.5"} z-50 min-w-[280px] overflow-hidden rounded-lg shadow-2xl`}
+      ref={menuExitRef}
+      className={`th-connect-menu ${isRow ? "fixed" : "absolute right-0 mt-1.5"} z-50 min-w-[280px] overflow-hidden rounded-lg shadow-2xl`}
       style={{
         background: "var(--th-bg-card)",
         border: "1px solid var(--th-border-card)",

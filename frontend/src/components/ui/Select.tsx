@@ -2,6 +2,7 @@ import { Fragment, KeyboardEvent, ReactNode, useEffect, useId, useLayoutEffect, 
 import { createPortal } from "react-dom";
 import { Check, ChevronDown } from "lucide-react";
 import clsx from "clsx";
+import { useExitAnimation } from "../../hooks/useExitAnimation";
 
 export interface SelectOption<T extends string = string> {
   value: T;
@@ -59,6 +60,7 @@ export default function Select<T extends string>({
   });
   const triggerRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  const listExitRef = useExitAnimation(listRef);
   const typed = useRef({ text: "", at: 0 });
   const listId = useId();
   const matchIndex = options.findIndex((o) => o.value === value);
@@ -187,7 +189,7 @@ export default function Select<T extends string>({
       {open &&
         createPortal(
           <ul
-            ref={listRef}
+            ref={listExitRef}
             id={listId}
             role="listbox"
             aria-label={aria["aria-label"]}

@@ -7196,6 +7196,78 @@ span.th-inv-mono {
   }
 }
 
+/* Exit: dialogs, menus, popovers and toasts that their parent stops
+   rendering leave through an inert copy (hooks/useExitAnimation.ts) —
+   quicker than their entrance and accelerating away, the same direction they
+   came from. The copy's content does not replay its own entrance. */
+@keyframes th-leave-fade {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes th-leave-pop {
+  to {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+@keyframes th-leave-dialog {
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
+}
+@keyframes th-leave-toast {
+  to {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+}
+.th-leaving {
+  pointer-events: none !important;
+  animation: th-leave-fade 140ms cubic-bezier(0.4, 0, 1, 1) forwards !important;
+}
+.th-leaving * {
+  animation: none !important;
+  transition: none !important;
+}
+.th-leaving:is(.th-menu, .th-row-menu, .th-connect-menu) {
+  animation-name: th-leave-pop !important;
+}
+.th-leaving:is(.th-modal-scrim, .th-palette-scrim) {
+  animation-duration: 180ms !important;
+}
+.th-leaving.th-modal-scrim .th-modal,
+.th-leaving.th-palette-scrim .th-palette {
+  animation: th-leave-dialog 180ms cubic-bezier(0.4, 0, 1, 1) forwards !important;
+}
+.th-leaving.th-toast {
+  animation: th-leave-toast 180ms cubic-bezier(0.4, 0, 1, 1) forwards !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .th-leaving {
+    display: none !important;
+  }
+}
+
+/* Press: buttons sink a little while held; the shared transition eases them
+   back. Zero specificity, so a component's own transform still wins. */
+@media (prefers-reduced-motion: no-preference) {
+  :where(.th-btn, .th-connect, .th-onb-action, [role="tab"], [role="radio"]):active:not(:disabled):not(
+      [aria-disabled="true"]
+    ) {
+    transform: scale(0.97);
+  }
+}
+.th-connect-menu {
+  animation: th-pop-in 150ms var(--th-ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .th-connect-menu {
+    animation: none;
+  }
+}
+
 /* Page: the whole page fades in on navigation (main is keyed by path) and
    its cards rise in a short stagger. The page itself only fades: a transform
    there would re-anchor a fixed drawer opened by a deep link to the page box

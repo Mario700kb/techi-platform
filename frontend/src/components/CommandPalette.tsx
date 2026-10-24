@@ -24,6 +24,7 @@ import { Client, getClients } from "../api/clients";
 import { getOperators, OperatorRecord } from "../api/operators";
 import { listTeams, TeamWithStats } from "../api/teams";
 import { deviceDisplayName } from "../utils/deviceLabel";
+import { useExitAnimation } from "../hooks/useExitAnimation";
 
 interface CommandPaletteProps {
   open: boolean;
@@ -73,6 +74,7 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const { theme, setThemeMode } = useTheme();
   const { canSee } = useVisibleNav();
   const inputRef = useRef<HTMLInputElement>(null);
+  const exitRef = useExitAnimation<HTMLDivElement>();
   const listRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
@@ -306,6 +308,7 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
   return createPortal(
     <div
+      ref={exitRef}
       className="th-palette-scrim"
       role="presentation"
       onMouseDown={(e) => {

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import { MoreHorizontal } from "lucide-react";
+import { useExitAnimation } from "../../hooks/useExitAnimation";
 
 export interface RowMenuItem {
   label: string;
@@ -20,6 +21,7 @@ export default function RowMenu({ label, items }: { label: string; items: RowMen
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLDivElement>(null);
+  const listExitRef = useExitAnimation(list);
 
   useLayoutEffect(() => {
     if (!open || !trigger.current) return;
@@ -77,7 +79,7 @@ export default function RowMenu({ label, items }: { label: string; items: RowMen
       </button>
       {open && (
         <div
-          ref={list}
+          ref={listExitRef}
           role="menu"
           aria-label={label}
           className="th-row-menu"
