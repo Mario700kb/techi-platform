@@ -1232,11 +1232,14 @@ export default function DeviceDrawer({
               <SectionHeader title="Network" meta={device.domain ? `Domain ${device.domain}` : undefined} />
               <div className="th-drawer-card !py-2.5">
                 <dl className="th-kv">
-                  <Kv label="Local IP" mono>
+                  <Kv label="Local IP" mono copy>
                     {device.local_ip}
                   </Kv>
-                  <Kv label="Public IP" mono>
+                  <Kv label="Public IP" mono copy>
                     {device.public_ip}
+                  </Kv>
+                  <Kv label="MAC address" mono copy>
+                    {device.mac_address}
                   </Kv>
                 </dl>
               </div>

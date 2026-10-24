@@ -49,6 +49,7 @@ import { deviceDisplayName, deviceHostnameSubtitle } from "../utils/deviceLabel"
 import { timeAgo } from "../utils/time";
 import { DeviceStatusChip } from "../components/DeviceStatusChip";
 import { Button, EmptyState } from "../components/ui";
+import CopyButton from "../components/ui/CopyButton";
 import { DEVICE_PATCH_EVENTS, TERMS, TONE } from "../utils/deviceStatus";
 import DeviceLivePanel from "../components/DeviceLivePanel";
 import { useDeviceLive } from "../hooks/useDeviceLive";
@@ -554,11 +555,24 @@ export default function DeviceDetailsMobile() {
           </div>
           <div>
             <dt>Public IP</dt>
-            <dd className="font-mono">{device.public_ip ?? "—"}</dd>
+            <dd className="th-mfacts-copy font-mono">
+              {device.public_ip ?? "—"}
+              {device.public_ip && <CopyButton text={device.public_ip} label="Public IP" />}
+            </dd>
           </div>
           <div>
             <dt>Local IP</dt>
-            <dd className="font-mono">{device.local_ip ?? "—"}</dd>
+            <dd className="th-mfacts-copy font-mono">
+              {device.local_ip ?? "—"}
+              {device.local_ip && <CopyButton text={device.local_ip} label="Local IP" />}
+            </dd>
+          </div>
+          <div>
+            <dt>MAC address</dt>
+            <dd className="th-mfacts-copy font-mono">
+              {device.mac_address ?? "—"}
+              {device.mac_address && <CopyButton text={device.mac_address} label="MAC address" />}
+            </dd>
           </div>
           <div>
             <dt>Agent</dt>
