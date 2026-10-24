@@ -5,6 +5,25 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-24] SILENT-UNINSTALL-2026-10-24 — agent 2.1.43: Inno Setup, AnyDesk, Firefox, Chrome uninstall silently; active; pilot
+
+**Owner: "beje", then "po".** Apps without a registered quiet uninstall are
+removable when the silent switch is known for certain (`5bedd9b`, agent
+only; reported as "quiet", so no backend or frontend change): Inno Setup
+(marked "Inno Setup: …", uninsNNN.exe) `/VERYSILENT /SUPPRESSMSGBOXES
+/NORESTART`; AnyDesk `--silent --remove` (AnyDesk's CLI docs); Firefox
+`helper.exe /S`; per-machine Chrome `--force-uninstall`, exit 19 = removed.
+NSIS in general and TeamViewer (`/S` still asks about settings) left out;
+printer-driver installers stay manual. A new test caught `uninstall.exe`
+matching an Inno name check; Inno now means exactly uninsNNN.exe.
+- CI run 40128859023 green. Packages 22:23: agent `19153e09…` (`a55ab462…`),
+  Endpoint MSI `a4640375…` (`cb0ea387…`), Update Bridge `940b148e…`
+  (`c35b24de…`), hashes checked before activation; 2.1.42 kept inactive;
+  manifest backup `manifest.json.bak-pre-2.1.43-20261024-222352`; public
+  download serves the CI hash, `active-version` 2.1.43.
+- Pilot batch `982df500-e21b-4bb4-b1e9-ae8f7664ca18` (22:24) on 12, 781, 983,
+  985 from 2.1.42; AnyDesk on 781, 983, 985 read "none" before it.
+
 ## [2026-10-24] COLLECT-SOFTWARE-2026-10-24 — installed-software collection set by the platform; backend + frontend `afd9ae0`; agent 2.1.42 active; pilot
 
 **Owner: "ecim".** 161 of 937 Windows PCs never reported installed software

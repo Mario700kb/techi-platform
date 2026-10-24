@@ -39,9 +39,9 @@ Activating a package updates no device; only a `self_update` command (single or 
 
 | Package | Active | Since | Kept inactive | Evidence |
 |---|---|---|---|---|
-| Windows agent binary | `2.1.42` (`ee9513db…`) | 2026-10-24 22:06 | 2.1.41 | `COLLECT-SOFTWARE-2026-10-24` |
-| Windows Endpoint MSI | `2.1.42` (`63ea580d…`) | 2026-10-24 22:06 | 2.1.41 | `COLLECT-SOFTWARE-2026-10-24` |
-| Agent Update Bridge MSI (agents < 2.1.1 only) | `2.1.42` (`bac38677…`) | 2026-10-24 22:06 | 2.1.41 | `COLLECT-SOFTWARE-2026-10-24` |
+| Windows agent binary | `2.1.43` (`19153e09…`) | 2026-10-24 22:23 | 2.1.42 | `SILENT-UNINSTALL-2026-10-24` |
+| Windows Endpoint MSI | `2.1.43` (`a4640375…`) | 2026-10-24 22:23 | 2.1.42 | `SILENT-UNINSTALL-2026-10-24` |
+| Agent Update Bridge MSI (agents < 2.1.1 only) | `2.1.43` (`940b148e…`) | 2026-10-24 22:23 | 2.1.42 | `SILENT-UNINSTALL-2026-10-24` |
 | Linux amd64 / arm64 / armhf | `2.1.39` | 2026-10-23 13:22 | 2.1.33 (amd64), 2.1.38 (armhf) | `LINUX-2139-PACKAGES-2026-10-23` |
 | Remote Support MSI | `1.4.6.0` | — | — | Provenance conflict, see RISK-SUPPLY-001 |
 
