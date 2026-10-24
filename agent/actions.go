@@ -55,6 +55,9 @@ type HeartbeatResponse struct {
 	// Whether to collect installed software (Agent config); absent from
 	// backends before 2.1.42's.
 	CollectSoftware *bool `json:"collect_software,omitempty"`
+	// Services and processes the same way (backends from 2.1.45's).
+	CollectServices  *bool `json:"collect_services,omitempty"`
+	CollectProcesses *bool `json:"collect_processes,omitempty"`
 }
 
 type actionResult struct {

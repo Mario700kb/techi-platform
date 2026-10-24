@@ -195,8 +195,8 @@ func (b *backgroundInventory) refresh(cfg *Config) {
 
 // collectDue collects every enabled part that is due, one after the other.
 func (b *backgroundInventory) collectDue(cfg *Config) {
-	collectSection(b, &b.processes, cfg.CollectProcesses)
-	collectSection(b, &b.services, cfg.CollectServices)
+	collectSection(b, &b.processes, collectProcessesEnabled(cfg))
+	collectSection(b, &b.services, collectServicesEnabled(cfg))
 	collectSection(b, &b.software, collectSoftwareEnabled(cfg))
 	collectSection(b, &b.patch, true)
 	collectSection(b, &b.security, b.securityEnabled)
@@ -256,14 +256,14 @@ func (b *backgroundInventory) forHeartbeat(cfg *Config) inventoryForHeartbeat {
 	var out inventoryForHeartbeat
 	var marks []func(time.Time)
 
-	if cfg.CollectProcesses {
+	if collectProcessesEnabled(cfg) {
 		if v, ok := b.processes.pending(now); ok {
 			out.Processes = v
 			hash := b.processes.hash
 			marks = append(marks, func(at time.Time) { b.processes.markSent(hash, at) })
 		}
 	}
-	if cfg.CollectServices {
+	if collectServicesEnabled(cfg) {
 		if v, ok := b.services.pending(now); ok {
 			out.Services = v
 			hash := b.services.hash
