@@ -5,6 +5,23 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-24] USER-APPS-2026-10-24 — agent 2.1.44: apps installed for the signed-in users are listed; active; pilot
+
+**Owner: "po".** OneDrive was on Mario-Lenovo but not in its software list:
+all 40 stored entries came from `HKEY_LOCAL_MACHINE`. Per-user apps live in
+the user's hive, and the agent (SYSTEM) read only SYSTEM's own HKCU. 2.1.44
+(`70e025c`) also reads `HKEY_USERS\S-1-5-21-…` (signed-in users; not
+`_Classes`, not service accounts) and lists those apps without Uninstall
+(their uninstaller must run as that user). Users not signed in and Store
+(MSIX) apps are still not listed.
+- CI run 40130494139 green. Packages 22:44: agent `471b678f…` (`2ecf8825…`),
+  Endpoint MSI `6f2aa9ac…` (`5fcb5699…`), Update Bridge `e99f3195…`
+  (`6aefaee3…`), hashes checked before activation; 2.1.43 kept inactive;
+  manifest backup `manifest.json.bak-pre-2.1.44-20261024-224426`; public
+  download serves the CI hash, `active-version` 2.1.44.
+- Pilot batch `8466970f-8e15-4815-a211-023228c49c59` (22:44) on 12, 781, 983,
+  985 from 2.1.43.
+
 ## [2026-10-24] SILENT-UNINSTALL-2026-10-24 — agent 2.1.43: Inno Setup, AnyDesk, Firefox, Chrome uninstall silently; active; pilot
 
 **Owner: "beje", then "po".** Apps without a registered quiet uninstall are
