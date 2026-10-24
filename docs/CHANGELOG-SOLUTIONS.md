@@ -20,7 +20,14 @@ the user's hive, and the agent (SYSTEM) read only SYSTEM's own HKCU. 2.1.44
   manifest backup `manifest.json.bak-pre-2.1.44-20261024-224426`; public
   download serves the CI hash, `active-version` 2.1.44.
 - Pilot batch `8466970f-8e15-4815-a211-023228c49c59` (22:44) on 12, 781, 983,
-  985 from 2.1.43.
+  985 from 2.1.43: all four on 2.1.44 by 22:48. Mario-Lenovo (983, local user
+  TECHI signed in) sent 41 apps at 22:56:51 including "Microsoft OneDrive"
+  (`HKEY_USERS\S-1-5-21-…-1001\…\Uninstall\OneDriveSetup.exe`), listed
+  without Uninstall. The owner confirmed it from the PowerShell console
+  (two-factor, recorded): the hive is loaded, OneDrive is in TECHI's profile,
+  and the agent log shows 0 software entries at 22:51:29 (collection still
+  running) and 41 at 22:56:51. A direct run_powershell from outside the
+  console was refused by the session's permissions, as it should be.
 
 ## [2026-10-24] SILENT-UNINSTALL-2026-10-24 — agent 2.1.43: Inno Setup, AnyDesk, Firefox, Chrome uninstall silently; active; pilot
 
