@@ -1,20 +1,37 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
 
 func resetCollection() {
-	for _, c := range []*collectionSetting{softwareCollection, servicesCollection, processesCollection} {
+	for _, c := range collectionSettings {
 		c.set.Store(false)
 		c.enabled.Store(false)
 	}
+	inventoryCollectionState.mu.Lock()
+	inventoryCollectionState.path = ""
+	inventoryCollectionState.saved = nil
+	inventoryCollectionState.mu.Unlock()
+}
+
+// watchTurnedOn replaces the immediate collection with a counter.
+func watchTurnedOn(t *testing.T) *int {
+	t.Helper()
+	calls := 0
+	original := collectTurnedOnParts
+	collectTurnedOnParts = func(*Config) { calls++ }
+	t.Cleanup(func() { collectTurnedOnParts = original })
+	return &calls
 }
 
 func TestThePlatformDecidesWhichInventoryPartsAreCollected(t *testing.T) {
 	resetCollection()
 	defer resetCollection()
+	watchTurnedOn(t)
 	cfg := &Config{} // a token install's config: every collect_* off
 
 	applyInventoryCollection(cfg, HeartbeatResponse{})
@@ -49,5 +66,65 @@ func TestThePlatformDecidesWhichInventoryPartsAreCollected(t *testing.T) {
 	}
 	if !collectSoftwareEnabled(full) || !collectProcessesEnabled(full) {
 		t.Fatal("a part the response does not name keeps its last setting")
+	}
+}
+
+func TestAPartTurnedOnIsCollectedAndSentAtOnce(t *testing.T) {
+	resetCollection()
+	defer resetCollection()
+	calls := watchTurnedOn(t)
+	cfg := &Config{}
+	on, off := true, false
+
+	applyInventoryCollection(cfg, HeartbeatResponse{CollectServices: &off})
+	if *calls != 0 {
+		t.Fatal("nothing was turned on")
+	}
+	applyInventoryCollection(cfg, HeartbeatResponse{CollectServices: &on, CollectProcesses: &on})
+	if *calls != 1 {
+		t.Fatalf("turning parts on must start one immediate collection, got %d", *calls)
+	}
+	applyInventoryCollection(cfg, HeartbeatResponse{CollectServices: &on, CollectProcesses: &on})
+	if *calls != 1 {
+		t.Fatal("parts already on must not start another collection")
+	}
+}
+
+func TestThePlatformsChoiceSurvivesARestart(t *testing.T) {
+	resetCollection()
+	defer resetCollection()
+	watchTurnedOn(t)
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	cfg := &Config{} // the config file: every collect_* off
+
+	initInventoryCollection(configPath) // first start: no saved choice
+	if collectServicesEnabled(cfg) {
+		t.Fatal("without a saved choice the config file decides")
+	}
+	on, off := true, false
+	applyInventoryCollection(cfg, HeartbeatResponse{CollectSoftware: &on, CollectServices: &on, CollectProcesses: &off})
+
+	// Restart: the agent forgets everything in memory.
+	resetCollection()
+	initInventoryCollection(configPath)
+	if !collectSoftwareEnabled(cfg) || !collectServicesEnabled(cfg) || collectProcessesEnabled(&Config{CollectProcesses: true}) {
+		t.Fatal("after a restart the platform's last choice must apply before any heartbeat")
+	}
+
+	// A broken file is ignored: the config file decides until the platform answers.
+	if err := os.WriteFile(inventoryCollectionPathFor(configPath), []byte("{"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	resetCollection()
+	initInventoryCollection(configPath)
+	if collectServicesEnabled(cfg) {
+		t.Fatal("an unreadable file must not turn anything on")
+	}
+	applyInventoryCollection(cfg, HeartbeatResponse{CollectServices: &on})
+	if data, _ := os.ReadFile(inventoryCollectionPathFor(configPath)); string(data) != `{"services":true}` {
+		t.Fatalf("the platform's answer must replace the broken file, got %s", data)
+	}
+	if _, err := os.Stat(inventoryCollectionPathFor(configPath) + ".tmp"); !os.IsNotExist(err) {
+		t.Fatal("no temporary file may be left behind")
 	}
 }

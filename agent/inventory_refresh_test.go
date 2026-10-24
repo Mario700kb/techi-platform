@@ -206,6 +206,68 @@ func TestRefreshNeverWaitsForTheCollection(t *testing.T) {
 	}
 }
 
+func TestAnEmptyProcessListKeepsTheLastOneAndIsRetriedSoon(t *testing.T) {
+	now := time.Date(2026, 10, 25, 9, 0, 0, 0, time.UTC)
+	var calls atomic.Int32
+	b := newBackgroundInventory(
+		func() time.Time { return now },
+		func() []ProcessInfo {
+			if calls.Add(1) == 2 {
+				return nil // the second collection fails
+			}
+			return []ProcessInfo{{PID: calls.Load(), Name: "sqlservr.exe"}}
+		},
+		func() []ServiceInfo { return nil },
+		func() []SoftwareInfo { return nil },
+		func() *PatchStatus { return &PatchStatus{PatchState: "up_to_date"} },
+		nil,
+		nil,
+	)
+	only := &Config{CollectProcesses: true}
+	b.collectDue(only)
+	b.forHeartbeat(only).sent()
+
+	now = now.Add(processRefreshEvery)
+	b.collectDue(only) // fails
+	if h := b.forHeartbeat(only); h.Processes != nil {
+		t.Fatalf("a failed collection must not be sent: %+v", h.Processes)
+	}
+	if b.processes.value[0].Name != "sqlservr.exe" {
+		t.Fatal("the last good list must be kept")
+	}
+
+	now = now.Add(inventoryRetryEvery)
+	b.collectDue(only)
+	if calls.Load() != 3 {
+		t.Fatalf("a failed collection must be retried after %s, collections=%d", inventoryRetryEvery, calls.Load())
+	}
+	if h := b.forHeartbeat(only); len(h.Processes) != 1 || h.Processes[0].PID != 3 {
+		t.Fatalf("the retried list must be sent: %+v", h.Processes)
+	}
+}
+
+func TestCollectSoonWaitsForARunningPassThenCallsBack(t *testing.T) {
+	f, b := newFakeInventory()
+	b.pass <- struct{}{} // a pass is running
+	done := make(chan struct{})
+	b.collectSoon(everything, func() { close(done) })
+	select {
+	case <-done:
+		t.Fatal("collectSoon must wait for the running pass")
+	case <-time.After(50 * time.Millisecond):
+	}
+	<-b.pass
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("collectSoon never finished")
+	}
+	if f.services.Load() != 1 {
+		t.Fatalf("services collected %d times, want 1", f.services.Load())
+	}
+	assertParts(t, b.forHeartbeat(everything), "processes", "services", "software", "patch")
+}
+
 func TestServiceNamesKeepTheInventoryWording(t *testing.T) {
 	states := map[uint32]string{1: "stopped", 2: "start pending", 3: "stop pending", 4: "running", 7: "paused", 99: "unknown"}
 	for state, want := range states {

@@ -15,6 +15,7 @@ func runAgent(ctx context.Context, configPath string, enrollmentToken string, on
 	// engine runs on every platform; only the supervisor differs (Windows
 	// SCM failure actions vs systemd Restart=always).
 	initLifecycleStateFile(configPath)
+	initInventoryCollection(configPath)
 	cfg, err := loadConfigWithRetry(ctx, configPath, once)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {

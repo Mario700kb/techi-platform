@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"log"
+	"runtime"
 	"sync"
 	"time"
 )
@@ -27,6 +28,14 @@ const (
 	// restart. Short enough to self-heal within an afternoon, long enough that
 	// it is not sent on most heartbeats.
 	inventoryResendEvery = 4 * time.Hour
+	// A process or service list that came back empty is a failed collection
+	// (Windows always has both): the last good list is kept and the next try
+	// comes this soon, not at the part's usual interval.
+	inventoryRetryEvery = 5 * time.Minute
+	// A forced or immediate collection waits this long for a running pass to
+	// end before it collects anyway. Every collector is time-limited, so a
+	// pass ends; this only bounds how long a heartbeat can be held up.
+	passWaitLimit = 90 * time.Second
 )
 
 type inventorySection[T any] struct {
@@ -113,8 +122,9 @@ func contentHash(v any) string {
 }
 
 type backgroundInventory struct {
-	mu        sync.Mutex
-	running   bool
+	mu sync.Mutex
+	// pass holds a token while a pass collects, so two do not run at once.
+	pass      chan struct{}
 	now       func() time.Time
 	processes inventorySection[[]ProcessInfo]
 	services  inventorySection[[]ServiceInfo]
@@ -137,11 +147,22 @@ func newBackgroundInventory(
 	health func() *DeviceHealth,
 ) *backgroundInventory {
 	return &backgroundInventory{
-		now:       now,
-		processes: inventorySection[[]ProcessInfo]{every: processRefreshEvery, collect: processes},
-		services:  inventorySection[[]ServiceInfo]{every: serviceRefreshEvery, collect: services},
-		software:  inventorySection[[]SoftwareInfo]{every: softwareRefreshEvery, collect: software},
-		patch:     inventorySection[*PatchStatus]{every: patchRefreshEvery, collect: patch},
+		pass: make(chan struct{}, 1),
+		now:  now,
+		processes: inventorySection[[]ProcessInfo]{
+			every:   processRefreshEvery,
+			retry:   inventoryRetryEvery,
+			collect: processes,
+			usable:  func(v []ProcessInfo) bool { return len(v) > 0 },
+		},
+		services: inventorySection[[]ServiceInfo]{
+			every:   serviceRefreshEvery,
+			retry:   inventoryRetryEvery,
+			collect: services,
+			usable:  servicesCollected,
+		},
+		software: inventorySection[[]SoftwareInfo]{every: softwareRefreshEvery, collect: software},
+		patch:    inventorySection[*PatchStatus]{every: patchRefreshEvery, collect: patch},
 		security: inventorySection[*SecurityPosture]{
 			every:   securityPostureRefreshEvery,
 			resend:  securityPostureResendEvery,
@@ -173,24 +194,46 @@ var heavyInventory = newBackgroundInventory(
 	deviceHealthCollector(),
 )
 
+// servicesCollected: only Windows has services; there an empty list means
+// the Service Control Manager could not be read.
+func servicesCollected(v []ServiceInfo) bool {
+	return runtime.GOOS != "windows" || len(v) > 0
+}
+
 // refresh starts one background pass over the parts that are due; it never
 // waits for it, and leaves a pass that is still running alone.
 func (b *backgroundInventory) refresh(cfg *Config) {
-	b.mu.Lock()
-	if b.running {
-		b.mu.Unlock()
+	select {
+	case b.pass <- struct{}{}:
+	default:
 		return
 	}
-	b.running = true
-	b.mu.Unlock()
 	go func() {
-		defer func() {
-			b.mu.Lock()
-			b.running = false
-			b.mu.Unlock()
-		}()
+		defer func() { <-b.pass }()
 		b.collectDue(cfg)
 	}()
+}
+
+// collectSoon runs a pass in the background once a running pass has ended,
+// then calls done — used to send a part the platform just turned on with an
+// immediate heartbeat.
+func (b *backgroundInventory) collectSoon(cfg *Config, done func()) {
+	go func() {
+		b.collectAfterRunningPass(cfg)
+		done()
+	}()
+}
+
+// collectAfterRunningPass waits up to passWaitLimit for a running pass, then
+// collects what is due.
+func (b *backgroundInventory) collectAfterRunningPass(cfg *Config) {
+	select {
+	case b.pass <- struct{}{}:
+		defer func() { <-b.pass }()
+	case <-time.After(passWaitLimit):
+		log.Printf("[inventory] a background pass is still running after %s; collecting anyway", passWaitLimit)
+	}
+	b.collectDue(cfg)
 }
 
 // collectDue collects every enabled part that is due, one after the other.
@@ -217,7 +260,7 @@ func (b *backgroundInventory) forceCollect(cfg *Config) {
 	b.security.markDue()
 	b.health.markDue()
 	b.mu.Unlock()
-	b.collectDue(cfg)
+	b.collectAfterRunningPass(cfg)
 }
 
 func collectSection[T any](b *backgroundInventory, s *inventorySection[T], enabled bool) {
