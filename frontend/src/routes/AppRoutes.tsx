@@ -20,6 +20,7 @@ const Reenrollment = lazy(pageLoaders.Reenrollment);
 const Teams = lazy(pageLoaders.Teams);
 const TeamDetailPage = lazy(pageLoaders.TeamDetail);
 const AgentConfigPage = lazy(pageLoaders.AgentConfig);
+const AutomationPage = lazy(pageLoaders.Automation);
 const MonitoringPoliciesPage = lazy(pageLoaders.MonitoringPolicies);
 const Alerts = lazy(pageLoaders.Alerts);
 const More = lazy(pageLoaders.More);
@@ -172,6 +173,16 @@ export default function AppRoutes() {
             <RequireAuth>
               <RequirePermission perm="audit_log">
                 <Audit />
+              </RequirePermission>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/automation"
+          element={
+            <RequireAuth>
+              <RequirePermission perm="deployment">
+                <AutomationPage />
               </RequirePermission>
             </RequireAuth>
           }

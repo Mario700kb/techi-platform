@@ -4,6 +4,7 @@ import {
   Bell,
   BellRing,
   Building2,
+  CalendarClock,
   ClipboardList,
   FileBarChart,
   Folder,
@@ -168,6 +169,14 @@ export const NAV_SECTIONS: NavSection[] = [
         permission: "view_devices",
         mobile: "desktop",
         keywords: "monitoring policies monitors thresholds metrics cpu memory disk network telemetry pipeline storage",
+      },
+      {
+        label: "Automation",
+        to: "/automation",
+        icon: CalendarClock,
+        permission: "deployment",
+        mobile: "desktop",
+        keywords: "schedule scheduled tasks agent update rollout waves maintenance window",
       },
       {
         label: "Agent Config",

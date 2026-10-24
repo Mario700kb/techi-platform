@@ -16,6 +16,7 @@ export const pageLoaders = {
   Teams: () => import("../pages/Teams"),
   TeamDetail: () => import("../pages/TeamDetail"),
   AgentConfig: () => import("../pages/AgentConfig"),
+  Automation: () => import("../pages/Automation"),
   MonitoringPolicies: () => import("../pages/MonitoringPolicies"),
   Alerts: () => import("../pages/Alerts"),
   More: () => import("../pages/More"),
