@@ -19,15 +19,15 @@
 | Field | Value |
 |---|---|
 | Clean immutable release baseline | **No** — no release tag; production runs from `backport/platform-components-92a521c`, not `main` |
-| Last verified deploy | 2026-10-23 22:06, `PS-PROMPT-2026-10-23` |
+| Last verified deploy | 2026-10-24 20:31, `DEVICE-MANAGE-DEPLOY-2026-10-24` |
 | Authenticated browser smoke in production | Not automated; done by hand after UI deploys |
 
 ## 3. Production Baseline
 
 | Component | Running | Since | Rollback | Evidence |
 |---|---|---|---|---|
-| Backend | `dc4a2ad` | 2026-10-23 21:51 | image `pre-ps-command-mode-2545bde`; dump `pre-ps-command-mode-20261023-214629.sql.gz` | `PS-COMMAND-MODE-2026-10-23` |
-| Frontend | `11997f8` | 2026-10-23 22:06 | image `pre-ps-prompt-dc4a2ad` | `PS-PROMPT-2026-10-23` |
+| Backend | `1011c7a` | 2026-10-24 20:29 | image `pre-device-manage-11997f8`; dump `pre-device-manage-20261024-201856.sql.gz` | `DEVICE-MANAGE-DEPLOY-2026-10-24` |
+| Frontend | `1011c7a` | 2026-10-24 20:31 | image `pre-device-manage-11997f8` | `DEVICE-MANAGE-DEPLOY-2026-10-24` |
 | Database schema | Alembic `x2y3z4a5b6c7` (single head; repository head matches) | 2026-10-23 20:26 | `alembic downgrade w1x2y3z4a5b6` | `ALERT-SLA-2026-10-23` |
 | Repository path | `/opt/techi/techi-platform` | — | — | — |
 
@@ -63,7 +63,7 @@ Measured 2026-10-22 (`SELFUPDATE-AUDIT-2026-10-22`).
 | Area | Value |
 |---|---|
 | Host | Linode, 1 vCPU, 2 GB RAM, 25 GB disk. Owner decision: the host stays this size |
-| Disk | 2.6 GB free (89%) on 2026-10-23 after the PS-PROMPT build. Each frontend build needs ~0.3 GB and stalls the host for minutes |
+| Disk | 1.8 GB free (93%) on 2026-10-24 after the DEVICE-MANAGE builds. Each frontend build needs ~0.3 GB and stalls the host for minutes |
 | Compose | Three projects, one compose file each: `/opt/techi/techi-platform`, `/opt/techi/rustdesk-server`, `/root/nginx-proxy-manager` |
 | Backend process | uvicorn, 1 worker; `HeartbeatGuard` sheds heartbeats with 503 above 24 in flight; ws ping 20 s / 20 s |
 | PostgreSQL | 15, loopback only; `max_connections` 100, `jit` off, `shared_buffers` 256 MB, `pg_stat_statements`; must stay UTC |

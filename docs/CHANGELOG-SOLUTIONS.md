@@ -5,6 +5,31 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-24] DEVICE-MANAGE-DEPLOY-2026-10-24 — backend + frontend `1011c7a`: process/service/software endpoints, MAC, UI fixes
+
+**Backend + frontend deployed 20:29–20:31 (Tirana), no migration.** Owner's
+word ("beji"). Guard passed; dump
+`pre-device-manage-20261024-201856.sql.gz` (233 MB, `gzip -t` ok); rollback
+images `techi-platform-backend:pre-device-manage-11997f8`,
+`techi-platform-frontend:pre-device-manage-11997f8`; both images built before
+any restart (~2 min, peak load 4.2, min 264 MB available, no stall); `nginx -t`
+in the new frontend image. Backend ready 10 s after recreate; first 30 s:
+264 devices heartbeating in a minute, 200 command channels back, 0 errors,
+load 3.6. Guard and smoke passed; the three new endpoints answer 401 without
+a session, the console 200. Disk 1.8 GB free (93%).
+- CI: Backend CI green; MSI run 40119000830 green (new Windows tests real:
+  kill, quiet uninstall, Spooler stop/start/restart); Frontend CI 40120054199:
+  typecheck, lint, Prettier, 461 tests, build green; Playwright 240 passed,
+  `client-profile.spec.ts:77` failed as on 23 Oct (pre-existing),
+  `explorer.spec.ts:62` failed once then passed on retry. That flake was
+  checked: the e2e mocks close every WebSocket, so the new cache patching does
+  not run there; 75 local runs (60 under 6 parallel workers) all passed.
+- First the build step ran outside the repository (`&` sent the `cd` to the
+  background): "no configuration file", nothing built or restarted; rerun
+  correctly.
+- Agent 2.1.41 is not uploaded yet: the row actions read "Needs agent 2.1.41"
+  until a device runs it.
+
 ## [2026-10-24] AGENT-2.1.41-PREP-2026-10-24 — process, service and software actions; MAC address; two UI fixes; not built, not deployed
 
 **Source only.** On the owner's requests of the evening; 2.1.41 replaces
