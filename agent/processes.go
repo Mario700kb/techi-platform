@@ -142,10 +142,24 @@ func collectWindowsSoftware() []SoftwareInfo {
 
 	seen := map[string]struct{}{}
 	var software []SoftwareInfo
+	// Apps installed for one user (OneDrive, Zoom, VS Code User…) live in that
+	// user's hive; the agent runs as SYSTEM, so HKCU above is SYSTEM's own.
+	// The hives of the users signed in now are loaded under HKEY_USERS.
+	userRoots := map[string]bool{}
+	if out, err := runWithTimeout(10*time.Second, "reg", "query", "HKU"); err == nil {
+		for _, sid := range loadedUserHives(string(out)) {
+			root := `HKU\` + sid + `\Software\Microsoft\Windows\CurrentVersion\Uninstall`
+			roots = append(roots, root)
+			userRoots[root] = true
+		}
+	}
+
 	for _, root := range roots {
 		out, err := runWithTimeout(20*time.Second, "reg", "query", root, "/s")
 		if err != nil {
-			log.Printf("software: reg query failed for %s: %v", root, err)
+			if !userRoots[root] { // a user without per-user apps has no Uninstall key
+				log.Printf("software: reg query failed for %s: %v", root, err)
+			}
 			continue
 		}
 		for _, app := range parseWindowsUninstallRegistry(string(out)) {
@@ -165,6 +179,22 @@ func collectWindowsSoftware() []SoftwareInfo {
 		return strings.ToLower(software[i].Name) < strings.ToLower(software[j].Name)
 	})
 	return software
+}
+
+// loadedUserHives lists the signed-in users' hives in `reg query HKU`
+// output: real accounts (S-1-5-21-…), not their _Classes hives, not the
+// service accounts or .DEFAULT.
+func loadedUserHives(raw string) []string {
+	var sids []string
+	for _, line := range strings.Split(raw, "\n") {
+		key := strings.TrimSpace(strings.TrimRight(line, "\r"))
+		sid, ok := strings.CutPrefix(key, `HKEY_USERS\`)
+		if !ok || !strings.HasPrefix(sid, "S-1-5-21-") || strings.HasSuffix(sid, "_Classes") || strings.Contains(sid, `\`) {
+			continue
+		}
+		sids = append(sids, sid)
+	}
+	return sids
 }
 
 func parseWindowsUninstallRegistry(raw string) []SoftwareInfo {
@@ -227,6 +257,11 @@ func parseWindowsUninstallRegistry(raw string) []SoftwareInfo {
 // an app with a silent uninstall command (registered, or known; see
 // software_silent.go), "" when it cannot be.
 func uninstallMethod(key string, windowsInstaller bool, quiet bool) string {
+	// Installed for one user: its uninstaller must run as that user, not as
+	// SYSTEM, so the console does not offer it.
+	if strings.HasPrefix(strings.ToUpper(key), `HKEY_USERS\`) {
+		return ""
+	}
 	if windowsInstaller && isProductCode(registryLeaf(key)) {
 		return "msi"
 	}

@@ -65,3 +65,27 @@ func TestTheInventoryOffersInnoAndKnownAppsAsQuiet(t *testing.T) {
 		}
 	}
 }
+
+func TestSignedInUsersHivesAreRead(t *testing.T) {
+	out := "\r\nHKEY_USERS\\.DEFAULT\r\nHKEY_USERS\\S-1-5-19\r\nHKEY_USERS\\S-1-5-20\r\n" +
+		"HKEY_USERS\\S-1-5-21-1004336348-1177238915-682003330-1001\r\n" +
+		"HKEY_USERS\\S-1-5-21-1004336348-1177238915-682003330-1001_Classes\r\nHKEY_USERS\\S-1-5-18\r\n"
+	got := loadedUserHives(out)
+	if len(got) != 1 || got[0] != "S-1-5-21-1004336348-1177238915-682003330-1001" {
+		t.Fatalf("got %v", got)
+	}
+}
+
+func TestAPerUserAppIsListedButNotOfferedForUninstall(t *testing.T) {
+	raw := "HKEY_USERS\\S-1-5-21-1-2-3-1001\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\OneDriveSetup.exe\r\n" +
+		"    DisplayName    REG_SZ    Microsoft OneDrive\r\n" +
+		"    Publisher    REG_SZ    Microsoft Corporation\r\n" +
+		"    QuietUninstallString    REG_SZ    \"C:\\Users\\mario\\AppData\\Local\\Microsoft\\OneDrive\\OneDriveSetup.exe\" /uninstall\r\n"
+	apps := parseWindowsUninstallRegistry(raw)
+	if len(apps) != 1 || apps[0].Name != "Microsoft OneDrive" {
+		t.Fatalf("got %+v", apps)
+	}
+	if apps[0].Uninstall != "" || apps[0].UninstallKey != "" {
+		t.Fatalf("a per-user app must not be offered for uninstall as SYSTEM: %+v", apps[0])
+	}
+}
