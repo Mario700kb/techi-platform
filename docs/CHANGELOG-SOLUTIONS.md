@@ -5,6 +5,44 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-25] PREMIUM-FRONTEND-2026-10-25 — frontend `4f58d59`: motion, live detail, prefetch, toasts, motion budget
+
+**Owner: "beji te gjitha", then "deplooy".** Five commits, frontend only:
+- `bff6167` dialogs, menus and popovers animate out (useExitAnimation:
+  an inert copy plays the exit); buttons sink while pressed.
+- `fc21c21` KPI figures count to new values; status and agent version glow
+  when they change live; devices, alerts and notifications that arrive live
+  are tinted.
+- `d2007c2` a mouse resting on a device row loads the drawer's action history
+  first; skeleton rows instead of "Loading…"; shimmer moved with transform.
+- `3cdf51c` one toast system (services/toast, components/Toaster).
+- `4f58d59` live dots breathe with transform/opacity; motion budget unit test;
+  e2e for exit motion, reduced motion and INP (88–96 ms at 50 rows a page).
+- Deployed 01:53: rollback image `pre-premium-bd50aae`; no backend change, no
+  dump; guard + smoke passed. Disk 2.3 GB free (91%).
+
+## [2026-10-25] FLEET-2146-2026-10-25 — Automation task #1: fleet agent update to 2.1.46 in waves, 25 Oct 02:00
+
+**Owner: "po", then "krijoje"** (the permission check refused the first
+attempt until the owner authorized it explicitly).
+- Task #1 "Fleet agent update 2.1.46", created 01:05 by "claude (owner
+  approved)" (audited): once at 02:00 Tirana (00:00 UTC), every device except
+  Adpascucci (client 3), skip maintenance, waves 10 → 50 → 150 → the rest,
+  30 min between waves, halt above 5% failed or unfinished per wave, window
+  240 min.
+- Dry run before creating: 397 Windows PCs eligible (391 on 2.1.35, 3 on
+  2.1.45, one each on 2.1.33, 2.0.0, 2.1.20); 31 up to date or busy; no Linux
+  device in it.
+- Result: the owner pressed Run now at 01:07 (wave 1: 9 of 10 updated,
+  pos1-qtu stuck "running"), stopped the run at 01:18 and deleted the task,
+  then updated about 125 PCs by hand in batches of ~20, Adpascucci included.
+  Left at 01:49: PC001 (539) and Z400 (999) at Adpascucci and Anxhelina-LA
+  (875) went offline the minute their update started and are still on
+  2.1.35 (the 2.1.35 agent runs its own old swap; the 2.1.40 fixes help only
+  updates from 2.1.40 on); pos1-qtu (164) and DESKTOP-INFN0DN (128) are online
+  on 2.1.35 with their self_update stuck "running" (running actions never
+  expire). Follow-up needs the owner's decision.
+
 ## [2026-10-25] EMPTY-LIST-REASONS-2026-10-25 — frontend `bd50aae`: an empty inventory list says why; agent 2.1.46 active; pilot; Frontend CI e2e fixed
 
 **Owner: "vazhdo".** Services were missing on many devices: 470 PCs on 2.1.35
