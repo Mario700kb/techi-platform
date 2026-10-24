@@ -1,17 +1,24 @@
 import { act, render } from "@testing-library/react";
+import { useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as devicesApi from "../../api/devices";
 import type { DeviceFleetOverview } from "../../api/devices";
-import type { DeviceRealtimeStatus } from "../../services/deviceRealtime";
-import { AppDataProvider } from "../AppDataContext";
+import type { DeviceRealtimeEvent, DeviceRealtimeStatus } from "../../services/deviceRealtime";
+import { AppDataProvider, useAppData } from "../AppDataContext";
 
 vi.mock("../../auth/AuthContext", () => ({
   useAuth: () => ({ user: { id: 1, role: "owner", username: "owner" } }),
 }));
 
 let socketStatus: DeviceRealtimeStatus = "connecting";
-vi.mock("../../hooks/useDeviceRealtime", () => ({ useDeviceRealtime: () => socketStatus }));
+let emitEvent: ((event: DeviceRealtimeEvent) => void) | undefined;
+vi.mock("../../hooks/useDeviceRealtime", () => ({
+  useDeviceRealtime: (options: { onEvent?: (event: DeviceRealtimeEvent) => void }) => {
+    emitEvent = options.onEvent;
+    return socketStatus;
+  },
+}));
 
 const reloadAlerts = vi.fn();
 vi.mock("../../hooks/useAlerts", () => ({
@@ -103,5 +110,48 @@ describe("AppDataProvider keeps the fleet overview current", () => {
     // Forced past the 30 s freshness window: events were missed while down.
     expect(getOverview).toHaveBeenCalledTimes(2);
     expect(reloadAlerts).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("AppDataProvider hands every realtime event to the screens", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function Recorder({ seen }: { seen: string[] }) {
+    const { latestEvent } = useAppData();
+    useEffect(() => {
+      if (latestEvent) seen.push(`${latestEvent.type}:${String(latestEvent.data?.agent_version ?? "")}`);
+    }, [latestEvent, seen]);
+    return null;
+  }
+
+  it("delivers a heartbeat's burst of events one at a time, none lost", async () => {
+    socketStatus = "connected";
+    vi.spyOn(devicesApi, "getDevicesOverview").mockResolvedValue(overview);
+    const seen: string[] = [];
+    render(
+      <AppDataProvider>
+        <Recorder seen={seen} />
+      </AppDataProvider>,
+    );
+    const event = (type: string, data: Record<string, unknown>) =>
+      ({ event_id: type, version: 1, type, tenant_id: "default", occurred_at: "", data }) as unknown as DeviceRealtimeEvent;
+
+    // All four arrive before React renders, as they do after a heartbeat.
+    act(() => {
+      emitEvent?.(event("heartbeat_received", { id: 7, agent_version: "2.1.40" }));
+      emitEvent?.(event("device_updated", { id: 7, agent_version: "2.1.40" }));
+      emitEvent?.(event("telemetry_updated", { id: 7 }));
+      emitEvent?.(event("patch_status_updated", { id: 7 }));
+    });
+    await act(async () => {});
+
+    expect(seen).toEqual([
+      "heartbeat_received:2.1.40",
+      "device_updated:2.1.40",
+      "telemetry_updated:",
+      "patch_status_updated:",
+    ]);
   });
 });

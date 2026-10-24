@@ -264,6 +264,9 @@ export default function Devices() {
 
   // Stable refs for WS callbacks (avoids stale closures)
   const tableDevicesRef = useRef<Device[]>([]);
+  // The cache key the rows on screen were loaded for (null when they belong
+  // to no single page, e.g. after "Load more" on a phone).
+  const tableDevicesKeyRef = useRef<string | null>(null);
   const detailsRequestRef = useRef(0);
   // In-flight device list request: aborted when a new one starts, and
   // its cache key is checked on resolve so a stale response (from a
@@ -413,6 +416,7 @@ export default function Devices() {
     // Fresh cache → instant, no fetch
     const fresh = appCache.get<{ devices: Device[]; total: number }>(cacheKey, CACHE_TTL.devicesTable);
     if (fresh) {
+      tableDevicesKeyRef.current = cacheKey;
       setTableDevices(fresh.devices);
       setTableTotal(fresh.total);
       setTableLoading(false);
@@ -428,6 +432,7 @@ export default function Devices() {
     // Stale cache → show stale immediately, revalidate silently in background
     const stale = appCache.peek<{ devices: Device[]; total: number }>(cacheKey);
     if (stale) {
+      tableDevicesKeyRef.current = cacheKey;
       setTableDevices(stale.devices);
       setTableTotal(stale.total);
       setTableLoading(false);
@@ -439,6 +444,7 @@ export default function Devices() {
         const result = await getDevices(apiFilters, skip, tableLimit, controller.signal);
         if (tableRequestKeyRef.current !== cacheKey) return; // selection changed while in flight
         setError(null);
+        tableDevicesKeyRef.current = cacheKey;
         setTableDevices(result.devices);
         setTableTotal(result.total);
         appCache.set(cacheKey, { devices: result.devices, total: result.total });
@@ -459,6 +465,7 @@ export default function Devices() {
       if (debouncedSearch) apiFilters.search = debouncedSearch;
       const result = await getDevices(apiFilters, skip, tableLimit, controller.signal);
       if (tableRequestKeyRef.current !== cacheKey) return; // selection changed while in flight
+      tableDevicesKeyRef.current = cacheKey;
       setTableDevices(result.devices);
       setTableTotal(result.total);
       appCache.set(cacheKey, { devices: result.devices, total: result.total });
@@ -890,7 +897,31 @@ export default function Devices() {
     };
     setTableDevices(upsert);
     patchDrawerFallback(updated.id, () => updated);
+    // Other cached pages (another client's folder, another filter) hold the
+    // device as it was: they are fetched again when opened. This page's copy
+    // is kept, with the device as saved.
+    const key = tableDevicesKeyRef.current;
+    const cached = key ? appCache.peek<{ devices: Device[]; total: number }>(key) : null;
+    appCache.invalidatePrefix("devices-table");
+    if (key && cached) {
+      appCache.set(key, {
+        devices: cached.devices.map((item) => (item.id === updated.id ? updated : item)),
+        total: cached.total,
+      });
+    }
   };
+
+  // The cached copy of this page follows every in-place change to its rows
+  // (realtime patches, edits). A reload inside the cache's 30 s freshness —
+  // back to this page, F5 — used to bring the rows back as they were fetched:
+  // an assignment made in the drawer looked unsaved, a new agent version old.
+  useEffect(() => {
+    const key = tableDevicesKeyRef.current;
+    if (!key) return;
+    const cached = appCache.peek<{ devices: Device[]; total: number }>(key);
+    if (!cached || cached.devices === tableDevices) return;
+    appCache.patch(key, { devices: tableDevices, total: cached.total });
+  }, [tableDevices]);
 
   const handleDeviceDelete = async (device: Device, reason: string, mfaCode: string) => {
     await deleteDevice(device.id, reason, mfaCode);
@@ -953,6 +984,7 @@ export default function Devices() {
       const apiFilters: DeviceFilters = { ...listFilters };
       if (debouncedSearch) apiFilters.search = debouncedSearch;
       const result = await getDevices(apiFilters, 0, effectiveLimit);
+      tableDevicesKeyRef.current = null;
       setTableDevices(result.devices);
       setTableTotal(result.total);
     } catch {

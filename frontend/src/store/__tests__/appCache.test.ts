@@ -1,3 +1,5 @@
+import { vi } from "vitest";
+
 import { appCache, CACHE_KEYS } from "../appCache";
 
 describe("appCache persistence", () => {
@@ -44,6 +46,29 @@ describe("appCache persistence", () => {
     appCache.setScope("7");
     expect(appCache.peek(CACHE_KEYS.groupsList)).toBeNull();
     expect(Object.keys(window.sessionStorage).filter((k) => k.startsWith("techi.cache.v1:"))).toEqual([]);
+  });
+
+  it("patch replaces an entry's data but keeps its age, and never creates one", () => {
+    vi.useFakeTimers();
+    try {
+      appCache.setScope("7");
+      appCache.set("devices-table|1|20", { devices: [{ id: 1, client_id: 1 }], total: 1 });
+      vi.advanceTimersByTime(20_000);
+      appCache.patch("devices-table|1|20", { devices: [{ id: 1, client_id: 2 }], total: 1 });
+      expect(appCache.get("devices-table|1|20", 30_000)).toEqual({ devices: [{ id: 1, client_id: 2 }], total: 1 });
+      // Still as old as the fetch: stale 30 s after it, not 30 s after the patch.
+      vi.advanceTimersByTime(11_000);
+      expect(appCache.get("devices-table|1|20", 30_000)).toBeNull();
+      // The persisted copy carries the patch too.
+      appCache.setScope("");
+      appCache.setScope("7");
+      expect(appCache.peek("devices-table|1|20")).toEqual({ devices: [{ id: 1, client_id: 2 }], total: 1 });
+
+      appCache.patch("devices-table|2|20", { devices: [], total: 0 });
+      expect(appCache.peek("devices-table|2|20")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("a prefix invalidation reaches the persisted copies too", () => {

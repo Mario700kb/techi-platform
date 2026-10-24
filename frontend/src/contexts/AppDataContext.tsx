@@ -39,6 +39,8 @@ const STATUS_CHANGE_EVENTS = new Set(["device_online", "device_offline"]);
 const STATUS_REFRESH_DELAY_MS = 3000;
 /** The earliest refresh for a time-based change (the server recounts at most every 5 s). */
 const MIN_CHANGE_REFRESH_MS = 5000;
+/** Events waiting for their turn (a fleet reconnect is ~10 a second; this is minutes of backlog). */
+const MAX_QUEUED_EVENTS = 2000;
 
 function isStatusChange(event: DeviceRealtimeEvent): boolean {
   return (
@@ -92,6 +94,24 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [fleetOverviewLoading, setFleetOverviewLoading] = useState(() => Boolean(user && !initialOverview));
   const [fleetOverviewError, setFleetOverviewError] = useState<string | null>(null);
   const [latestEvent, setLatestEvent] = useState<DeviceRealtimeEvent | null>(null);
+  // Every screen reads realtime events from latestEvent in an effect, so each
+  // event needs a render of its own. A heartbeat's events (heartbeat_received,
+  // device_updated, telemetry_updated, patch_status_updated) arrive within
+  // milliseconds; set in one go they shared a render and screens saw only the
+  // last, so a field sent once in a heartbeat delta (a new agent version) was
+  // lost until a reload. Events now wait here and are handed out one at a time.
+  const eventQueueRef = useRef<DeviceRealtimeEvent[]>([]);
+  const deliveringRef = useRef(false);
+  const deliverEvent = useCallback((event: DeviceRealtimeEvent) => {
+    if (deliveringRef.current) {
+      const queue = eventQueueRef.current;
+      queue.push(event);
+      if (queue.length > MAX_QUEUED_EVENTS) queue.shift();
+      return;
+    }
+    deliveringRef.current = true;
+    setLatestEvent(event);
+  }, []);
   const refreshPromiseRef = useRef<Promise<void> | null>(null);
   const refreshTimerRef = useRef<number | undefined>();
   const statusTimerRef = useRef<number | undefined>();
@@ -162,6 +182,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       setLastFetchTime(null);
       setFleetOverviewLoading(false);
       setFleetOverviewError(null);
+      eventQueueRef.current = [];
+      deliveringRef.current = false;
       setLatestEvent(null);
       window.sessionStorage.removeItem(OVERVIEW_STORAGE_KEY);
       return;
@@ -202,7 +224,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         const cached = appCache.peek<DeviceInventory>(key);
         if (cached) appCache.set(key, withPatchStatus(cached, patch));
       }
-      setLatestEvent(event);
+      deliverEvent(event);
       if (isStatusChange(event)) {
         // Counts (tabs, Explorer rings, client figures) move with the rows:
         // forced past the overview's 30 s freshness, once per burst.
@@ -221,6 +243,15 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       }, 5000);
     },
   });
+
+  // The screens are this provider's descendants, so their effects for an
+  // event have run when this one does: hand out the next.
+  useEffect(() => {
+    if (!latestEvent) return;
+    const next = eventQueueRef.current.shift();
+    if (next) setLatestEvent(next);
+    else deliveringRef.current = false;
+  }, [latestEvent]);
 
   useEffect(() => {
     return () => {

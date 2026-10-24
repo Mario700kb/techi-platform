@@ -68,7 +68,21 @@ class AppCache {
   }
 
   set<T>(key: string, data: T): void {
-    const entry = { data, cachedAt: Date.now() };
+    this.write(key, { data, cachedAt: Date.now() });
+  }
+
+  /**
+   * New data for an existing entry, keeping its age: rows patched in place
+   * are no fresher than the fetch they came from, so they never put off the
+   * next one. Nothing happens for a key that is not cached.
+   */
+  patch<T>(key: string, data: T): void {
+    const entry = this.read<T>(key);
+    if (!entry) return;
+    this.write(key, { data, cachedAt: entry.cachedAt });
+  }
+
+  private write<T>(key: string, entry: CacheEntry<T>): void {
     this.store.set(key, entry);
     if (!this.persists(key)) return;
     const s = storage();
