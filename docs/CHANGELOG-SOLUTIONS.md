@@ -30,7 +30,10 @@ at once when turned on. Agent config page: "Installed software" card.
   manifest backup `manifest.json.bak-pre-2.1.42-20261024-220559`; public
   download serves the CI hash, `active-version` 2.1.42.
 - Pilot batch `220835c5-c070-4eea-9101-8c252a93069e` (22:06) on 12, 781, 983,
-  985, all from 2.1.41.
+  985, all from 2.1.41: all four on 2.1.42 by ~22:12. Mario-Lenovo (983)
+  and Node-01 (985), which had never reported software, sent their lists at
+  22:21 (41 apps, 33 removable; 6 apps, 1 removable), two heartbeat cycles
+  after the update as expected. 12: 130 of 146 removable, 781: 48 of 57.
 - Earlier the same evening (2.1.41 pilot, batch `7fddcea6…`, 20:34–20:39):
   all four on 2.1.41, MAC addresses reported (e.g. 12 `b8:ca:3a:a9:e5:53`);
   after the hourly software pass 12 can uninstall 130 of 146 apps (109 MSI,
