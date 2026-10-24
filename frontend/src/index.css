@@ -5037,17 +5037,14 @@ tr:hover > .th-sticky-end {
     transform: scale(1);
   }
 }
+/* From just off the left edge to just off the right: 140% of the track is
+   350% of the bar's own 40%. */
 @keyframes th-progress {
-  0% {
-    left: -40%;
-    width: 40%;
+  from {
+    transform: translateX(0);
   }
-  60% {
-    width: 55%;
-  }
-  100% {
-    left: 100%;
-    width: 40%;
+  to {
+    transform: translateX(350%);
   }
 }
 @keyframes th-glow-drift {
@@ -5469,26 +5466,41 @@ a.th-list-row:hover {
   width: 8px;
   height: 8px;
 }
+/* The breath is a ring growing out of the dot and fading (transform and
+   opacity only): many rows breathe at once. */
 .th-devstatus-dot[data-live] {
-  animation: th-devstatus-breathe 2.4s var(--th-ease) infinite;
+  position: relative;
+}
+.th-devstatus-dot[data-live]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--chip-tone) 55%, transparent);
+  animation: th-dot-ring 2.4s var(--th-ease) infinite;
 }
 .th-devstatus-dot[data-reconnecting] {
   background: transparent;
   box-shadow: inset 0 0 0 1.5px var(--chip-tone);
 }
-@keyframes th-devstatus-breathe {
+@keyframes th-dot-ring {
   0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--chip-tone) 55%, transparent);
+    transform: scale(1);
+    opacity: 1;
   }
   70%,
   100% {
-    box-shadow: 0 0 0 5px transparent;
+    transform: scale(2.4);
+    opacity: 0;
   }
 }
 @media (prefers-reduced-motion: reduce) {
   .th-devstatus-dot[data-live] {
-    animation: none;
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--chip-tone) 22%, transparent);
+  }
+  .th-devstatus-dot[data-live]::after,
+  .th-status-chip[data-live] i::after {
+    content: none;
   }
 }
 .th-devstatus .th-devstatus-label {
@@ -8037,16 +8049,15 @@ button.th-client-group:hover {
   }
 }
 .th-status-chip[data-live] i {
-  animation: th-cp-breathe 2.6s var(--th-ease) infinite;
+  position: relative;
 }
-@keyframes th-cp-breathe {
-  0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--chip-tone) 55%, transparent);
-  }
-  70%,
-  100% {
-    box-shadow: 0 0 0 5px transparent;
-  }
+.th-status-chip[data-live] i::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--chip-tone) 55%, transparent);
+  animation: th-dot-ring 2.6s var(--th-ease) infinite;
 }
 .th-cp-kpi {
   transition:
