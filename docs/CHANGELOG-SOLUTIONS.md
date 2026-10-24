@@ -5,6 +5,19 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-24] PILOT-2.1.40-2026-10-24 — agent 2.1.40 on Techi-Server, HV-PROD-01, Mario-Lenovo, Node-01
+
+On the owner's word ("update 12, 781, 983, 985"): `self_update` batch
+`71a774e4-9cff-4068-b705-7bbd7f7b3ebb`, created 19:11 Tirana through
+`AgentCommandService.create_bulk` in a separate process (so `pushed=0`; each
+agent took it at its next heartbeat). Mario-Lenovo is device 983 now; 924 no
+longer exists. All four on 2.1.40 and online by 19:14:51, actions completed
+(100%); each command channel reconnected 4–10 s after its swap (781 19:12:09,
+983 19:14:00, 12 19:14:23, 985 19:14:50); Remote Support IDs unchanged
+(Node-01 still 1063900938). Host load 1.8 during the window. The devices'
+`deploy.log` (confirmed / not confirmed line) was not read. Next: 24 h of
+observation, then a first wave of 10 devices; Adpascucci excluded.
+
 ## [2026-10-24] PACKAGES-2.1.40-2026-10-24 — agent, Endpoint MSI and Update Bridge at 2.1.40
 
 On the owner's word ("ngarkoi ti"), 19:06 Tirana: the three Windows packages
