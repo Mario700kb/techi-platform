@@ -26,9 +26,9 @@
 
 | Component | Running | Since | Rollback | Evidence |
 |---|---|---|---|---|
-| Backend | `afd9ae0` | 2026-10-24 22:03 | image `pre-collect-software-1011c7a`; dump `pre-collect-software-20261024-215648.sql.gz` | `COLLECT-SOFTWARE-2026-10-24` |
-| Frontend | `afd9ae0` | 2026-10-24 22:05 | image `pre-collect-software-1011c7a` | `COLLECT-SOFTWARE-2026-10-24` |
-| Database schema | Alembic `x2y3z4a5b6c7` (single head; repository head matches) | 2026-10-23 20:26 | `alembic downgrade w1x2y3z4a5b6` | `ALERT-SLA-2026-10-23` |
+| Backend | `504a206` | 2026-10-25 00:05 | image `pre-automation-afd9ae0`; dump `pre-automation-20261024-235709.sql.gz` | `AUTOMATION-2026-10-25` |
+| Frontend | `504a206` | 2026-10-25 00:08 | image `pre-automation-afd9ae0` | `AUTOMATION-2026-10-25` |
+| Database schema | Alembic `y3z4a5b6c7d8` (single head; repository head matches) | 2026-10-25 00:04 | `alembic downgrade x2y3z4a5b6c7` | `AUTOMATION-2026-10-25` |
 | Repository path | `/opt/techi/techi-platform` | — | — | — |
 
 Release identity is the Git SHA. Backend `1.0.0` and frontend `0.1.0` are package metadata only.
@@ -39,9 +39,9 @@ Activating a package updates no device; only a `self_update` command (single or 
 
 | Package | Active | Since | Kept inactive | Evidence |
 |---|---|---|---|---|
-| Windows agent binary | `2.1.44` (`471b678f…`) | 2026-10-24 22:44 | 2.1.43 | `USER-APPS-2026-10-24` |
-| Windows Endpoint MSI | `2.1.44` (`6f2aa9ac…`) | 2026-10-24 22:44 | 2.1.43 | `USER-APPS-2026-10-24` |
-| Agent Update Bridge MSI (agents < 2.1.1 only) | `2.1.44` (`e99f3195…`) | 2026-10-24 22:44 | 2.1.43 | `USER-APPS-2026-10-24` |
+| Windows agent binary | `2.1.45` (`d2d56989…`) | 2026-10-25 00:10 | 2.1.44 | `AUTOMATION-2026-10-25` |
+| Windows Endpoint MSI | `2.1.45` (`0a317a19…`) | 2026-10-25 00:10 | 2.1.44 | `AUTOMATION-2026-10-25` |
+| Agent Update Bridge MSI (agents < 2.1.1 only) | `2.1.45` (`3b17eb86…`) | 2026-10-25 00:10 | 2.1.44 | `AUTOMATION-2026-10-25` |
 | Linux amd64 / arm64 / armhf | `2.1.39` | 2026-10-23 13:22 | 2.1.33 (amd64), 2.1.38 (armhf) | `LINUX-2139-PACKAGES-2026-10-23` |
 | Remote Support MSI | `1.4.6.0` | — | — | Provenance conflict, see RISK-SUPPLY-001 |
 

@@ -5,6 +5,44 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-25] AUTOMATION-2026-10-25 — Automation page (scheduled agent updates in waves); services/processes collection set by the platform; backend + frontend `504a206`; agent 2.1.45 active; pilot
+
+**Owner: "po"** (cache prune, deploy, upload 2.1.45, pilot on 12, 781, 983,
+985).
+- **Automation** (`126a608`): Platform → Automation, admins only. A task
+  updates the agent on a schedule (once/daily/weekly/monthly, Tirana time) in
+  waves (e.g. 10 → 50 → the rest), only online devices that need it, skipping
+  maintenance and excluded clients/devices; a wave settles when its actions
+  end or after 30 min; above the failure limit the run halts; the run ends
+  when nothing is left or its window closes. Scheduler every 60 s in the
+  backend. No task created yet.
+- **Services/processes collection** (`740dc05`, `5612da3`, `504a206`): Mario-Lenovo
+  and 631 other Windows PCs sent no services (160 no processes) because
+  `collect_services`/`collect_processes` were off in the agent's config file.
+  Agent config → Inventory collection now sets software, services and
+  processes per platform (default on); the heartbeat response carries them;
+  agent 2.1.45 obeys and collects a part at the next pass when it is turned on.
+- Deploy 25 Oct: build cache pruned (2.4 GB freed); dump
+  `pre-automation-20261024-235709.sql.gz` (gzip -t OK); rollback images
+  `pre-automation-afd9ae0`; migration `x2y3z4a5b6c7 → y3z4a5b6c7d8` (two new
+  tables); backend 00:05 (ready in ~15 s, no errors, only slow heartbeats
+  during reconnect), frontend 00:08; guard + smoke passed;
+  `/api/v1/automation/tasks` → 401 unauthenticated. Disk 2.7 GB free (89%).
+- Packages 00:10 from CI run 40135874017: agent `d2d56989…` (`548adda4…`),
+  Endpoint MSI `0a317a19…` (`afad20de…`), Update Bridge `3b17eb86…`
+  (`758023f0…`), hashes checked before activation; 2.1.44 kept inactive;
+  manifest backup `manifest.json.bak-pre-2.1.45-20261025-001012`; public
+  download serves the CI hash, `active-version` 2.1.45.
+- Pilot batch `d770242a-a6b6-462e-81f9-0937b6791998` (00:10) on 12, 781, 983,
+  985 from 2.1.44: all four completed by 00:16.
+  Mario-Lenovo (983) and Node-01 (985), which had sent no services or
+  processes, reported 289/50 and 260/50 at 00:24–00:25, on the third
+  heartbeat after the update (the first turns collection on; the second
+  starts the background pass, which finishes after that heartbeat leaves).
+  12 and 781 unchanged (248/50, 244/50).
+- Rollback: `alembic downgrade x2y3z4a5b6c7` with the new image, then the
+  `pre-automation-afd9ae0` images; agent: reactivate 2.1.44.
+
 ## [2026-10-24] USER-APPS-2026-10-24 — agent 2.1.44: apps installed for the signed-in users are listed; active; pilot
 
 **Owner: "po".** OneDrive was on Mario-Lenovo but not in its software list:
