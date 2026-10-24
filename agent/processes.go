@@ -170,17 +170,18 @@ func collectWindowsSoftware() []SoftwareInfo {
 func parseWindowsUninstallRegistry(raw string) []SoftwareInfo {
 	var current SoftwareInfo
 	var software []SoftwareInfo
-	key, windowsInstaller, quiet := "", false, false
+	key, windowsInstaller, quiet, uninstallString, inno := "", false, "", "", false
 	flush := func() {
 		if strings.TrimSpace(current.Name) != "" {
-			if method := uninstallMethod(key, windowsInstaller, quiet); method != "" {
+			silent := silentUninstallFor(current.Name, quiet, uninstallString, inno).command != ""
+			if method := uninstallMethod(key, windowsInstaller, silent); method != "" {
 				current.Uninstall = method
 				current.UninstallKey = key
 			}
 			software = append(software, current)
 		}
 		current = SoftwareInfo{}
-		key, windowsInstaller, quiet = "", false, false
+		key, windowsInstaller, quiet, uninstallString, inno = "", false, "", "", false
 	}
 
 	for _, line := range strings.Split(raw, "\n") {
@@ -192,6 +193,11 @@ func parseWindowsUninstallRegistry(raw string) []SoftwareInfo {
 		if strings.HasPrefix(trimmed, "HKEY_") {
 			flush()
 			key = trimmed
+			continue
+		}
+		// "Inno Setup: Setup Version" and friends: names with spaces.
+		if strings.HasPrefix(trimmed, "Inno Setup:") {
+			inno = true
 			continue
 		}
 		name, value := parseRegValueLine(trimmed)
@@ -207,7 +213,9 @@ func parseWindowsUninstallRegistry(raw string) []SoftwareInfo {
 		case "WindowsInstaller":
 			windowsInstaller = value == "0x1" || value == "1"
 		case "QuietUninstallString":
-			quiet = strings.TrimSpace(value) != ""
+			quiet = strings.TrimSpace(value)
+		case "UninstallString":
+			uninstallString = strings.TrimSpace(value)
 		}
 	}
 	flush()
@@ -216,7 +224,8 @@ func parseWindowsUninstallRegistry(raw string) []SoftwareInfo {
 
 // uninstallMethod is how an app can be removed with nobody at the PC: "msi"
 // for a Windows Installer product (its key is the product code), "quiet" for
-// an app that registered a quiet uninstall command, "" when it cannot be.
+// an app with a silent uninstall command (registered, or known; see
+// software_silent.go), "" when it cannot be.
 func uninstallMethod(key string, windowsInstaller bool, quiet bool) string {
 	if windowsInstaller && isProductCode(registryLeaf(key)) {
 		return "msi"

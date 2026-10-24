@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -246,6 +247,12 @@ type uninstallEntry struct {
 	name             string
 	windowsInstaller bool
 	quietCommand     string
+	uninstallString  string
+	inno             bool
+}
+
+func (e uninstallEntry) silent() silentUninstall {
+	return silentUninstallFor(e.name, e.quietCommand, e.uninstallString, e.inno)
 }
 
 func handleUninstallSoftware(ctx context.Context, cfg *Config, params map[string]interface{}) actionResult {
@@ -268,11 +275,12 @@ func handleUninstallSoftware(ctx context.Context, cfg *Config, params map[string
 	ctx, cancel := context.WithTimeout(ctx, uninstallTimeout)
 	defer cancel()
 	var message string
-	switch uninstallMethod(key, entry.windowsInstaller, entry.quietCommand != "") {
+	silent := entry.silent()
+	switch uninstallMethod(key, entry.windowsInstaller, silent.command != "") {
 	case "msi":
 		message, err = runMsiUninstall(ctx, registryLeaf(key), entry.name)
 	case "quiet":
-		message, err = runQuietUninstall(ctx, entry.quietCommand, entry.name)
+		message, err = runQuietUninstall(ctx, silent, entry.name)
 	default:
 		err = fmt.Errorf("%s has no silent uninstall; remove it over Remote Support", entry.name)
 	}
@@ -324,15 +332,25 @@ func readUninstallEntry(key string) (uninstallEntry, error) {
 	if v, _, err := k.GetIntegerValue("WindowsInstaller"); err == nil {
 		entry.windowsInstaller = v == 1
 	}
-	if v, valueType, err := k.GetStringValue("QuietUninstallString"); err == nil {
-		if valueType == registry.EXPAND_SZ {
-			if expanded, err := registry.ExpandString(v); err == nil {
-				v = expanded
-			}
-		}
-		entry.quietCommand = strings.TrimSpace(v)
+	entry.quietCommand = expandedString(k, "QuietUninstallString")
+	entry.uninstallString = expandedString(k, "UninstallString")
+	if _, _, err := k.GetStringValue("Inno Setup: Setup Version"); err == nil {
+		entry.inno = true
 	}
 	return entry, nil
+}
+
+func expandedString(k registry.Key, name string) string {
+	v, valueType, err := k.GetStringValue(name)
+	if err != nil {
+		return ""
+	}
+	if valueType == registry.EXPAND_SZ {
+		if expanded, err := registry.ExpandString(v); err == nil {
+			v = expanded
+		}
+	}
+	return strings.TrimSpace(v)
 }
 
 func runMsiUninstall(ctx context.Context, productCode string, name string) (string, error) {
@@ -363,7 +381,8 @@ func runMsiUninstall(ctx context.Context, productCode string, name string) (stri
 	}
 }
 
-func runQuietUninstall(ctx context.Context, command string, name string) (string, error) {
+func runQuietUninstall(ctx context.Context, silent silentUninstall, name string) (string, error) {
+	command := silent.command
 	exe := commandExecutable(command)
 	if exe == "" {
 		return "", fmt.Errorf("the quiet uninstall command of %s is empty", name)
@@ -380,31 +399,13 @@ func runQuietUninstall(ctx context.Context, command string, name string) (string
 		return "Uninstalled " + name, nil
 	case code == 3010:
 		return "Uninstalled " + name + "; a restart finishes it", nil
+	case slices.Contains(silent.okCodes, code):
+		return "Uninstalled " + name, nil
 	case code > 0:
 		return "", fmt.Errorf("the uninstaller of %s exited with code %d", name, code)
 	default:
 		return "", fmt.Errorf("could not run the uninstaller of %s: %v", name, err)
 	}
-}
-
-// commandExecutable is the program a registered command line runs: the
-// quoted first part, or everything up to ".exe" for an unquoted path with
-// spaces, or the first word.
-func commandExecutable(command string) string {
-	command = strings.TrimSpace(command)
-	if strings.HasPrefix(command, `"`) {
-		if end := strings.Index(command[1:], `"`); end >= 0 {
-			return command[1 : end+1]
-		}
-		return ""
-	}
-	if i := strings.Index(strings.ToLower(command), ".exe"); i >= 0 {
-		return command[:i+4]
-	}
-	if fields := strings.Fields(command); len(fields) > 0 {
-		return fields[0]
-	}
-	return ""
 }
 
 func exitCode(err error) int {
