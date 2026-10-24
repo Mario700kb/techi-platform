@@ -9,8 +9,8 @@ import (
 )
 
 // Windows reports exactly one capability, "powershell", and only where the
-// pseudo console exists; every other Platform Expansion field stays out of
-// the heartbeat.
+// pseudo console exists, and of the Platform Expansion fields only the MAC
+// address (2.1.41); every other one stays out of the heartbeat.
 func TestWindowsReportsOnlyThePowerShellCapability(t *testing.T) {
 	caps := currentPlatform().Capabilities()
 	if conPTYAvailable() {
@@ -20,15 +20,20 @@ func TestWindowsReportsOnlyThePowerShellCapability(t *testing.T) {
 	} else if caps != nil {
 		t.Fatalf("no pseudo console: want nil, got %v", caps)
 	}
-	if (currentPlatform().ExtraInventory() != ExtraInventory{}) {
-		t.Error("expected zero ExtraInventory on Windows")
+	extra := currentPlatform().ExtraInventory()
+	extra.MACAddress = ""
+	if (extra != ExtraInventory{}) {
+		t.Errorf("expected only the MAC address in Windows ExtraInventory, got %+v", currentPlatform().ExtraInventory())
 	}
-	inv := &Inventory{Hostname: "host", Platform: "windows", Capabilities: caps}
+	inv := &Inventory{Hostname: "host", Platform: "windows", Capabilities: caps, MACAddress: "00:15:5d:01:02:03"}
 	data, _ := json.Marshal(buildHeartbeatPayload(&Config{}, inv, RustDeskInfo{}, nil, nil, nil, nil, nil))
-	for _, field := range []string{"fqdn", "kernel_version", "architecture", "mac_address", "timezone", "last_boot_at"} {
+	for _, field := range []string{"fqdn", "kernel_version", "architecture", "timezone", "last_boot_at"} {
 		if strings.Contains(string(data), "\""+field+"\"") {
 			t.Errorf("Windows payload must omit %q", field)
 		}
+	}
+	if !strings.Contains(string(data), `"mac_address":"00:15:5d:01:02:03"`) {
+		t.Errorf("Windows payload must carry the MAC address: %s", data)
 	}
 }
 
