@@ -19,15 +19,15 @@
 | Field | Value |
 |---|---|
 | Clean immutable release baseline | **No** — no release tag; production runs from `backport/platform-components-92a521c`, not `main` |
-| Last verified deploy | 2026-10-24 20:31, `DEVICE-MANAGE-DEPLOY-2026-10-24` |
+| Last verified deploy | 2026-10-24 22:05, `COLLECT-SOFTWARE-2026-10-24` |
 | Authenticated browser smoke in production | Not automated; done by hand after UI deploys |
 
 ## 3. Production Baseline
 
 | Component | Running | Since | Rollback | Evidence |
 |---|---|---|---|---|
-| Backend | `1011c7a` | 2026-10-24 20:29 | image `pre-device-manage-11997f8`; dump `pre-device-manage-20261024-201856.sql.gz` | `DEVICE-MANAGE-DEPLOY-2026-10-24` |
-| Frontend | `1011c7a` | 2026-10-24 20:31 | image `pre-device-manage-11997f8` | `DEVICE-MANAGE-DEPLOY-2026-10-24` |
+| Backend | `afd9ae0` | 2026-10-24 22:03 | image `pre-collect-software-1011c7a`; dump `pre-collect-software-20261024-215648.sql.gz` | `COLLECT-SOFTWARE-2026-10-24` |
+| Frontend | `afd9ae0` | 2026-10-24 22:05 | image `pre-collect-software-1011c7a` | `COLLECT-SOFTWARE-2026-10-24` |
 | Database schema | Alembic `x2y3z4a5b6c7` (single head; repository head matches) | 2026-10-23 20:26 | `alembic downgrade w1x2y3z4a5b6` | `ALERT-SLA-2026-10-23` |
 | Repository path | `/opt/techi/techi-platform` | — | — | — |
 
@@ -39,9 +39,9 @@ Activating a package updates no device; only a `self_update` command (single or 
 
 | Package | Active | Since | Kept inactive | Evidence |
 |---|---|---|---|---|
-| Windows agent binary | `2.1.41` (`3a19ca73…`) | 2026-10-24 20:33 | 2.1.40 | `PACKAGES-2.1.41-2026-10-24` |
-| Windows Endpoint MSI | `2.1.41` (`38a5ef1c…`) | 2026-10-24 20:33 | 2.1.40 | `PACKAGES-2.1.41-2026-10-24` |
-| Agent Update Bridge MSI (agents < 2.1.1 only) | `2.1.41` (`4eaa53b8…`) | 2026-10-24 20:33 | 2.1.40 | `PACKAGES-2.1.41-2026-10-24` |
+| Windows agent binary | `2.1.42` (`ee9513db…`) | 2026-10-24 22:06 | 2.1.41 | `COLLECT-SOFTWARE-2026-10-24` |
+| Windows Endpoint MSI | `2.1.42` (`63ea580d…`) | 2026-10-24 22:06 | 2.1.41 | `COLLECT-SOFTWARE-2026-10-24` |
+| Agent Update Bridge MSI (agents < 2.1.1 only) | `2.1.42` (`bac38677…`) | 2026-10-24 22:06 | 2.1.41 | `COLLECT-SOFTWARE-2026-10-24` |
 | Linux amd64 / arm64 / armhf | `2.1.39` | 2026-10-23 13:22 | 2.1.33 (amd64), 2.1.38 (armhf) | `LINUX-2139-PACKAGES-2026-10-23` |
 | Remote Support MSI | `1.4.6.0` | — | — | Provenance conflict, see RISK-SUPPLY-001 |
 
@@ -63,7 +63,7 @@ Measured 2026-10-22 (`SELFUPDATE-AUDIT-2026-10-22`).
 | Area | Value |
 |---|---|
 | Host | Linode, 1 vCPU, 2 GB RAM, 25 GB disk. Owner decision: the host stays this size |
-| Disk | 1.8 GB free (93%) on 2026-10-24 after the DEVICE-MANAGE builds. Each frontend build needs ~0.3 GB and stalls the host for minutes |
+| Disk | 1.3 GB free (95%) on 2026-10-24 after the COLLECT-SOFTWARE builds and dump. Each frontend build needs ~0.3 GB and stalls the host for minutes |
 | Compose | Three projects, one compose file each: `/opt/techi/techi-platform`, `/opt/techi/rustdesk-server`, `/root/nginx-proxy-manager` |
 | Backend process | uvicorn, 1 worker; `HeartbeatGuard` sheds heartbeats with 503 above 24 in flight; ws ping 20 s / 20 s |
 | PostgreSQL | 15, loopback only; `max_connections` 100, `jit` off, `shared_buffers` 256 MB, `pg_stat_statements`; must stay UTC |

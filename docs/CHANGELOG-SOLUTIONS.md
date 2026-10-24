@@ -5,6 +5,37 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-24] COLLECT-SOFTWARE-2026-10-24 — installed-software collection set by the platform; backend + frontend `afd9ae0`; agent 2.1.42 active; pilot
+
+**Owner: "ecim".** 161 of 937 Windows PCs never reported installed software
+(the agent config's `collect_software` defaulted to off), so Uninstall could
+not be offered there (Mario-Lenovo 983, Node-01 985 among them). Agent config
+now has `platform_collect_software` (windows/linux/macos, on by default,
+policy file, no migration), sent in every heartbeat response as
+`collect_software`; agent 2.1.42 obeys it over its config file and collects
+at once when turned on. Agent config page: "Installed software" card.
+- CI for `afd9ae0`: backend, MSI (2.1.42, eight scenarios), Linux green;
+  frontend unit/build green, Playwright 241 passed, 1 failed
+  (`client-profile.spec.ts:77`, pre-existing).
+- Deploy 22:03–22:05 (Tirana), no migration: guard; dump
+  `pre-collect-software-20261024-215648.sql.gz` (235 MB, `gzip -t` ok);
+  rollback images `pre-collect-software-1011c7a`; builds waited for load < 2
+  after the dump (peak 2.95 during builds, min 240 MB available); `nginx -t`;
+  backend ready in 8 s, 0 errors after restart; guard and smoke passed;
+  `get_collect_software("windows")` true in production. Disk 1.3 GB free
+  (95%).
+- Packages 22:06: agent `ee9513db…` (`25b32c9c…`), Endpoint MSI `63ea580d…`
+  (`ca770004…`), Update Bridge `bac38677…` (`5582107a…`) from CI run
+  40126868853, each hash checked before activation; 2.1.41 kept inactive;
+  manifest backup `manifest.json.bak-pre-2.1.42-20261024-220559`; public
+  download serves the CI hash, `active-version` 2.1.42.
+- Pilot batch `220835c5-c070-4eea-9101-8c252a93069e` (22:06) on 12, 781, 983,
+  985, all from 2.1.41.
+- Earlier the same evening (2.1.41 pilot, batch `7fddcea6…`, 20:34–20:39):
+  all four on 2.1.41, MAC addresses reported (e.g. 12 `b8:ca:3a:a9:e5:53`);
+  after the hourly software pass 12 can uninstall 130 of 146 apps (109 MSI,
+  21 quiet), 781 48 of 57.
+
 ## [2026-10-24] PACKAGES-2.1.41-2026-10-24 — agent, Endpoint MSI and Update Bridge at 2.1.41
 
 On the owner's word ("ngarkoje"), 20:33 Tirana: the three Windows packages
