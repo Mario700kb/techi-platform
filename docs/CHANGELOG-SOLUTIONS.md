@@ -5,6 +5,19 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-24] PACKAGES-2.1.41-2026-10-24 — agent, Endpoint MSI and Update Bridge at 2.1.41
+
+On the owner's word ("ngarkoje"), 20:33 Tirana: the three Windows packages
+from CI run 40119000830 (`8cd2f25`; Windows tests incl. real kill, quiet
+uninstall and Spooler control; eight MSI scenarios) uploaded through
+`AgentPackageService` and activated after each SHA-256 matched CI: agent
+binary `3a19ca73…` (package `8da4afee…`), Endpoint MSI `38a5ef1c…`
+(`7d9a0228…`), Update Bridge MSI `4eaa53b8…` (`3f8c4344…`), all
+`windows-amd64`. 2.1.40 kept inactive for rollback; manifest backup
+`manifest.json.bak-pre-2.1.41-20261024-203328`. No audit row (service path,
+RISK-SUPPLY-001). Verified from outside: the public download serves the CI
+hash, `active-version` answers 2.1.41. No device was sent an update.
+
 ## [2026-10-24] DEVICE-MANAGE-DEPLOY-2026-10-24 — backend + frontend `1011c7a`: process/service/software endpoints, MAC, UI fixes
 
 **Backend + frontend deployed 20:29–20:31 (Tirana), no migration.** Owner's
