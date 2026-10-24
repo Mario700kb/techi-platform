@@ -78,6 +78,7 @@ import { CONNECT_REFRESH_EVENT, ConnectRowStatus, getConnectStatuses } from "../
 import { detectOperatorOS } from "../utils/operatorOs";
 import { useNewKeys } from "../hooks/useLiveChange";
 import { cancelDevicePrefetch, prefetchDeviceOnHover } from "../utils/devicePrefetch";
+import { toast } from "../services/toast";
 
 export type { ActiveActionEntry };
 
@@ -448,13 +449,7 @@ const DevicesTable = memo(function DevicesTable({
   const [bulkBusy, setBulkBusy] = useState(false);
   const [pendingBulkAction, setPendingBulkAction] = useState<BulkActionType | null>(null);
   const [bulkMaintDuration, setBulkMaintDuration] = useState<MaintenanceDuration>("1h");
-  const [bulkToast, setBulkToast] = useState<{ message: string; ok: boolean } | null>(null);
-  const bulkToastTimer = useRef<number | undefined>();
-  const showBulkToast = (message: string, ok: boolean) => {
-    setBulkToast({ message, ok });
-    window.clearTimeout(bulkToastTimer.current);
-    bulkToastTimer.current = window.setTimeout(() => setBulkToast(null), 4000);
-  };
+  const showBulkToast = (message: string, ok: boolean) => toast(message, { tone: ok ? "success" : "error" });
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const agentSources = useMemo<AgentVersionSources>(
     () => ({ activePackageVersion, activePackageSha256, activeConnectorVersions, activeAgentVersions }),
@@ -1790,22 +1785,6 @@ const DevicesTable = memo(function DevicesTable({
           </div>,
           document.body,
         )}
-
-      {/* ── Bulk toast ── */}
-      {bulkToast && (
-        <div
-          className="th-toast fixed right-4 top-4 z-[99999] rounded-lg px-4 py-2.5 text-sm font-medium shadow-lg"
-          style={{
-            background: bulkToast.ok
-              ? "color-mix(in srgb, var(--th-status-online) 15%, transparent)"
-              : "color-mix(in srgb, var(--th-status-critical) 15%, transparent)",
-            border: `1px solid ${bulkToast.ok ? "color-mix(in srgb, var(--th-status-online) 30%, transparent)" : "color-mix(in srgb, var(--th-status-critical) 30%, transparent)"}`,
-            color: bulkToast.ok ? "var(--th-status-online)" : "var(--th-status-critical)",
-          }}
-        >
-          {bulkToast.message}
-        </div>
-      )}
 
       {pendingBulkAction && (
         <ConfirmationModal

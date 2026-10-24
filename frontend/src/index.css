@@ -7258,6 +7258,117 @@ span.th-inv-mono {
   }
 }
 
+/* Toaster: the console's one toast stack (components/Toaster.tsx). Top
+   right on desktop, above the bottom navigation on phones. A thin bar at the
+   bottom of each toast runs out as its time does; hovering or focusing the
+   toast pauses it, and its end dismisses the toast. */
+.th-toaster {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 100000;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  width: min(380px, calc(100vw - 32px));
+  pointer-events: none;
+}
+@media (max-width: 767px) {
+  .th-toaster {
+    top: auto;
+    right: 16px;
+    bottom: calc(84px + env(safe-area-inset-bottom));
+    flex-direction: column-reverse;
+  }
+}
+.th-toaster-card {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 12px 14px 14px;
+  overflow: hidden;
+  border: 1px solid var(--th-border-card);
+  border-radius: 12px;
+  background: var(--th-bg-elevated);
+  box-shadow:
+    inset 3px 0 0 var(--toast-tone),
+    0 12px 32px -12px rgb(0 0 0 / 0.35);
+  color: var(--th-text-primary);
+  pointer-events: auto;
+}
+.th-toaster-icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  color: var(--toast-tone);
+}
+.th-toaster-message {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.th-toaster-action {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--th-accent);
+}
+.th-toaster-action:hover {
+  background: color-mix(in srgb, var(--th-accent) 12%, transparent);
+}
+.th-toaster-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: var(--th-text-muted);
+}
+.th-toaster-close:hover {
+  background: var(--th-chip-bg);
+  color: var(--th-text-primary);
+}
+.th-toaster-time {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--toast-tone);
+  opacity: 0.55;
+  transform-origin: left;
+  animation: th-toast-time var(--toast-ms) linear forwards;
+}
+.th-toaster-card:is(:hover, :focus-within) .th-toaster-time {
+  animation-play-state: paused;
+}
+@keyframes th-toast-time {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* The bar is the timer: it keeps its length of time (over the global 1ms
+     rule) but is not shown moving. */
+  .th-toaster-time {
+    animation-duration: var(--toast-ms) !important;
+    opacity: 0;
+  }
+}
+
 /* Live change: a value a live event or refresh changed glows for a moment
    (useFlashOnChange, AnimatedNumber), and a row that arrives live is tinted
    as it comes in (useNewKeys). The glow is a pseudo-element fading out, so

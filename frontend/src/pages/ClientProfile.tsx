@@ -94,6 +94,7 @@ import {
 import { formatCount } from "../utils/number";
 import { detectOperatorOS } from "../utils/operatorOs";
 import { formatDateTime, formatLocalDateTime, timeAgo } from "../utils/time";
+import { toast } from "../services/toast";
 
 type StatusFilter = "all" | "online" | "stale" | "offline";
 type Tab = "overview" | "devices" | "locations" | "alerts" | "activity" | "analytics" | "documents";
@@ -1001,14 +1002,10 @@ function DevicesTab({
     [connectStatuses.data],
   );
 
-  const [toast, setToast] = useState<{ message: string; ok: boolean } | null>(null);
-  const toastTimer = useRef<number | undefined>();
-  const showToast = useCallback((message: string, ok: boolean) => {
-    setToast({ message, ok });
-    window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToast(null), 4000);
-  }, []);
-  useEffect(() => () => window.clearTimeout(toastTimer.current), []);
+  const showToast = useCallback(
+    (message: string, ok: boolean) => void toast(message, { tone: ok ? "success" : "error" }),
+    [],
+  );
 
   const filters: { key: StatusFilter; label: string; count: number }[] = [
     { key: "all", label: "All", count: stats.total },
@@ -1193,19 +1190,6 @@ function DevicesTab({
           itemLabel="devices"
           loading={refreshing}
         />
-      )}
-      {toast && (
-        <div
-          role="status"
-          className="th-toast fixed right-4 top-4 z-[99999] rounded-lg px-4 py-2.5 text-sm font-medium shadow-lg"
-          style={{
-            background: `color-mix(in srgb, ${toast.ok ? TONE.online : TONE.critical} 15%, transparent)`,
-            border: `1px solid color-mix(in srgb, ${toast.ok ? TONE.online : TONE.critical} 30%, transparent)`,
-            color: toast.ok ? TONE.online : TONE.critical,
-          }}
-        >
-          {toast.message}
-        </div>
       )}
     </div>
   );

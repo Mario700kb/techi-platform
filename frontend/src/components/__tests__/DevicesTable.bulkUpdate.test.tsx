@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Device } from "../../api/devices";
 import DevicesTable from "../DevicesTable";
+import Toaster from "../Toaster";
 
 vi.mock("../../hooks/usePlatformFeatures", () => ({
   usePlatformFeatures: () => ({ FEATURE_LINUX: false }),
@@ -31,6 +32,7 @@ function renderTable(canUpdateAgents: boolean) {
   const onBulkComplete = vi.fn();
   render(
     <MemoryRouter>
+      <Toaster />
       <DevicesTable
         {...({
           devices,

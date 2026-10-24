@@ -35,9 +35,10 @@ import { useAuth } from "../auth/AuthContext";
 import { API_BASE_URL } from "../api/client";
 import { Button, Modal, PageHeader, Select, DatePicker } from "../components/ui";
 import { TokenStatusChip, UsageMeter, formatTokenPrefix } from "../components/EnrollmentTokenBits";
-import { TERMS, TONE } from "../utils/deviceStatus";
+import { TERMS } from "../utils/deviceStatus";
 import { useCachedQuery } from "../hooks/useCachedQuery";
 import { tiranaInputToUtcIso } from "../utils/time";
+import { toast } from "../services/toast";
 
 async function validateBackendReachable(url: string): Promise<void> {
   const base = url.trim().replace(/\/+$/, "");
@@ -46,8 +47,6 @@ async function validateBackendReachable(url: string): Promise<void> {
     throw new Error(`Backend health check failed (${response.status})`);
   }
 }
-
-type Toast = { id: number; message: string; type: "success" | "error" };
 
 const PLATFORMS: { id: EnrollmentBootstrapPlatform; label: string }[] = [
   { id: "windows", label: "Windows" },
@@ -182,13 +181,8 @@ export default function EnrollmentBootstrap() {
   const [editMaxUsesTarget, setEditMaxUsesTarget] = useState<EnrollmentToken | null>(null);
   const [editMaxUses, setEditMaxUses] = useState(0);
   const [savingMaxUses, setSavingMaxUses] = useState(false);
-  // ── toasts ───────────────────────────────────────────────────────────────
-  const [toasts, setToasts] = useState<Toast[]>([]);
-
-  function showToast(message: string, type: Toast["type"] = "success") {
-    const id = Date.now();
-    setToasts((prev) => [...prev, { id, message, type }]);
-    window.setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3500);
+  function showToast(message: string, type: "success" | "error" = "success") {
+    toast(message, { tone: type });
   }
 
   // ── derived ──────────────────────────────────────────────────────────────
@@ -1120,32 +1114,6 @@ export default function EnrollmentBootstrap() {
           </label>
         </Modal>
       )}
-
-      {/* ── Toasts ───────────────────────────────────────────────────────────── */}
-      <div className="pointer-events-none fixed bottom-4 right-4 z-[110] flex flex-col gap-2" aria-live="polite">
-        {toasts.map((toast) => {
-          const tone = toast.type === "success" ? TONE.online : TONE.critical;
-          return (
-            <div
-              key={toast.id}
-              className="th-toast flex items-center gap-2.5 rounded-lg px-4 py-3 text-[13px] font-medium shadow-xl"
-              style={{
-                border: "1px solid var(--th-border-card)",
-                background: "var(--th-bg-elevated)",
-                color: "var(--th-text-primary)",
-                boxShadow: `inset 3px 0 0 ${tone}`,
-              }}
-            >
-              {toast.type === "success" ? (
-                <Check className="h-4 w-4 flex-none" style={{ color: tone }} />
-              ) : (
-                <AlertTriangle className="h-4 w-4 flex-none" style={{ color: tone }} />
-              )}
-              {toast.message}
-            </div>
-          );
-        })}
-      </div>
     </section>
   );
 }

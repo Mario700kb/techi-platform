@@ -8,6 +8,7 @@ import { AppDataProvider } from "./contexts/AppDataContext";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { installGlobalErrorHandlers } from "./utils/errorReporting";
 import "./index.css";
+import Toaster from "./components/Toaster";
 
 installGlobalErrorHandlers();
 
@@ -41,6 +42,7 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
           <AuthProvider>
             <AppDataProvider>
               <App />
+              <Toaster />
             </AppDataProvider>
           </AuthProvider>
         </BrowserRouter>
