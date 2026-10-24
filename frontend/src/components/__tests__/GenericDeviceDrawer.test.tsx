@@ -28,7 +28,8 @@ vi.mock("../../hooks/useDeviceTelemetry", () => ({
       ram_percent: 40,
       disk_percent: 88,
       uptime_seconds: 3600,
-      created_at: "2026-10-17T10:00:00Z",
+      // Relative to now: a fixed date read as "x ago" for a week, then as a date.
+      created_at: new Date(Date.now() - 5 * 60_000).toISOString(),
     },
     healthScore: 90,
     healthState: "healthy",

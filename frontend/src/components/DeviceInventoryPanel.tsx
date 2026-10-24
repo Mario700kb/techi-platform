@@ -130,7 +130,7 @@ export default function DeviceInventoryPanel({ inventory, loading, error, onLoad
   const { track, outcomeFor } = useManageOutcomes(manage?.actions, onLoad);
 
   // Why a row's action cannot be used now; null when it can.
-  const operateBlock = !manage ? "" : manage.blockedReason ?? (manage.canOperate ? null : "Your role cannot do this");
+  const operateBlock = !manage ? "" : (manage.blockedReason ?? (manage.canOperate ? null : "Your role cannot do this"));
   const processBlock = (name: string) =>
     operateBlock ??
     (PROTECTED_PROCESSES.has(name.toLowerCase()) ? "Protected: Windows, the agent or Remote Support needs it" : null);
@@ -385,7 +385,10 @@ export default function DeviceInventoryPanel({ inventory, loading, error, onLoad
                             : null;
                         const outcome = req ? outcomeFor(requestKey(req)) : undefined;
                         return (
-                          <tr key={`${s.name}-${s.version ?? ""}-${idx}`} data-gone={outcome?.state === "done" || undefined}>
+                          <tr
+                            key={`${s.name}-${s.version ?? ""}-${idx}`}
+                            data-gone={outcome?.state === "done" || undefined}
+                          >
                             <td>
                               <p className="th-inv-primary" title={s.name}>
                                 {s.name}
@@ -449,7 +452,8 @@ export default function DeviceInventoryPanel({ inventory, loading, error, onLoad
                         const label = s.display_name || s.name;
                         const outcome = outcomeFor(`service:${s.name.toLowerCase()}`);
                         // Until the next inventory, a service shows what was just done to it.
-                        const done = outcome?.state === "done" && outcome.request.kind === "service" ? outcome.request : null;
+                        const done =
+                          outcome?.state === "done" && outcome.request.kind === "service" ? outcome.request : null;
                         const status = done ? (done.operation === "stop" ? "stopped" : "running") : s.status;
                         const ask = (operation: "start" | "stop" | "restart") =>
                           setRequest({ kind: "service", name: s.name, label, operation });
@@ -473,7 +477,9 @@ export default function DeviceInventoryPanel({ inventory, loading, error, onLoad
                                 {humanize(status)}
                               </span>
                             </td>
-                            <td className="th-inv-end th-inv-muted">{s.startup_type ? humanize(s.startup_type) : "—"}</td>
+                            <td className="th-inv-end th-inv-muted">
+                              {s.startup_type ? humanize(s.startup_type) : "—"}
+                            </td>
                             {manage && (
                               <td className="th-inv-actions">
                                 {outcome?.state === "running" ? (

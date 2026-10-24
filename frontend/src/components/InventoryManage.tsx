@@ -115,7 +115,9 @@ export function useManageOutcomes(actions: RemoteAction[] | undefined, onSettled
 
   const outcomeFor = useCallback(
     (key: string): RowOutcome | undefined =>
-      queued[key] ? { state: "running", message: runningLabel(queued[key].request), request: queued[key].request } : outcomes[key],
+      queued[key]
+        ? { state: "running", message: runningLabel(queued[key].request), request: queued[key].request }
+        : outcomes[key],
     [queued, outcomes],
   );
 

@@ -136,7 +136,14 @@ describe("AppDataProvider hands every realtime event to the screens", () => {
       </AppDataProvider>,
     );
     const event = (type: string, data: Record<string, unknown>) =>
-      ({ event_id: type, version: 1, type, tenant_id: "default", occurred_at: "", data }) as unknown as DeviceRealtimeEvent;
+      ({
+        event_id: type,
+        version: 1,
+        type,
+        tenant_id: "default",
+        occurred_at: "",
+        data,
+      }) as unknown as DeviceRealtimeEvent;
 
     // All four arrive before React renders, as they do after a heartbeat.
     act(() => {

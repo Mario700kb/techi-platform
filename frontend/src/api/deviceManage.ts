@@ -38,16 +38,46 @@ export function uninstallSoftware(
 // Mirrors of the agent's lists (agent/actions_manage_windows.go): the console
 // does not offer what the agent would refuse.
 export const PROTECTED_PROCESSES = new Set([
-  "system", "registry", "smss.exe", "csrss.exe", "wininit.exe", "winlogon.exe", "services.exe",
-  "lsass.exe", "lsaiso.exe", "svchost.exe", "dwm.exe", "msmpeng.exe",
-  "techi-agent.exe", "techi-agent-watchdog.exe", "techi remote support.exe", "rustdesk.exe",
+  "system",
+  "registry",
+  "smss.exe",
+  "csrss.exe",
+  "wininit.exe",
+  "winlogon.exe",
+  "services.exe",
+  "lsass.exe",
+  "lsaiso.exe",
+  "svchost.exe",
+  "dwm.exe",
+  "msmpeng.exe",
+  "techi-agent.exe",
+  "techi-agent-watchdog.exe",
+  "techi remote support.exe",
+  "rustdesk.exe",
 ]);
 
 /** Started freely; never stopped or restarted from the console. */
 export const PROTECTED_SERVICES = new Set([
-  "techiagent", "techi remote support", "rpcss", "rpceptmapper", "dcomlaunch", "lsm", "samss",
-  "plugplay", "power", "brokerinfrastructure", "coremessagingregistrar", "systemeventsbroker",
-  "schedule", "eventlog", "profsvc", "gpsvc", "nsi", "dhcp", "bfe", "mpssvc",
+  "techiagent",
+  "techi remote support",
+  "rpcss",
+  "rpceptmapper",
+  "dcomlaunch",
+  "lsm",
+  "samss",
+  "plugplay",
+  "power",
+  "brokerinfrastructure",
+  "coremessagingregistrar",
+  "systemeventsbroker",
+  "schedule",
+  "eventlog",
+  "profsvc",
+  "gpsvc",
+  "nsi",
+  "dhcp",
+  "bfe",
+  "mpssvc",
 ]);
 
 export function isProtectedSoftware(name: string): boolean {

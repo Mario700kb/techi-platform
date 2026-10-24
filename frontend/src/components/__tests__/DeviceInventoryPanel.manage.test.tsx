@@ -53,7 +53,9 @@ function manage(over: Partial<InventoryManage> = {}): InventoryManage {
 }
 
 function renderPanel(m?: InventoryManage, onLoad = vi.fn()) {
-  const view = render(<DeviceInventoryPanel inventory={inventory} loading={false} error={null} onLoad={onLoad} manage={m} />);
+  const view = render(
+    <DeviceInventoryPanel inventory={inventory} loading={false} error={null} onLoad={onLoad} manage={m} />,
+  );
   return { ...view, onLoad };
 }
 
@@ -77,7 +79,10 @@ describe("DeviceInventoryPanel row actions", () => {
 
   it("explains why an app cannot be uninstalled", () => {
     renderPanel(manage({ canUninstall: false }));
-    expect(screen.getByRole("button", { name: "Uninstall 7-Zip 23.01: Administrators only" })).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("button", { name: "Uninstall 7-Zip 23.01: Administrators only" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
     expect(screen.getByRole("button", { name: /Uninstall Google Chrome: No silent uninstall/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Uninstall TECHI Agent: Part of TECHI/ })).toBeTruthy();
   });
@@ -127,7 +132,10 @@ describe("DeviceInventoryPanel row actions", () => {
     expect(screen.getByRole("button", { name: "Restart Print Spooler" })).not.toHaveAttribute("aria-disabled");
     expect(screen.getByRole("button", { name: "Stop Print Spooler" })).not.toHaveAttribute("aria-disabled");
     expect(screen.getByRole("button", { name: "Start Windows Update" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Stop TECHI Agent: Protected/ })).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("button", { name: /Stop TECHI Agent: Protected/ })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
   });
 
   it("a failed service action keeps the agent's reason under the name", async () => {
@@ -145,7 +153,12 @@ describe("DeviceInventoryPanel row actions", () => {
         loading={false}
         error={null}
         onLoad={onLoad}
-        manage={{ ...m, actions: [action(42, "failed", { error_message: "other running services depend on Spooler; stop them first" })] }}
+        manage={{
+          ...m,
+          actions: [
+            action(42, "failed", { error_message: "other running services depend on Spooler; stop them first" }),
+          ],
+        }}
       />,
     );
     expect(screen.getByText(/other running services depend on Spooler/)).toBeTruthy();

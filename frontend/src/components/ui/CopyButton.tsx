@@ -2,7 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import { CheckCircle, ClipboardCopy } from "lucide-react";
 
 /** Copies `text`; a check shows for a moment once it is on the clipboard. */
-export default function CopyButton({ text, label, className = "" }: { text: string; label: string; className?: string }) {
+export default function CopyButton({
+  text,
+  label,
+  className = "",
+}: {
+  text: string;
+  label: string;
+  className?: string;
+}) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<number | undefined>();
   useEffect(() => () => window.clearTimeout(timer.current), []);

@@ -25,7 +25,8 @@ export default function Kv({
   title?: string;
 }) {
   const empty = children == null || children === "" || children === false;
-  const copyText = copy && !empty && (typeof children === "string" || typeof children === "number") ? String(children) : null;
+  const copyText =
+    copy && !empty && (typeof children === "string" || typeof children === "number") ? String(children) : null;
   return (
     <div className="th-kv-row" data-span={span ? "2" : undefined}>
       <dt>{label}</dt>
