@@ -5,7 +5,7 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
-## [2026-10-25] EMPTY-LIST-REASONS-2026-10-25 — frontend `bd50aae`: an empty inventory list says why; agent 2.1.46 built (not uploaded); Frontend CI e2e fixed
+## [2026-10-25] EMPTY-LIST-REASONS-2026-10-25 — frontend `bd50aae`: an empty inventory list says why; agent 2.1.46 active; pilot; Frontend CI e2e fixed
 
 **Owner: "vazhdo".** Services were missing on many devices: 470 PCs on 2.1.35
 and 146 on 2.1.20 follow only their own config file (collection off); every
@@ -21,7 +21,18 @@ Adpascucci).
   an immediate heartbeat; an empty process/service list keeps the last good
   one and is retried in 5 min; passes no longer overlap (a forced one waits
   at most 90 s). Hashes: agent `fbd60d78…`, Endpoint MSI `de4c3c46…`, Update
-  Bridge `ba2ffb8f…`. Upload not done yet (needs the owner's permission).
+  Bridge `ba2ffb8f…`. Uploaded and activated 00:48 after the owner granted
+  permission ("po te jap leje"): agent `dd56b09f…`, Endpoint MSI `4a8287a1…`,
+  Update Bridge `ff9b51cd…`; 2.1.45 kept inactive; manifest backup
+  `manifest.json.bak-pre-2.1.46-20261025-004840`; public download serves the
+  CI hash, `active-version` 2.1.46.
+- Pilot batch `2b000112-d443-47af-a7d6-92ba77bbe06a` (00:49) on 12, 781, 983,
+  985 from 2.1.45: all on 2.1.46 by 00:54. Where the config file had
+  collection off, services arrived with the immediate heartbeat: 985 10 s and
+  983 18 s after the update (2.1.45: third heartbeat, ~10 min). 12 and 781
+  (collection already on in their config) sent it on the next regular
+  heartbeat. Counts unchanged (248/244/289/260 services, 50 processes); no
+  backend errors.
 - Frontend CI had failed on every push since 23 Oct: the client-profile e2e
   still expected Connect disabled for offline devices, which 9ae7796 made
   enabled on purpose. Test fixed (`833f82e`); full e2e suite green locally.
