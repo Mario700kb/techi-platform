@@ -27,7 +27,7 @@ import AlertDrawer from "../components/alerts/AlertDrawer";
 import { CommandBlock, PriorityChip, ResolveModal, SnoozeMenu } from "../components/alerts/AlertControls";
 import { DutyView, FindingsView, HandoverModal, MutesView, QualityView } from "../components/alerts/AlertSideViews";
 import RemoteSupportIdsView from "../components/alerts/RemoteSupportIdsView";
-import { Button, EmptyState, Modal, PageHeader, Select, TablePagination } from "../components/ui";
+import { AnimatedNumber, Button, EmptyState, Modal, PageHeader, Select, TablePagination } from "../components/ui";
 import { useAppData } from "../contexts/AppDataContext";
 import { useCachedQuery } from "../hooks/useCachedQuery";
 import { useNow } from "../hooks/useNow";
@@ -38,6 +38,7 @@ import { alertDeadline } from "../utils/alertDeadline";
 import { describeAlert } from "../utils/alertText";
 import { formatCount } from "../utils/number";
 import { formatDateTime, formatLocalDateTime, timeAgo } from "../utils/time";
+import { useNewKeys } from "../hooks/useLiveChange";
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50];
 
@@ -145,6 +146,7 @@ export default function AlertsDesktop() {
   if (data !== undefined && data !== shown) setShown(data);
   const queue = data ?? shown;
   const alerts = queue?.page.items ?? [];
+  const newAlerts = useNewKeys(alerts.map((alert) => alert.id));
   const counts = countsQuery.data ?? queue?.counts ?? null;
   const stale = alerts.length > 0 && (manualRefresh || (refreshing && data === undefined));
 
@@ -302,7 +304,9 @@ export default function AlertsDesktop() {
               <span className="th-kpi-dot" />
               {kpi.label}
             </span>
-            <span className="th-kpi-value">{counts && kpi.value != null ? formatCount(kpi.value) : "—"}</span>
+            <span className="th-kpi-value">
+              {counts && kpi.value != null ? <AnimatedNumber value={kpi.value} format={formatCount} /> : "—"}
+            </span>
             <span className="th-kpi-hint">{kpi.hint}</span>
           </button>
         ))}
@@ -536,6 +540,7 @@ export default function AlertsDesktop() {
                     <tr
                       key={alert.id}
                       className="th-alerts-row"
+                      data-new={newAlerts.has(alert.id) || undefined}
                       data-selected={selected.has(alert.id)}
                       data-clickable={real || site}
                       onClick={() => (site ? openSiteOutage(alert) : real && setOpenId(alert.id))}

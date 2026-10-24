@@ -24,6 +24,7 @@ import { Alert, ALERT_KIND_LABELS, AlertKind } from "../types/alert";
 import { resolveAlert } from "../api/alerts";
 import { timeAgo } from "../utils/time";
 import { useExitAnimation } from "../hooks/useExitAnimation";
+import { useNewKeys } from "../hooks/useLiveChange";
 
 interface NotificationCenterProps {
   alerts: Alert[];
@@ -191,6 +192,7 @@ export default function NotificationCenter({
   const criticalCount = alerts.filter((a) => a.severity === "critical").length;
   const warningCount = alerts.filter((a) => a.severity === "warning").length;
   const visibleAlerts = filter === "all" ? alerts : alerts.filter((a) => a.severity === filter);
+  const newAlerts = useNewKeys(visibleAlerts.map((alert) => alert.id));
 
   const handleResolveAll = async () => {
     for (const alert of alerts.filter((a) => !isTokenUsageAlert(a))) {
@@ -343,7 +345,7 @@ export default function NotificationCenter({
                   const Icon = KIND_ICON[alert.kind] ?? TriangleAlert;
                   const canResolve = !isTokenUsageAlert(alert);
                   return (
-                    <li key={alert.id}>
+                    <li key={alert.id} data-new={newAlerts.has(alert.id) || undefined}>
                       <div
                         role="button"
                         tabIndex={0}

@@ -7250,6 +7250,57 @@ span.th-inv-mono {
   }
 }
 
+/* Live change: a value a live event or refresh changed glows for a moment
+   (useFlashOnChange, AnimatedNumber), and a row that arrives live is tinted
+   as it comes in (useNewKeys). The glow is a pseudo-element fading out, so
+   only opacity animates. */
+.th-num {
+  font-variant-numeric: tabular-nums;
+}
+[data-changed] {
+  position: relative;
+}
+[data-changed]::after {
+  content: "";
+  position: absolute;
+  inset: -2px -4px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--th-accent) 22%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--th-accent) 35%, transparent);
+  pointer-events: none;
+  animation: th-glow-out 1400ms var(--th-ease-out) forwards;
+}
+@keyframes th-glow-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+tr[data-new] > td,
+li[data-new] {
+  animation: th-row-new 1400ms var(--th-ease-out);
+}
+tr[data-new] > td:first-child {
+  box-shadow: inset 3px 0 0 var(--th-accent);
+}
+@keyframes th-row-new {
+  from {
+    background-color: color-mix(in srgb, var(--th-accent) 16%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-changed]::after,
+  tr[data-new] > td,
+  li[data-new] {
+    animation: none;
+  }
+  [data-changed]::after {
+    content: none;
+  }
+}
+
 /* Press: buttons sink a little while held; the shared transition eases them
    back. Zero specificity, so a component's own transform still wins. */
 @media (prefers-reduced-motion: no-preference) {

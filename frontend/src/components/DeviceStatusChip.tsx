@@ -1,4 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
+import { useFlashOnChange } from "../hooks/useLiveChange";
 import { useNow } from "../hooks/useNow";
 import { presenceView, type PresenceFields } from "../utils/devicePresence";
 
@@ -25,6 +26,7 @@ interface DeviceStatusChipProps {
 export function DeviceStatusChip({ device, layout = "chip", hint, className, style, children }: DeviceStatusChipProps) {
   useNow();
   const view = presenceView(device);
+  const changed = useFlashOnChange(view.state);
   const dot = (
     <i
       aria-hidden="true"
@@ -46,6 +48,7 @@ export function DeviceStatusChip({ device, layout = "chip", hint, className, sty
         style={{ "--chip-tone": view.tone, ...style } as CSSProperties}
         title={hint ? `${view.title} · Likely cause: ${hint.label}` : view.title}
         data-state={view.state}
+        data-changed={changed || undefined}
         data-presence-live={view.live || undefined}
         data-testid="device-status"
       >
@@ -73,6 +76,7 @@ export function DeviceStatusChip({ device, layout = "chip", hint, className, sty
       style={{ "--chip-tone": view.tone, ...style } as CSSProperties}
       title={view.title}
       data-state={view.state}
+      data-changed={changed || undefined}
       data-presence-live={view.live || undefined}
       data-testid="device-status"
     >

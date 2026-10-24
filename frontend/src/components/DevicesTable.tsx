@@ -76,6 +76,7 @@ import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import ConnectMenu from "./ConnectMenu";
 import { CONNECT_REFRESH_EVENT, ConnectRowStatus, getConnectStatuses } from "../api/connect";
 import { detectOperatorOS } from "../utils/operatorOs";
+import { useNewKeys } from "../hooks/useLiveChange";
 
 export type { ActiveActionEntry };
 
@@ -485,6 +486,7 @@ const DevicesTable = memo(function DevicesTable({
   // Filtering and sorting run on the server over the whole selection; the
   // rows arrive already in order.
   const displayDevices = devices;
+  const newDevices = useNewKeys(displayDevices.map((device) => device.id));
 
   // Realtime heartbeats replace the rows constantly; keep the selection and
   // drop only rows that are no longer shown, so a bulk action never reaches a
@@ -1345,6 +1347,7 @@ const DevicesTable = memo(function DevicesTable({
                       <tr
                         key={device.id}
                         className="th-device-row group cursor-pointer"
+                        data-new={newDevices.has(device.id) || undefined}
                         style={{ "--row": Math.min(rowIndex, 12) } as React.CSSProperties}
                         data-selected={selectedIds.has(device.id)}
                         onClick={() => onDeviceSelect?.(device)}

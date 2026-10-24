@@ -43,7 +43,7 @@ import {
   statusColor,
   statusDotColor,
 } from "../api/actions";
-import { Button, EmptyState, PageHeader, TablePagination } from "../components/ui";
+import { AnimatedNumber, Button, EmptyState, PageHeader, TablePagination } from "../components/ui";
 import { formatLocalDateTime, timeAgo } from "../utils/time";
 import { formatCount } from "../utils/number";
 import { freshnessTone, humanize, TERMS, TONE } from "../utils/deviceStatus";
@@ -555,7 +555,9 @@ export default function Dashboard() {
                 <span className="th-kpi-dot" />
                 {kpi.label}
               </span>
-              <span className="th-kpi-value">{loading ? "—" : formatCount(kpi.value)}</span>
+              <span className="th-kpi-value">
+                {loading ? "—" : <AnimatedNumber value={kpi.value} format={formatCount} />}
+              </span>
               <span className="th-kpi-hint">{kpi.hint}</span>
             </Link>
           ))}

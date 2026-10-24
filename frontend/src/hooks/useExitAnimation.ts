@@ -1,15 +1,13 @@
 import { useCallback, useRef } from "react";
 import type { MutableRefObject, Ref, RefCallback } from "react";
 
+import { motion, motionAllowed } from "../utils/motion";
+
 /** Longest exit animation (index.css `.th-leaving` rules) plus a margin. */
 const EXIT_LIMIT_MS = 400;
 
 /** Exit animations are off in unit tests (jsdom) and for reduced motion. */
-export const exitAnimations = { enabled: import.meta.env.MODE !== "test" };
-
-function reducedMotion(): boolean {
-  return typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
+export const exitAnimations = motion;
 
 /**
  * Plays the exit animation of an element its parent simply stopped
@@ -19,7 +17,7 @@ function reducedMotion(): boolean {
  * removes itself. Callers keep rendering `{open && <Menu />}` as before.
  */
 export function playExit(node: HTMLElement): void {
-  if (!exitAnimations.enabled || reducedMotion()) return;
+  if (!motionAllowed()) return;
   const parent = node.parentNode;
   const next = node.nextSibling;
   const scrolled: Array<[number, number, number]> = [];

@@ -1,4 +1,5 @@
 import { VersionStatus } from "../utils/version";
+import { useFlashOnChange } from "../hooks/useLiveChange";
 
 // Version Service UI — the ONE badge every platform's version comparison
 // renders through (Device List + Generic Drawer). Windows keeps its exact
@@ -33,6 +34,7 @@ interface Props {
 }
 
 export default function VersionBadge({ version, status, title }: Props) {
+  const changed = useFlashOnChange(version);
   if (!version) {
     return (
       <span className="inline-flex items-center rounded px-1.5 py-px text-[11px] font-bold" style={STYLES.unknown}>
@@ -46,6 +48,7 @@ export default function VersionBadge({ version, status, title }: Props) {
       className={`inline-flex items-center rounded py-px font-mono text-[12px] ${status === "current" ? "font-medium" : "px-1.5 font-semibold"}`}
       style={STYLES[status]}
       title={title ?? (status === "current" ? "Up to date" : undefined)}
+      data-changed={changed || undefined}
     >
       {version}
       {status === "outdated" && <span className="ml-1 font-sans text-[11px]">· update</span>}
