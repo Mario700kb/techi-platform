@@ -47,6 +47,7 @@ class AuditAction:
     DEVICE_RESTORED = "device_restored"
     DEVICE_DELETED = "device_deleted"
     DEVICE_DELETE_DENIED = "device_delete_denied"
+    SOFTWARE_UNINSTALL_DENIED = "software_uninstall_denied"
     DEVICE_PURGED = "device_purged"
     AGENT_ALLOWED_BACK = "agent_allowed_back"
     ENROLLMENT_TOKEN_REGENERATED = "enrollment_token_regenerated"

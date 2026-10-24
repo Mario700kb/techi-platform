@@ -24,6 +24,10 @@ class SoftwareSnapshot(BaseModel):
     version: Optional[str] = None
     publisher: Optional[str] = None
     install_date: Optional[str] = None
+    # Windows agents from 2.1.41: how the app can be removed with nobody at
+    # the PC ("msi" or "quiet"), and the registry entry the agent reads again.
+    uninstall: Optional[str] = None
+    uninstall_key: Optional[str] = None
 
 
 class PatchStatusSnapshot(BaseModel):

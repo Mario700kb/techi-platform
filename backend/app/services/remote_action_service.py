@@ -1,3 +1,4 @@
+import json
 import logging
 from typing import List, Optional, Tuple
 
@@ -138,6 +139,16 @@ def _self_update_target_sha(payload: dict) -> str:
     return (payload.get("target_sha256") or payload.get("sha256") or "").strip().lower()
 
 
+# What a management action acts on: two of the same type on the same target
+# conflict, on different targets they do not.
+_MANAGEMENT_TARGET_KEYS = {"kill_process": "pid", "service_control": "name", "uninstall_software": "uninstall_key"}
+
+
+def management_target(action_type: str, parameters: dict) -> str:
+    key = _MANAGEMENT_TARGET_KEYS.get(action_type)
+    return str((parameters or {}).get(key, "")).strip().lower() if key else ""
+
+
 class ActionConflictError(ValueError):
     """A new action would clash with one still queued or running on the
     device; carries that action so the console can offer to cancel it."""
@@ -231,6 +242,46 @@ class RemoteActionService:
         )
         _publish_action_status(action, RealtimeEventType.ACTION_QUEUED)
         _record_audit(self.repo.db, action, f"Action queued: {action.action_type}", actor=create_in.created_by)
+        return action
+
+    def queue_management_action(
+        self,
+        device_id: int,
+        action_type: str,
+        parameters: dict,
+        *,
+        created_by: str,
+        execution_timeout_seconds: int,
+    ) -> RemoteAction:
+        """Queue one of the console's management actions (kill_process,
+        service_control, uninstall_software). They are not ActionTypes, so the
+        generic action endpoint cannot queue them past their own endpoint's
+        checks. Two may run side by side unless they name the same target."""
+        target = management_target(action_type, parameters)
+        for existing in self.repo.get_recent_for_device(device_id, limit=50):
+            if existing.status in TERMINAL_STATUSES or existing.action_type != action_type:
+                continue
+            try:
+                existing_params = json.loads(existing.payload or "{}")
+            except (TypeError, ValueError):
+                existing_params = {}
+            if management_target(action_type, existing_params) == target:
+                raise ActionConflictError(
+                    f"The same {action_type.replace('_', ' ')} is already queued or running "
+                    f"(action #{existing.id}, status={existing.status.value}).",
+                    existing,
+                )
+        action = self.repo.create(
+            device_id=device_id,
+            action_type=action_type,
+            parameters=parameters,
+            created_by=created_by,
+            execution_timeout_seconds=execution_timeout_seconds,
+        )
+        logger.info("[action] queued #%d type=%s target=%s device=%d by=%s",
+                    action.id, action_type, target, device_id, created_by)
+        _publish_action_status(action, RealtimeEventType.ACTION_QUEUED)
+        _record_audit(self.repo.db, action, f"Action queued: {action_type}", actor=created_by)
         return action
 
     def get_recent(self, device_id: int, limit: int = 30) -> List[RemoteAction]:
