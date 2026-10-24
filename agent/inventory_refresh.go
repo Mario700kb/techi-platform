@@ -197,7 +197,7 @@ func (b *backgroundInventory) refresh(cfg *Config) {
 func (b *backgroundInventory) collectDue(cfg *Config) {
 	collectSection(b, &b.processes, cfg.CollectProcesses)
 	collectSection(b, &b.services, cfg.CollectServices)
-	collectSection(b, &b.software, cfg.CollectSoftware)
+	collectSection(b, &b.software, collectSoftwareEnabled(cfg))
 	collectSection(b, &b.patch, true)
 	collectSection(b, &b.security, b.securityEnabled)
 	collectSection(b, &b.health, b.healthEnabled)
@@ -270,7 +270,7 @@ func (b *backgroundInventory) forHeartbeat(cfg *Config) inventoryForHeartbeat {
 			marks = append(marks, func(at time.Time) { b.services.markSent(hash, at) })
 		}
 	}
-	if cfg.CollectSoftware {
+	if collectSoftwareEnabled(cfg) {
 		if v, ok := b.software.pending(now); ok {
 			out.Software = v
 			hash := b.software.hash

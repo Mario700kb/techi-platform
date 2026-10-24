@@ -52,6 +52,9 @@ type HeartbeatResponse struct {
 	// What to collect and which monitors to evaluate (backend with the
 	// telemetry pipeline); absent from older backends.
 	MonitoringPolicy json.RawMessage `json:"monitoring_policy,omitempty"`
+	// Whether to collect installed software (Agent config); absent from
+	// backends before 2.1.42's.
+	CollectSoftware *bool `json:"collect_software,omitempty"`
 }
 
 type actionResult struct {
