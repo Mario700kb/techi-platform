@@ -10,9 +10,10 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  Go Agent (Mac/Windows endpoints)                                   │
-│  Collects: hostname, user, IPs, OS, CPU/RAM, RustDesk metadata      │
-│  POST /api/v1/agent/heartbeat  (retry 3x, 5s gap)                  │
+│  Go Agent (Windows/Linux service)                                   │
+│  Collects: inventory, telemetry, health, RustDesk metadata          │
+│  POST /api/v1/agent/heartbeat  every 300 s ±10%                     │
+│  WS /ws/agent/commands  (outbound, server pushes actions)           │
 └───────────────────────────┬─────────────────────────────────────────┘
                             │ HTTP
 ┌───────────────────────────▼─────────────────────────────────────────┐
@@ -49,7 +50,7 @@
 │  │  RealtimeConnectionManager — fan-out to all clients          │   │
 │  │  RealtimeEventPublisher — async queue, 750ms dedupe TTL      │   │
 │  └──────────────────────────────────────────────────────────────┘   │
-│  Database: SQLite  (backend/techi.db)                               │
+│  Database: PostgreSQL 15 (production), SQLite (dev/tests)           │
 └───────────────────────────┬─────────────────────────────────────────┘
                             │ REST + WebSocket
 ┌───────────────────────────▼─────────────────────────────────────────┐
@@ -207,21 +208,26 @@ Tailwind colours (`tailwind.config.js`) all resolve to `--th-*` tokens: `techi-*
 
 ## Go Agent Architecture
 
+Platform-specific code uses Go build tags (`*_windows.go`, `*_linux.go`,
+`*_other.go`). Main areas:
+
 ```
 agent/
-├── main.go        entry point, retry loop (3 attempts, 5s gap, exit on success)
-├── config.go      TECHI_API_URL env var (default: http://localhost:8000)
-├── inventory.go   hostname, current user, IPs, OS name/version, platform, CPU/RAM/storage
-├── rustdesk.go    RustDesk discovery: install status, version, path, runtime state
-├── heartbeat.go   HTTP POST to /api/v1/agent/heartbeat, parses AgentHeartbeatResponse
-└── utils.go       shared helpers
+├── main.go, agent.go          entry, service loop (heartbeat every interval ±10%, -once for one)
+├── service_*.go, lifecycle.go Windows service / systemd unit
+├── config*.go, enrollment.go  config file, first-run enrollment by token
+├── heartbeat.go               POST /api/v1/agent/heartbeat; receives actions and policy
+├── command_channel*.go        outbound WS /ws/agent/commands; reconnect with jitter
+├── actions*.go                remote actions (inventory refresh, restart, PowerShell, ...)
+├── inventory*.go, telemetry*.go, device_health*.go, security_posture*.go
+│                              inventory, store-and-forward telemetry, health, posture
+├── live*.go, terminal_*.go    live device view, PowerShell / root terminal
+├── rustdesk*.go               Remote Support install, identity, options, sessions
+└── update*.go, swap_*.go, watchdog_*.go
+                               self-update: download, verify, binary swap, rollback
 ```
 
-**Device type classification (server-side, not in agent):**
-- Domain = empty or "WORKGROUP" → `unassigned`
-- OS contains "Windows Server" → `server`
-- OS contains "Windows 10" or "Windows 11" → `client`
-- Otherwise → `unassigned`
+Device type classification is server-side (`services/` classification engine), not in the agent.
 
 ---
 

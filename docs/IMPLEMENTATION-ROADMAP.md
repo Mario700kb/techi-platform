@@ -168,12 +168,26 @@ All initiatives are `PROPOSED` unless and until explicit approval is recorded. �
 | Promotion strategy for `main` | `main` is not the current production branch; promotion must be explicitly governed. | INIT-GIT-001 |
 | Remote Support credential rotation method | Credential exposure and rollout risk require an approved method and rollback. | INIT-SEC-001 |
 | Conflicting Remote Support MSI disposition | Retention, trust, and active-artifact policy are not yet resolved. | INIT-SUPPLY-001 |
-| Alembic two-head strategy | Any migration work requires an approved topology and rollback policy. | INIT-DB-001 |
 | Post-rollout fleet convergence policy | Decide residual-device migration, legacy-version retirement, and cleanup boundaries. This does not block production. | INIT-FLEET-001 |
 | Notification activation scope | Notification feature activation requires explicit business and security scope. | INIT-NOTIFY-001 |
 | Mobile lifecycle gate | **NOT REQUIRED**: mobile remains part of the primary frontend lifecycle. | None |
 
-## 6. Closure Rules
+## 6. Quality Programme to 9/10
+
+**Status: APPROVED by the owner 2026-10-24, executed phase by phase.** Each production deploy still needs its own go-ahead; the owner pushes. The host stays 1 vCPU / 2 GB. Out of scope: async SQLAlchemy, Redis, a second worker, microservices.
+
+| Phase | Goal | Work | Exit criteria | Risks closed | Status |
+|---|---|---|---|---|---|
+| 0 | Documents match production | Project State rewritten as current state only; contradictions fixed; closed risks recorded; legacy docs archived; `ai-context/` corrected | No fact in two places; no contradiction | RISK-DOC-001 | DONE 2026-10-24 (`DOC-CLEANUP-2026-10-24`) |
+| 1 | Self-update cannot leave a PC without an agent | Keep the backup until a heartbeat confirms the new version; restore from the download cache; watchdog that does not depend on the EXE it protects; MSI handles a service marked for deletion (1920); CI tests for each; staged rollout 10 → 50 → 200 → all with automatic halt above 2% silent | ≥ 95% of the fleet on the active version; 0 dead agents from an update; the 12 Adpascucci PCs recovered | RISK-UPDATE-001 | IN PROGRESS — code 2.1.40 written (`AGENT-2.1.40-PREP-2026-10-24`); next: CI build, pilot |
+| 2 | Security debt closed | Signed heartbeat (HMAC with the device secret, timestamp + nonce) in observe mode, then enforced; generous heartbeat rate limit at the edge; MSI without the shared password; one trusted Remote Support MSI with recorded hash; audit record for package activation; vault-key build-context gap | RISK-SEC-001, RISK-SEC-002, RISK-SUPPLY-001 closed | SEC-001, SEC-002, SUPPLY-001 | PLANNED |
+| 3 | Headroom without new hardware | Images built in GitHub Actions and pulled by the host; rollback images rotated automatically (last 3); workstation sampling 300 s; peak re-measured after jitter | Heartbeat p95 < 200 ms, peak CPU < 60%, disk < 75%, no host stall during deploy | CAP-001 (re-assessed), CAP-003, STORAGE-001 | PLANNED |
+| 4 | Release and operations | Production from `main` with branch protection and release tags; edge rules in Git with an install script; monthly automated restore test with report; automated off-site pull; external uptime/disk/cert monitor; `alembic downgrade` tested in CI | Every production SHA has a tag; restore proven monthly | REL-001, EDGE-001, BKP-001 | PLANNED |
+| 5 | Code quality | Authenticated production smoke with the existing Playwright suite; frontend tests for Devices, Connect, Alerts, PowerShell; split `DeviceDrawer.tsx`, `ClientProfile.tsx`, `enrollment_bootstrap_service.py` without behaviour change; clone handling and Linux server placement | Largest files < 800 lines; critical flows covered | IDENT-001, ENROL-002 | PLANNED |
+
+The STAB items in §3 overlap with phases 2–4 and are carried out through them.
+
+## 7. Closure Rules
 
 When an initiative completes:
 

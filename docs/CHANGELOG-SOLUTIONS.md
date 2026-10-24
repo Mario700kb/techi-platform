@@ -5,6 +5,109 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-24] AGENT-2.1.40-PREP-2026-10-24 — Self-update can no longer leave a Windows PC without an agent; not built, not released
+
+**Source only; no deploy, no package.** Phase 1 of the 9/10 plan, closing the
+gaps found in `SELFUPDATE-AUDIT-2026-10-22`. Windows only: every changed Go
+file carries `//go:build windows`; Linux binaries built from this tree are
+byte-identical to `HEAD` on amd64, arm64 and armhf (`-buildvcs=false`).
+- **Swap keeps the backup and watches the new agent** (`swap_windows.go`,
+  `swap_guard_windows.go`). `techi-agent-old.exe` is no longer deleted after a
+  30 s service check; the next swap replaces it. For 10 minutes the swap
+  watches the new agent: a fresh Operational state in `agent.state.json`
+  confirms it; the exe disappearing, a fresh Faulted state, or the service
+  down for 3 minutes rolls back. A platform it cannot reach (offline PC,
+  HeartbeatGuard 503) keeps the new version and the backup, never rolls back.
+  Copies retry 6 × 5 s (antivirus holding a fresh exe). Without a backup the
+  rollback reinstalls the new exe rather than leave none. A failed backup
+  restarts the old service instead of leaving it stopped.
+- **Watchdog no longer depends on the exe it protects** (`watchdog_windows.go`).
+  The task runs `techi-agent-watchdog.exe`, a copy refreshed at each agent
+  start. When the service is registered but `techi-agent.exe` is missing, it
+  copies back the backup (it already ran on this PC and survived its
+  antivirus), else itself. Service and exe both missing means uninstalled: it
+  deletes its task and the backup and never recreates the service (until now
+  the task stayed after an MSI uninstall). While a swap runs
+  (`swap.inprogress`, ≤ 20 min) it leaves the agent service alone, and a
+  second swap refuses to start. The task uses the copy only after a probe
+  run (`swap-binary -help`) proves Windows lets it run; an allow-list or
+  antivirus that blocks the new file name keeps the task on `techi-agent.exe`.
+- **MSI 1920 → 1603** (`installer.wxs`). `StartServices` no longer starts
+  TechiAgent and `ServiceInstall` is `Vital="no"`; `EnsureServiceCreated`
+  (`watchdog-check`) starts it, waits up to 2 minutes for a service marked for
+  deletion, recreates it, and is now `Return="check"`, so an agent that never
+  runs still fails the install.
+- Tests: `swap_guard_windows_test.go` (verdicts, restore order, marker, watchdog
+  copy), `TestAgentServiceStartWaitsOutAPendingDelete`; MSI lifecycle CI gains
+  scenarios 5–8 (exe restored by the watchdog, swap without a platform keeps
+  backup and new exe, nothing brought back after uninstall, upgrade while a
+  service handle is held). Windows build and test compile verified locally in
+  Docker; the Windows tests and MSI scenarios run only in CI.
+- `agent/VERSION` 2.1.40. Release plan: CI build, upload and activate
+  (changes no PC), then `self_update` on 12, 924, 781, 985 and 24 h of
+  observation before any wave; Adpascucci excluded until its deploy.log is read.
+
+## [2026-10-24] DOC-CLEANUP-2026-10-24 — Project State holds only the current state; closed risks recorded
+
+**Documentation only; no deploy.** Phase 0 of the 9/10 plan (roadmap §6).
+- `PROJECT_STATE.md` rewritten: one row per component with SHA, rollback
+  and evidence; the deploy-by-deploy history that had grown inside its table
+  cells already lives in this changelog. Contradictions removed: restore
+  "not performed" vs tested 2026-10-12; Alembic head `d8e4f6a1b2c3` vs
+  `w1x2y3z4a5b6` (the real head is `x2y3z4a5b6c7`); Windows agent "2.1.20
+  fleet / 2.1.28 pilot" vs 2.1.35 active since 2026-10-20; table sizes of
+  `device_heartbeats`, which is no longer written.
+- Risks closed, each on evidence in this changelog or the code:
+  - RISK-AGENT-002 (no heartbeat jitter): `jitteredInterval` ±10% since
+    agent 2.1.24 (`AGENT-2.1.24-PREP-2026-10-11`); 779 devices run 2.1.35
+    since 2026-10-22. The burst was not re-measured; that is RISK-CAP-001's
+    next step.
+  - RISK-RS-001 (identity file locked read-only): agent 2.1.35
+    (`RS-IDENTITY-FILE-2026-10-20`).
+  - RISK-MSI-002 (`KillTechiRS*` no-ops): fixed in the Endpoint MSI since
+    2.1.24, active MSI is 2.1.35. A domain gets it when its script is re-run.
+  - RISK-FLEET-003 (Windows actions wait for the heartbeat): command channel
+    on Windows from 2.1.27; `refresh_inventory` forces inventory and an
+    immediate heartbeat (`agent/actions.go` `handleRefreshInventory`).
+  - RISK-BKP-002 (restore never tested): tested 2026-10-12
+    (`DB-ENTERPRISE-A`); automating it is roadmap Phase 4 under RISK-BKP-001.
+  - Already closed before and only removed from the table: RISK-DB-001,
+    RISK-DB-002, RISK-DEPLOY-001, RISK-INSTALL-001, RISK-CAP-002,
+    RISK-SSH-001 (owner decision, flag off). Superseded: RISK-FLEET-001
+    (mixed fleet; now Project State §5), RISK-DOC-001 (this cleanup).
+    RISK-ENROL-001 and RISK-FLEET-002 stay open (Low).
+- Risks added: RISK-UPDATE-001 (`SELFUPDATE-AUDIT-2026-10-22`),
+  RISK-EDGE-001 (edge rules outside Git, previously only a §5 note).
+- Archived: root `CHANGELOG-SOLUTIONS.md` (June 2026 log in Albanian, last
+  written in June) → `docs/archive/CHANGELOG-2026-06.md`;
+  `IMPLEMENTATION-ROADMAP-old.md`, `reference/PRODUCTION-READINESS-REPORT-old.md`
+  → `docs/archive/`. `ai-context/architecture.md` and `runtime.md` corrected
+  (PostgreSQL in production, agent runs as a service).
+
+## [2026-10-22] SELFUPDATE-AUDIT-2026-10-22 — 12 PCs at Adpascucci lost the agent in the 2.1.20 → 2.1.35 update
+
+**Read-only audit; no change made.** A colleague reported that the update
+leaves some PCs without an agent (example PC033).
+- Production data: 792 devices received `self_update` to 2.1.35; 13 went
+  silent within a minute and never returned. 12 of them are still on 2.1.20
+  and **all 12 are at client Adpascucci** (ids 273, 301 PC033, 383, 396, 447,
+  539, 558, 594, 595, 840, 844, 862). At Adpascucci 18 devices run 2.1.35,
+  20 run 2.1.20. No case at any other client. 136 other 2.1.20 devices never
+  received an update; they are dormant, not broken.
+- Not supported by the code: the backup is a copy, not a rename, and the
+  rollback restores it; "rollback: no backup found" (`swap_windows.go:151`)
+  means the EXE was already missing before that swap; the Bridge MSI is not
+  used for 2.1.20 (only below 2.1.1).
+- Real gaps (swap code unchanged since 2.1.20, `5b32c84`): the backup is
+  deleted after a 30 s SCM "Running" check (`swap_windows.go:143`) with no
+  heartbeat confirmation; the watchdog runs the EXE it protects; nothing
+  restores the EXE from the download cache; the MSI does not handle a service
+  marked for deletion and `EnsureServiceCreated` runs after `StartServices`
+  (1920 → 1603).
+- Most likely trigger: AV/EDR or GPO MSI activity at that client.
+  `enrollment_token_repair_failed exit=5` is PowerShell access denied and
+  unrelated. Fixes proposed to the owner, not implemented.
+
 ## [2026-10-23] PS-PROMPT-2026-10-23 — Command mode types straight into the screen (`11997f8`)
 
 **Frontend deployed 22:06 (Tirana); backend unchanged at `dc4a2ad`.**

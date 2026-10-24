@@ -27,13 +27,14 @@ cd ~/techi-platform/frontend
 npm run dev -- --host 0.0.0.0 --port 5173
 ```
 
-### Agent (one-shot heartbeat)
+### Agent
 ```bash
 cd ~/techi-platform/agent
-go run .
+go run . -once            # one heartbeat, then exit
+go run .                  # run like the service: heartbeat every interval ±10%, command channel
 ```
 
-The agent exits after one successful heartbeat. Run it again to send another.
+In production the agent runs as a Windows service or a systemd unit.
 
 ---
 
@@ -87,7 +88,7 @@ print('All imports OK')
 ### Backend (`backend/.env` or shell env)
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `HEARTBEAT_TIMEOUT_SECONDS` | ~90 | Seconds before device goes offline |
+| `HEARTBEAT_TIMEOUT_SECONDS` | 300 (production 600) | Seconds before device goes offline |
 | `RECONCILIATION_BATCH_SIZE` | configurable | Devices reconciled per run |
 | `DATABASE_URL` | `sqlite:///./techi.db` | DB connection |
 
