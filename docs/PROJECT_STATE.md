@@ -27,7 +27,7 @@
 | Component | Running | Since | Rollback | Evidence |
 |---|---|---|---|---|
 | Backend | `504a206` | 2026-10-25 00:05 | image `pre-automation-afd9ae0`; dump `pre-automation-20261024-235709.sql.gz` | `AUTOMATION-2026-10-25` |
-| Frontend | `504a206` | 2026-10-25 00:08 | image `pre-automation-afd9ae0` | `AUTOMATION-2026-10-25` |
+| Frontend | `bd50aae` | 2026-10-25 00:46 | image `pre-empty-reasons-504a206` | `EMPTY-LIST-REASONS-2026-10-25` |
 | Database schema | Alembic `y3z4a5b6c7d8` (single head; repository head matches) | 2026-10-25 00:04 | `alembic downgrade x2y3z4a5b6c7` | `AUTOMATION-2026-10-25` |
 | Repository path | `/opt/techi/techi-platform` | — | — | — |
 

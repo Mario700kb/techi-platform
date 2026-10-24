@@ -5,6 +5,27 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-25] EMPTY-LIST-REASONS-2026-10-25 — frontend `bd50aae`: an empty inventory list says why; agent 2.1.46 built (not uploaded); Frontend CI e2e fixed
+
+**Owner: "vazhdo".** Services were missing on many devices: 470 PCs on 2.1.35
+and 146 on 2.1.20 follow only their own config file (collection off); every
+2.1.45 PC reports them. 433 online Windows PCs need the update (16 of them
+Adpascucci).
+- Frontend `bd50aae` deployed 00:46: an empty services/processes/software list
+  on a Windows agent older than 2.1.45 (2.1.42 for software) says the agent
+  must be updated; otherwise when the list will arrive. No backend change, no
+  dump; rollback image `pre-empty-reasons-504a206`; guard + smoke passed.
+- Agent 2.1.46 (`51e0d01`, CI run 40139468618 green incl. MSI scenarios): the
+  platform's collection settings saved in `inventory-collection.json` next to
+  the config (applied at start); a part turned on is collected and sent with
+  an immediate heartbeat; an empty process/service list keeps the last good
+  one and is retried in 5 min; passes no longer overlap (a forced one waits
+  at most 90 s). Hashes: agent `fbd60d78…`, Endpoint MSI `de4c3c46…`, Update
+  Bridge `ba2ffb8f…`. Upload not done yet (needs the owner's permission).
+- Frontend CI had failed on every push since 23 Oct: the client-profile e2e
+  still expected Connect disabled for offline devices, which 9ae7796 made
+  enabled on purpose. Test fixed (`833f82e`); full e2e suite green locally.
+
 ## [2026-10-25] AUTOMATION-2026-10-25 — Automation page (scheduled agent updates in waves); services/processes collection set by the platform; backend + frontend `504a206`; agent 2.1.45 active; pilot
 
 **Owner: "po"** (cache prune, deploy, upload 2.1.45, pilot on 12, 781, 983,
