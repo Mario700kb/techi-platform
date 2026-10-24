@@ -134,6 +134,8 @@ class AgentHeartbeatResponse(BaseModel):
     # What the agent collects and the monitors it evaluates (>= 2.1.29). Sent
     # to an agent that proves its identity; older agents ignore it.
     monitoring_policy: Optional[dict] = None
+    # Whether to collect installed software (Agent config; agents >= 2.1.42).
+    collect_software: Optional[bool] = None
 
 
 class AgentPowerEventPayload(BaseModel):

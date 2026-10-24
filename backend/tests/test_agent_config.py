@@ -297,3 +297,32 @@ class TestAgentConfigService:
         policy = svc.get_policy()
         assert policy["online_threshold_minutes"] == svc.ONLINE_THRESHOLD_MINUTES
         assert policy["stale_threshold_minutes"] == svc.STALE_THRESHOLD_MINUTES
+
+
+# ── Installed software collection (agent 2.1.42) ─────────────────────────── #
+
+class TestCollectSoftware:
+    def test_on_by_default_for_agent_platforms_none_for_connectors(self):
+        body = _make_client("admin").get("/agent-config").json()
+        assert body["platform_collect_software"] == {"windows": True, "linux": True, "macos": True}
+        assert svc.get_collect_software("windows") is True
+        assert svc.get_collect_software("Microsoft Windows 11 Pro") is True  # unknown strings read as Windows
+        assert svc.get_collect_software("RouterOS") is None
+
+    def test_an_admin_turns_it_off_per_platform_and_it_persists(self, tmp_path):
+        client = _make_client("admin")
+        r = client.put("/agent-config", json={"platform_collect_software": {"windows": False}})
+        assert r.status_code == 200, r.text
+        assert r.json()["platform_collect_software"] == {"windows": False, "linux": True, "macos": True}
+        assert svc.get_collect_software("windows") is False
+        # Survives a restart (read back from the file).
+        svc.reset_for_testing(str(tmp_path / "agent_policy.json"))
+        assert svc.get_collect_software("windows") is False
+
+    def test_bad_values_are_refused(self):
+        client = _make_client("admin")
+        assert client.put("/agent-config", json={"platform_collect_software": {"mikrotik": True}}).status_code == 422
+        assert client.put("/agent-config", json={"platform_collect_software": {"windows": "yes"}}).status_code == 422
+
+    def test_only_admins_change_it(self):
+        assert _make_client("operator").put("/agent-config", json={"platform_collect_software": {"windows": False}}).status_code == 403

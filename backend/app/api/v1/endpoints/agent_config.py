@@ -18,7 +18,7 @@ from typing import Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 from sqlalchemy.orm import Session
 
 from app.core.auth import require_min_role
@@ -38,6 +38,8 @@ class AgentConfigResponse(BaseModel):
     heartbeat_interval_seconds: int
     platform_heartbeat_intervals: Dict[str, int]
     platform_inventory_intervals: Dict[str, int]
+    # Whether agents collect installed software, per platform (agent 2.1.42).
+    platform_collect_software: Dict[str, bool] = {}
     online_threshold_minutes: int
     stale_threshold_minutes: int
     remote_support_managed_password_enabled: bool
@@ -70,6 +72,10 @@ class AgentConfigUpdate(BaseModel):
         description="Per-platform inventory intervals in seconds",
     )
     remote_support_managed_password_enabled: Optional[bool] = None
+    platform_collect_software: Optional[Dict[str, StrictBool]] = Field(
+        None,
+        description="Per-platform: whether agents collect installed software",
+    )
 
 
 def _active_device_count(db: Session) -> int:
@@ -187,6 +193,7 @@ def put_agent_config(
             platform_heartbeat_intervals=body.platform_heartbeat_intervals,
             platform_inventory_intervals=body.platform_inventory_intervals,
             remote_support_managed_password_enabled=body.remote_support_managed_password_enabled,
+            platform_collect_software=body.platform_collect_software,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))

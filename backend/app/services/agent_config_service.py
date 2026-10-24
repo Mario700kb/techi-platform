@@ -99,6 +99,13 @@ _lock = threading.RLock()
 _policy: Optional[dict] = None
 
 
+# Whether agents collect installed software (agent 2.1.42 obeys; older ones
+# keep their config file's collect_software, which defaulted to off). On by
+# default: the software list is what the console's Uninstall works from.
+SOFTWARE_COLLECTION_PLATFORMS = ("windows", "linux", "macos")
+COLLECT_SOFTWARE_DEFAULT = True
+
+
 def _ensure_dir(path: str) -> None:
     d = os.path.dirname(path)
     if d:
@@ -176,10 +183,17 @@ def get_policy() -> dict:
             low=INVENTORY_INTERVAL_MIN,
             high=INVENTORY_INTERVAL_MAX,
         )
+        raw_software = data.get("platform_collect_software")
+        collect_software = {
+            platform: bool(raw_software.get(platform, COLLECT_SOFTWARE_DEFAULT))
+            if isinstance(raw_software, Mapping) else COLLECT_SOFTWARE_DEFAULT
+            for platform in SOFTWARE_COLLECTION_PLATFORMS
+        }
         return {
             "heartbeat_interval_seconds": platform_heartbeat["windows"],
             "platform_heartbeat_intervals": platform_heartbeat,
             "platform_inventory_intervals": platform_inventory,
+            "platform_collect_software": collect_software,
             "online_threshold_minutes": ONLINE_THRESHOLD_MINUTES,
             "stale_threshold_minutes": STALE_THRESHOLD_MINUTES,
             "remote_support_managed_password_enabled": bool(
@@ -213,6 +227,7 @@ def set_policy(
     platform_heartbeat_intervals: Optional[Mapping[str, int]] = None,
     platform_inventory_intervals: Optional[Mapping[str, int]] = None,
     remote_support_managed_password_enabled: Optional[bool] = None,
+    platform_collect_software: Optional[Mapping[str, bool]] = None,
 ) -> dict:
     with _lock:
         data = _load()
@@ -246,6 +261,18 @@ def set_policy(
             )
         if remote_support_managed_password_enabled is not None:
             data["remote_support_managed_password_enabled"] = remote_support_managed_password_enabled
+        if platform_collect_software is not None:
+            if not isinstance(platform_collect_software, Mapping):
+                raise ValueError("platform_collect_software must be an object")
+            merged = dict(current["platform_collect_software"])
+            for platform, value in platform_collect_software.items():
+                key = str(platform).strip().lower()
+                if key not in SOFTWARE_COLLECTION_PLATFORMS:
+                    raise ValueError(f"Unsupported platform in platform_collect_software: {platform!r}")
+                if not isinstance(value, bool):
+                    raise ValueError(f"platform_collect_software.{key} must be true or false")
+                merged[key] = value
+            data["platform_collect_software"] = merged
         _persist(data)
     return get_policy()
 
@@ -283,6 +310,12 @@ def get_heartbeat_interval(platform: Optional[str]) -> int:
 def get_inventory_interval(platform: Optional[str]) -> int:
     platform_id = _policy_platform_key(platform)
     return get_policy()["platform_inventory_intervals"].get(platform_id, INVENTORY_INTERVAL_DEFAULT)
+
+
+def get_collect_software(platform: Optional[str]) -> Optional[bool]:
+    """Whether an agent on this platform collects installed software; None
+    for a platform without an agent (connectors)."""
+    return get_policy()["platform_collect_software"].get(_policy_platform_key(platform))
 
 
 def _policy_platform_key(platform: Optional[str]) -> str:

@@ -210,6 +210,7 @@ def agent_heartbeat(
         "agent_update": None,  # populated in Faza 3 when agent-packages service is ready
         "remote_support_password": rs_password,
         "monitoring_policy": _monitoring_policy(db, device) if authenticated else None,
+        "collect_software": _cfg_svc.get_collect_software(payload.platform),
     }
     # Hand the connection back before the side effects open their own session.
     # get_db would only close it after them, so every heartbeat held two pool
