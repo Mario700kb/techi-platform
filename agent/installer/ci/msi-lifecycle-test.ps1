@@ -318,3 +318,6 @@ if ($failures.Count -gt 0) {
     exit 1
 }
 Write-Host "`nall MSI lifecycle checks passed"
+# The workflow ends with `exit $LASTEXITCODE`; a native command that was meant
+# to fail (schtasks /Query for a removed task) must not decide the result.
+exit 0
