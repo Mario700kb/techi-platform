@@ -7,6 +7,8 @@ export interface AgentConfig {
   online_threshold_minutes: number;
   stale_threshold_minutes: number;
   remote_support_managed_password_enabled: boolean;
+  /** Whether agents collect installed software, per platform (agent 2.1.42). */
+  platform_collect_software?: Record<string, boolean>;
   /** Capacity context and the limits the PUT enforces. */
   active_device_count: number;
   projected_requests_per_second: number;
@@ -20,6 +22,7 @@ export interface AgentConfigUpdate {
   platform_heartbeat_intervals?: Record<string, number>;
   platform_inventory_intervals?: Record<string, number>;
   remote_support_managed_password_enabled?: boolean;
+  platform_collect_software?: Record<string, boolean>;
 }
 
 export async function getAgentConfig(): Promise<AgentConfig> {

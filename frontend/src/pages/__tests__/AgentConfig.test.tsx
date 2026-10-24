@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as configApi from "../../api/agentConfig";
@@ -56,5 +56,27 @@ describe("AgentConfig", () => {
     expect(
       screen.queryByRole("option", { name: commandsApi.BULK_COMMAND_LABELS.change_heartbeat_interval }),
     ).toBeNull();
+  });
+
+  it("turns installed-software collection off for one platform and saves only that", async () => {
+    vi.spyOn(configApi, "getAgentConfig").mockResolvedValue({
+      ...CONFIG,
+      platform_collect_software: { windows: true, linux: true, macos: true },
+    });
+    const put = vi.spyOn(configApi, "putAgentConfig").mockResolvedValue({
+      ...CONFIG,
+      platform_collect_software: { windows: true, linux: false, macos: true },
+    });
+    vi.spyOn(commandsApi, "getCommandHistory").mockResolvedValue([]);
+    vi.spyOn(clientsApi, "getClients").mockResolvedValue([]);
+    render(<AgentConfigPage />);
+
+    const linux = await screen.findByRole("switch", { name: "Collect installed software on Linux" });
+    expect(linux).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(linux);
+    expect(linux).toHaveAttribute("aria-checked", "false");
+    const card = linux.closest(".th-onb-card") as HTMLElement;
+    fireEvent.click(within(card).getByRole("button", { name: "Save" }));
+    expect(put).toHaveBeenCalledWith({ platform_collect_software: { windows: true, linux: false, macos: true } });
   });
 });

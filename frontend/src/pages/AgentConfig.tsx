@@ -9,6 +9,7 @@ import {
   Info,
   KeyRound,
   Monitor,
+  Package,
   RotateCcw,
   ScrollText,
   Timer,
@@ -34,6 +35,12 @@ const PLATFORM_ROWS = [
   ["vmware", "VMware"],
   ["proxmox", "Proxmox"],
 ] as const;
+/** Platforms whose agents can collect installed software. */
+const SOFTWARE_ROWS = [
+  ["windows", "Windows"],
+  ["linux", "Linux"],
+  ["macos", "macOS"],
+] as const;
 const INVENTORY_MIN = 300;
 const INVENTORY_MAX = 86400;
 
@@ -50,6 +57,10 @@ function intervalsFrom(cfg: AgentConfig) {
   };
 }
 
+function softwareFrom(cfg: AgentConfig): Record<string, boolean> {
+  return Object.fromEntries(SOFTWARE_ROWS.map(([id]) => [id, cfg.platform_collect_software?.[id] ?? true]));
+}
+
 function keepEdits(current: Record<string, string>, seeded: Record<string, string>, next: Record<string, string>) {
   return Object.fromEntries(PLATFORM_ROWS.map(([id]) => [id, current[id] === seeded[id] ? next[id] : current[id]]));
 }
@@ -61,12 +72,14 @@ export default function AgentConfigPage() {
   const [heartbeatInputs, setHeartbeatInputs] = useState<Record<string, string>>({});
   const [inventoryInputs, setInventoryInputs] = useState<Record<string, string>>({});
   const [managedPasswordEnabled, setManagedPasswordEnabled] = useState(true);
+  const [softwareInputs, setSoftwareInputs] = useState<Record<string, boolean>>({});
   const [copying, setCopying] = useState<CopyTarget>(null);
   const [copied, setCopied] = useState<CopyTarget>(null);
   const [copyError, setCopyError] = useState<string | null>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const policyState = useSaveState();
   const remoteState = useSaveState();
+  const softwareState = useSaveState();
 
   const apply = (cfg: AgentConfig) => {
     setData(cfg);
@@ -75,6 +88,7 @@ export default function AgentConfigPage() {
     setHeartbeatInputs(next.heartbeat);
     setInventoryInputs(next.inventory);
     setManagedPasswordEnabled(cfg.remote_support_managed_password_enabled);
+    setSoftwareInputs(softwareFrom(cfg));
   };
 
   // A cached copy seeds the form at once; the fresh answer then replaces only
@@ -86,6 +100,7 @@ export default function AgentConfigPage() {
       setHeartbeatInputs(next.heartbeat);
       setInventoryInputs(next.inventory);
       setManagedPasswordEnabled(config.remote_support_managed_password_enabled);
+      setSoftwareInputs(softwareFrom(config));
     } else {
       const seeded = intervalsFrom(seededFrom);
       setHeartbeatInputs(keepEdits(heartbeatInputs, seeded.heartbeat, next.heartbeat));
@@ -93,6 +108,16 @@ export default function AgentConfigPage() {
       if (managedPasswordEnabled === seededFrom.remote_support_managed_password_enabled) {
         setManagedPasswordEnabled(config.remote_support_managed_password_enabled);
       }
+      const seededSoftware = softwareFrom(seededFrom);
+      const nextSoftware = softwareFrom(config);
+      setSoftwareInputs(
+        Object.fromEntries(
+          SOFTWARE_ROWS.map(([id]) => [
+            id,
+            softwareInputs[id] === seededSoftware[id] ? nextSoftware[id] : softwareInputs[id],
+          ]),
+        ),
+      );
     }
   }
 
@@ -136,6 +161,8 @@ export default function AgentConfigPage() {
       ([id]) => heartbeatInputs[id] !== original.heartbeat[id] || inventoryInputs[id] !== original.inventory[id],
     );
   const remoteDirty = config !== null && managedPasswordEnabled !== config.remote_support_managed_password_enabled;
+  const softwareDirty =
+    config !== null && SOFTWARE_ROWS.some(([id]) => softwareInputs[id] !== softwareFrom(config)[id]);
 
   const savePolicy = () => {
     if (problems.length) return;
@@ -164,6 +191,15 @@ export default function AgentConfigPage() {
       },
       "Remote Support setting saved",
       "Failed to save the Remote Support setting",
+    );
+
+  const saveSoftware = () =>
+    void softwareState.run(
+      async () => {
+        apply(await putAgentConfig({ platform_collect_software: softwareInputs }));
+      },
+      "Saved; agents from 2.1.42 pick it up on their next heartbeat",
+      "Failed to save the software collection setting",
     );
 
   async function copyScript(seconds: number, target: CopyTarget) {
@@ -418,8 +454,51 @@ export default function AgentConfigPage() {
             />
           </div>
 
+          {/* ── installed software ─────────────────────────────────────── */}
+          <div className="th-onb-card th-onb-enter" style={{ "--i": 6 } as CSSProperties}>
+            <CardHead
+              icon={Package}
+              tone={TONE.info}
+              title="Installed software"
+              subtitle="The software list on each device, and its Uninstall"
+            />
+            <div className="th-onb-body flex-1 space-y-3">
+              {SOFTWARE_ROWS.map(([id, label]) => (
+                <div key={id} className="flex items-start justify-between gap-4">
+                  <span>
+                    <span className="block text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>
+                      Collect on {label}
+                    </span>
+                    <span className="mt-0.5 block text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                      Read once an hour from the device. Agents before 2.1.42 keep their own setting.
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={softwareInputs[id] ?? true}
+                    aria-label={`Collect installed software on ${label}`}
+                    className="th-onb-switch mt-0.5 flex-none"
+                    disabled={loading}
+                    onClick={() => setSoftwareInputs((prev) => ({ ...prev, [id]: !(prev[id] ?? true) }))}
+                  >
+                    <i />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <SaveFooter
+              dirty={softwareDirty}
+              saving={softwareState.saving}
+              saved={softwareState.saved}
+              error={softwareState.error}
+              label="Save"
+              onSave={saveSoftware}
+            />
+          </div>
+
           {/* ── rollout scripts ────────────────────────────────────────── */}
-          <div className="th-onb-card th-onb-enter flex-1" style={{ "--i": 6 } as CSSProperties}>
+          <div className="th-onb-card th-onb-enter flex-1" style={{ "--i": 7 } as CSSProperties}>
             <CardHead
               icon={ScrollText}
               tone={TONE.maintenance}
