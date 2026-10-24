@@ -22,7 +22,9 @@ matching an Inno name check; Inno now means exactly uninsNNN.exe.
   manifest backup `manifest.json.bak-pre-2.1.43-20261024-222352`; public
   download serves the CI hash, `active-version` 2.1.43.
 - Pilot batch `982df500-e21b-4bb4-b1e9-ae8f7664ca18` (22:24) on 12, 781, 983,
-  985 from 2.1.42; AnyDesk on 781, 983, 985 read "none" before it.
+  985 from 2.1.42; AnyDesk on 781, 983, 985 read "none" before it. All four
+  on 2.1.43 by 22:35; by 22:37 AnyDesk reads "quiet" (removable) on all
+  three; removable apps 781 48→49, 985 1→2.
 
 ## [2026-10-24] COLLECT-SOFTWARE-2026-10-24 — installed-software collection set by the platform; backend + frontend `afd9ae0`; agent 2.1.42 active; pilot
 
