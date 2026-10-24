@@ -5,6 +5,34 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-24] AGENT-2.1.41-PREP-2026-10-24 — process, service and software actions; MAC address; two UI fixes; not built, not deployed
+
+**Source only.** On the owner's requests of the evening; 2.1.41 replaces
+2.1.40 for the fleet waves (owner: "Bashkë me 2.1.41"). Permissions by risk
+(owner): ending a process and controlling a service for operators, an
+uninstall for administrators with a current two-factor code.
+- Agent 2.1.41 (`cffb516`, `cf2980a`): Windows reports the MAC address of the
+  adapter that holds its local IP (none of 937 Windows devices had one;
+  Linux 6 of 6). New actions `kill_process`, `service_control`,
+  `uninstall_software`, native code, each re-checked on the PC; protected
+  processes, services and TECHI's own apps refused; the software inventory
+  records each app's uninstall key and method (`msi` / `quiet`); an
+  uninstall runs beside the heartbeat loop. Windows CI tests do a real kill,
+  a real quiet uninstall and a real Spooler stop/start/restart.
+- Backend (`2c3a8db`, no migration): `POST /devices/{id}/processes/kill`,
+  `/services/control`, `/software/uninstall`; Windows on 2.1.41+ only; only
+  targets the last inventory reported; not ActionTypes, so the generic action
+  endpoint cannot bypass the checks. 1784 backend tests pass.
+- Frontend: row actions with reasons when unavailable, confirmation, two-factor
+  code for an uninstall, live outcome per row (`3524e20`); MAC address and
+  copy buttons in the Network card (`d0dae65`); realtime events no longer
+  dropped in a burst (agent version chip did not change after an update) and
+  the Devices page's cached rows follow edits (an assignment looked unsaved
+  after a reload) (`4830966`). 460 of 461 frontend tests pass; the one
+  failure (`GenericDeviceDrawer`) fails on the previous code too.
+- Next: push, CI (8 MSI scenarios + Windows tests), backend + frontend deploy,
+  upload 2.1.41, pilot on 12, 781, 983, 985.
+
 ## [2026-10-24] PILOT-2.1.40-2026-10-24 — agent 2.1.40 on Techi-Server, HV-PROD-01, Mario-Lenovo, Node-01
 
 On the owner's word ("update 12, 781, 983, 985"): `self_update` batch
