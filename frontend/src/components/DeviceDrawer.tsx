@@ -1846,6 +1846,7 @@ export default function DeviceDrawer({
               error={inventoryQuery.error}
               onLoad={loadInventory}
               manage={inventoryManage}
+              agentVersion={isWindows ? device.agent_version : undefined}
             />
           </div>
 

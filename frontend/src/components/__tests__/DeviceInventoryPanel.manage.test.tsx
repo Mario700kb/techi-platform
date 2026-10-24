@@ -181,3 +181,37 @@ describe("DeviceInventoryPanel row actions", () => {
     expect(screen.getByText("Uninstalling…")).toBeTruthy();
   });
 });
+
+describe("DeviceInventoryPanel empty lists", () => {
+  const noServices: DeviceInventory = { ...inventory, services: [], processes: [] };
+
+  it("tells an old agent apart from a list not collected yet", () => {
+    const { rerender } = render(
+      <DeviceInventoryPanel
+        inventory={noServices}
+        loading={false}
+        error={null}
+        onLoad={vi.fn()}
+        agentVersion="2.1.35"
+      />,
+    );
+    showList("Services");
+    expect(screen.getByText("No services reported")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Agent 2\.1\.35 sends services only when the PC's own agent config allows it/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Update the agent to 2\.1\.45 or later/)).toBeInTheDocument();
+
+    rerender(
+      <DeviceInventoryPanel
+        inventory={noServices}
+        loading={false}
+        error={null}
+        onLoad={vi.fn()}
+        agentVersion="2.1.46"
+      />,
+    );
+    expect(screen.queryByText(/Update the agent/)).not.toBeInTheDocument();
+    expect(screen.getByText(/arrive within a few minutes/)).toBeInTheDocument();
+  });
+});

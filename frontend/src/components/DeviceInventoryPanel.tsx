@@ -29,6 +29,7 @@ import {
 } from "./InventoryManage";
 import { DISPLAY_LOCALE, formatDateTime, timeAgo } from "../utils/time";
 import { humanize, TONE } from "../utils/deviceStatus";
+import { compareVersions } from "../utils/version";
 import { Button, EmptyState } from "./ui";
 
 type InventoryView = "software" | "services" | "processes";
@@ -50,6 +51,26 @@ const NOUN: Record<InventoryView, [string, string]> = {
   services: ["service", "services"],
   processes: ["process", "processes"],
 };
+
+/**
+ * Windows agent versions from which Agent config decides whether a list is
+ * collected. Older agents follow the PC's own agent config, which has all
+ * three off on PCs installed with a token.
+ */
+const PLATFORM_COLLECTS_FROM: Record<InventoryView, string> = {
+  software: "2.1.42",
+  services: "2.1.45",
+  processes: "2.1.45",
+};
+
+/** Why a list is empty, as far as the console can tell. */
+function emptyListReason(view: InventoryView, agentVersion?: string | null): string {
+  const from = PLATFORM_COLLECTS_FROM[view];
+  if (agentVersion && compareVersions(agentVersion, from) === "outdated") {
+    return `Agent ${agentVersion} sends ${view} only when the PC's own agent config allows it, and on most PCs it does not. Update the agent to ${from} or later; from then on Agent config decides.`;
+  }
+  return `The agent's last inventory did not include ${view}. They arrive within a few minutes of the agent starting or of ${view} being turned on in Agent config; Refresh collects them again.`;
+}
 
 const PATCH_STATE: Record<PatchState, { label: string; tone: string; hint: string }> = {
   up_to_date: { label: "Up to date", tone: TONE.online, hint: "All updates installed" },
@@ -116,6 +137,8 @@ interface DeviceInventoryPanelProps {
   onLoad: () => void;
   /** End processes, control services, uninstall apps (Windows agents from 2.1.41). */
   manage?: InventoryManage;
+  /** Windows agents only: explains an empty list on an agent too old to follow Agent config. */
+  agentVersion?: string | null;
 }
 
 /**
@@ -123,7 +146,14 @@ interface DeviceInventoryPanelProps {
  * (installed software, services, processes) behind a segmented control.
  * Mount it with `key={device.id}` so the view and search reset per device.
  */
-export default function DeviceInventoryPanel({ inventory, loading, error, onLoad, manage }: DeviceInventoryPanelProps) {
+export default function DeviceInventoryPanel({
+  inventory,
+  loading,
+  error,
+  onLoad,
+  manage,
+  agentVersion,
+}: DeviceInventoryPanelProps) {
   const [view, setView] = useState<InventoryView>("software");
   const [query, setQuery] = useState("");
   const [request, setRequest] = useState<ManageRequest | null>(null);
@@ -341,7 +371,7 @@ export default function DeviceInventoryPanel({ inventory, loading, error, onLoad
                 className="!py-8"
                 icon={<ViewIcon className="h-5 w-5" />}
                 title={`No ${view} reported`}
-                description={`The agent's last inventory did not include ${view}. Refresh to collect it again.`}
+                description={emptyListReason(view, agentVersion)}
               />
             ) : shown === 0 ? (
               <EmptyState
