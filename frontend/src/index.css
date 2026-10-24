@@ -6880,6 +6880,51 @@ span.th-inv-mono {
 .th-inv-muted {
   color: var(--th-text-muted) !important;
 }
+/* Row actions: end a process, start/stop/restart a service, uninstall an app. */
+.th-inv-table td.th-inv-actions {
+  padding-left: 0;
+  padding-right: 8px;
+  text-align: right;
+  white-space: nowrap;
+}
+.th-inv-act {
+  min-width: 30px;
+  min-height: 30px;
+  padding: 0;
+}
+.th-inv-act[aria-disabled] {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.th-inv-act[data-danger]:not([aria-disabled]):hover {
+  color: var(--th-status-critical);
+}
+.th-inv-running {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  min-height: 30px;
+  color: var(--th-text-muted);
+}
+.th-inv-outcome {
+  margin-top: 2px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  color: var(--th-text-muted);
+}
+.th-inv-outcome[data-state="done"] {
+  color: var(--th-status-online);
+}
+.th-inv-outcome[data-state="failed"] {
+  color: var(--th-status-critical);
+}
+.th-inv-table tr[data-gone] .th-inv-primary {
+  text-decoration: line-through;
+  color: var(--th-text-muted);
+}
 
 /* ── Action tiles (device drawer) ── */
 .th-action-tile {

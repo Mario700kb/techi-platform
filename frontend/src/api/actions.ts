@@ -43,6 +43,9 @@ const OTHER_ACTION_LABELS: Record<string, string> = {
   self_update: `Update ${TERMS.agent}`,
   deploy_remote_support: `Deploy ${TERMS.remoteSupport}`,
   set_remote_password: `Set ${TERMS.remoteSupport} password`,
+  kill_process: "End process",
+  service_control: "Control service",
+  uninstall_software: "Uninstall software",
 };
 
 /** A readable name for any action type, including ones not in ActionType. */

@@ -19,6 +19,9 @@ export interface SoftwareInfo {
   version?: string | null;
   publisher?: string | null;
   install_date?: string | null;
+  /** Windows agents from 2.1.41: how it can be removed with nobody at the PC. */
+  uninstall?: "msi" | "quiet" | null;
+  uninstall_key?: string | null;
 }
 
 export interface DeviceInventory {

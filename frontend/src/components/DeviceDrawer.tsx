@@ -88,6 +88,9 @@ import { useDeviceTelemetry } from "../hooks/useDeviceTelemetry";
 import { usePlatformFeatures } from "../hooks/usePlatformFeatures";
 import ConnectMenu from "./ConnectMenu";
 import DeviceInventoryPanel from "./DeviceInventoryPanel";
+import type { InventoryManage } from "./InventoryManage";
+import { MANAGE_MIN_AGENT_VERSION } from "../api/deviceManage";
+import { compareVersions } from "../utils/version";
 import DeviceSecurityCard from "./DeviceSecurityCard";
 import { Button, ConnectButton, EmptyState, Kv, SectionHeader } from "./ui";
 import DeviceAssignmentCard from "./DeviceAssignmentCard";
@@ -469,6 +472,25 @@ export default function DeviceDrawer({
   }, [device.id, initialTab]);
 
   const { reload: reloadInventory } = inventoryQuery;
+  // Ending processes, controlling services and uninstalling apps: Windows
+  // only; shown but unavailable (with the reason) on an older agent or offline.
+  const inventoryManage: InventoryManage | undefined =
+    (device.platform ?? "windows").toLowerCase() !== "windows"
+      ? undefined
+      : {
+          deviceId: device.id,
+          deviceName: displayName,
+          blockedReason: !["current", "ahead"].includes(compareVersions(device.agent_version, MANAGE_MIN_AGENT_VERSION))
+            ? `Needs agent ${MANAGE_MIN_AGENT_VERSION} or later; update the agent first`
+            : isDeviceOffline(device)
+              ? "Device is offline"
+              : null,
+          canOperate,
+          canUninstall: user?.role === "admin" || user?.role === "owner",
+          actions,
+          onQueued: (action) => setActions((prev) => addQueuedAction(prev, action)),
+        };
+
   const loadInventory = useCallback(() => {
     if (inventoryRequestedFor === device.id) void reloadInventory();
     else setInventoryRequestedFor(device.id);
@@ -1823,6 +1845,7 @@ export default function DeviceDrawer({
               loading={inventoryQuery.refreshing}
               error={inventoryQuery.error}
               onLoad={loadInventory}
+              manage={inventoryManage}
             />
           </div>
 

@@ -6,12 +6,27 @@ import {
   Download,
   Loader2,
   Package,
+  Play,
   RefreshCw,
+  RotateCw,
   Search,
   Settings2,
+  Square,
+  Trash2,
   X,
+  XCircle,
 } from "lucide-react";
+import { isProtectedSoftware, PROTECTED_PROCESSES, PROTECTED_SERVICES } from "../api/deviceManage";
 import { DeviceInventory, PatchState } from "../api/inventory";
+import {
+  type InventoryManage,
+  type ManageRequest,
+  ManageDialog,
+  requestKey,
+  RowActionButton,
+  type RowOutcome,
+  useManageOutcomes,
+} from "./InventoryManage";
 import { DISPLAY_LOCALE, formatDateTime, timeAgo } from "../utils/time";
 import { humanize, TONE } from "../utils/deviceStatus";
 import { Button, EmptyState } from "./ui";
@@ -76,11 +91,31 @@ function Stat({ label, value, hint, tone }: { label: string; value: string; hint
 
 const byName = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base" });
 
+/** Under a row's name: its action under way, done, or why it failed. */
+function OutcomeNote({ outcome }: { outcome?: RowOutcome }) {
+  if (!outcome) return null;
+  return (
+    <p className="th-inv-outcome" data-state={outcome.state} title={outcome.message} role="status">
+      {outcome.message}
+    </p>
+  );
+}
+
+function RunningCell({ outcome }: { outcome: RowOutcome }) {
+  return (
+    <span className="th-inv-running" aria-label={outcome.message}>
+      <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+    </span>
+  );
+}
+
 interface DeviceInventoryPanelProps {
   inventory: DeviceInventory | null;
   loading: boolean;
   error: string | null;
   onLoad: () => void;
+  /** End processes, control services, uninstall apps (Windows agents from 2.1.41). */
+  manage?: InventoryManage;
 }
 
 /**
@@ -88,9 +123,27 @@ interface DeviceInventoryPanelProps {
  * (installed software, services, processes) behind a segmented control.
  * Mount it with `key={device.id}` so the view and search reset per device.
  */
-export default function DeviceInventoryPanel({ inventory, loading, error, onLoad }: DeviceInventoryPanelProps) {
+export default function DeviceInventoryPanel({ inventory, loading, error, onLoad, manage }: DeviceInventoryPanelProps) {
   const [view, setView] = useState<InventoryView>("software");
   const [query, setQuery] = useState("");
+  const [request, setRequest] = useState<ManageRequest | null>(null);
+  const { track, outcomeFor } = useManageOutcomes(manage?.actions, onLoad);
+
+  // Why a row's action cannot be used now; null when it can.
+  const operateBlock = !manage ? "" : manage.blockedReason ?? (manage.canOperate ? null : "Your role cannot do this");
+  const processBlock = (name: string) =>
+    operateBlock ??
+    (PROTECTED_PROCESSES.has(name.toLowerCase()) ? "Protected: Windows, the agent or Remote Support needs it" : null);
+  const serviceStopBlock = (name: string) =>
+    operateBlock ??
+    (PROTECTED_SERVICES.has(name.toLowerCase()) ? "Protected: Windows or the agent needs it running" : null);
+  const uninstallBlock = (name: string, method?: string | null) => {
+    if (!manage) return "";
+    if (manage.blockedReason) return manage.blockedReason;
+    if (isProtectedSoftware(name)) return "Part of TECHI; it cannot be uninstalled from here";
+    if (method !== "msi" && method !== "quiet") return "No silent uninstall; remove it over Remote Support";
+    return manage.canUninstall ? null : "Administrators only";
+  };
 
   // Software and services read best alphabetically; processes by memory, the
   // heaviest first, because that is what an operator looks for.
@@ -309,6 +362,7 @@ export default function DeviceInventoryPanel({ inventory, loading, error, onLoad
                     <colgroup>
                       <col />
                       <col style={{ width: "34%" }} />
+                      {manage && <col style={{ width: 52 }} />}
                     </colgroup>
                     <thead>
                       <tr>
@@ -316,26 +370,54 @@ export default function DeviceInventoryPanel({ inventory, loading, error, onLoad
                         <th scope="col" className="th-inv-end">
                           Version
                         </th>
+                        {manage && (
+                          <th scope="col">
+                            <span className="sr-only">Actions</span>
+                          </th>
+                        )}
                       </tr>
                     </thead>
                     <tbody>
-                      {software.map((s, idx) => (
-                        <tr key={`${s.name}-${s.version ?? ""}-${idx}`}>
-                          <td>
-                            <p className="th-inv-primary" title={s.name}>
-                              {s.name}
-                            </p>
-                            <p className="th-inv-secondary" title={s.publisher ?? undefined}>
-                              {s.publisher || "Unknown publisher"}
-                            </p>
-                          </td>
-                          <td className="th-inv-end">
-                            <span className="th-inv-mono" title={s.version ?? undefined}>
-                              {s.version || "—"}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
+                      {software.map((s, idx) => {
+                        const req: ManageRequest | null =
+                          s.uninstall_key && (s.uninstall === "msi" || s.uninstall === "quiet")
+                            ? { kind: "uninstall", name: s.name, uninstallKey: s.uninstall_key, method: s.uninstall }
+                            : null;
+                        const outcome = req ? outcomeFor(requestKey(req)) : undefined;
+                        return (
+                          <tr key={`${s.name}-${s.version ?? ""}-${idx}`} data-gone={outcome?.state === "done" || undefined}>
+                            <td>
+                              <p className="th-inv-primary" title={s.name}>
+                                {s.name}
+                              </p>
+                              <p className="th-inv-secondary" title={s.publisher ?? undefined}>
+                                {s.publisher || "Unknown publisher"}
+                              </p>
+                              <OutcomeNote outcome={outcome} />
+                            </td>
+                            <td className="th-inv-end">
+                              <span className="th-inv-mono" title={s.version ?? undefined}>
+                                {s.version || "—"}
+                              </span>
+                            </td>
+                            {manage && (
+                              <td className="th-inv-actions">
+                                {outcome?.state === "running" ? (
+                                  <RunningCell outcome={outcome} />
+                                ) : outcome?.state === "done" ? null : (
+                                  <RowActionButton
+                                    icon={Trash2}
+                                    label={`Uninstall ${s.name}`}
+                                    danger
+                                    blockedReason={uninstallBlock(s.name, s.uninstall)}
+                                    onClick={() => req && setRequest(req)}
+                                  />
+                                )}
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 )}
@@ -346,6 +428,7 @@ export default function DeviceInventoryPanel({ inventory, loading, error, onLoad
                       <col />
                       <col style={{ width: "24%" }} />
                       <col style={{ width: "22%" }} />
+                      {manage && <col style={{ width: 84 }} />}
                     </colgroup>
                     <thead>
                       <tr>
@@ -354,31 +437,76 @@ export default function DeviceInventoryPanel({ inventory, loading, error, onLoad
                         <th scope="col" className="th-inv-end">
                           Startup
                         </th>
+                        {manage && (
+                          <th scope="col">
+                            <span className="sr-only">Actions</span>
+                          </th>
+                        )}
                       </tr>
                     </thead>
                     <tbody>
-                      {services.map((s) => (
-                        <tr key={s.name}>
-                          <td>
-                            <p className="th-inv-primary" title={s.display_name || s.name}>
-                              {s.display_name || s.name}
-                            </p>
-                            <p className="th-inv-secondary th-inv-mono" title={s.name}>
-                              {s.name}
-                            </p>
-                          </td>
-                          <td>
-                            <span
-                              className="th-status-chip"
-                              style={{ "--chip-tone": serviceTone(s.status) } as React.CSSProperties}
-                            >
-                              <i />
-                              {humanize(s.status)}
-                            </span>
-                          </td>
-                          <td className="th-inv-end th-inv-muted">{s.startup_type ? humanize(s.startup_type) : "—"}</td>
-                        </tr>
-                      ))}
+                      {services.map((s) => {
+                        const label = s.display_name || s.name;
+                        const outcome = outcomeFor(`service:${s.name.toLowerCase()}`);
+                        // Until the next inventory, a service shows what was just done to it.
+                        const done = outcome?.state === "done" && outcome.request.kind === "service" ? outcome.request : null;
+                        const status = done ? (done.operation === "stop" ? "stopped" : "running") : s.status;
+                        const ask = (operation: "start" | "stop" | "restart") =>
+                          setRequest({ kind: "service", name: s.name, label, operation });
+                        return (
+                          <tr key={s.name}>
+                            <td>
+                              <p className="th-inv-primary" title={label}>
+                                {label}
+                              </p>
+                              <p className="th-inv-secondary th-inv-mono" title={s.name}>
+                                {s.name}
+                              </p>
+                              <OutcomeNote outcome={outcome} />
+                            </td>
+                            <td>
+                              <span
+                                className="th-status-chip"
+                                style={{ "--chip-tone": serviceTone(status) } as React.CSSProperties}
+                              >
+                                <i />
+                                {humanize(status)}
+                              </span>
+                            </td>
+                            <td className="th-inv-end th-inv-muted">{s.startup_type ? humanize(s.startup_type) : "—"}</td>
+                            {manage && (
+                              <td className="th-inv-actions">
+                                {outcome?.state === "running" ? (
+                                  <RunningCell outcome={outcome} />
+                                ) : status === "running" ? (
+                                  <>
+                                    <RowActionButton
+                                      icon={RotateCw}
+                                      label={`Restart ${label}`}
+                                      blockedReason={serviceStopBlock(s.name)}
+                                      onClick={() => ask("restart")}
+                                    />
+                                    <RowActionButton
+                                      icon={Square}
+                                      label={`Stop ${label}`}
+                                      danger
+                                      blockedReason={serviceStopBlock(s.name)}
+                                      onClick={() => ask("stop")}
+                                    />
+                                  </>
+                                ) : (
+                                  <RowActionButton
+                                    icon={Play}
+                                    label={`Start ${label}`}
+                                    blockedReason={operateBlock}
+                                    onClick={() => ask("start")}
+                                  />
+                                )}
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 )}
@@ -389,6 +517,7 @@ export default function DeviceInventoryPanel({ inventory, loading, error, onLoad
                       <col />
                       <col style={{ width: "20%" }} />
                       <col style={{ width: "24%" }} />
+                      {manage && <col style={{ width: 52 }} />}
                     </colgroup>
                     <thead>
                       <tr>
@@ -399,20 +528,44 @@ export default function DeviceInventoryPanel({ inventory, loading, error, onLoad
                         <th scope="col" className="th-inv-end">
                           Memory
                         </th>
+                        {manage && (
+                          <th scope="col">
+                            <span className="sr-only">Actions</span>
+                          </th>
+                        )}
                       </tr>
                     </thead>
                     <tbody>
-                      {processes.map((p) => (
-                        <tr key={p.pid}>
-                          <td>
-                            <p className="th-inv-primary" title={p.name}>
-                              {p.name}
-                            </p>
-                          </td>
-                          <td className="th-inv-end th-inv-mono th-inv-muted">{p.pid}</td>
-                          <td className="th-inv-end th-inv-num">{formatMemoryMb(p.memory_mb)}</td>
-                        </tr>
-                      ))}
+                      {processes.map((p) => {
+                        const outcome = outcomeFor(`process:${p.pid}`);
+                        return (
+                          <tr key={p.pid} data-gone={outcome?.state === "done" || undefined}>
+                            <td>
+                              <p className="th-inv-primary" title={p.name}>
+                                {p.name}
+                              </p>
+                              <OutcomeNote outcome={outcome} />
+                            </td>
+                            <td className="th-inv-end th-inv-mono th-inv-muted">{p.pid}</td>
+                            <td className="th-inv-end th-inv-num">{formatMemoryMb(p.memory_mb)}</td>
+                            {manage && (
+                              <td className="th-inv-actions">
+                                {outcome?.state === "running" ? (
+                                  <RunningCell outcome={outcome} />
+                                ) : outcome?.state === "done" ? null : (
+                                  <RowActionButton
+                                    icon={XCircle}
+                                    label={`End ${p.name}`}
+                                    danger
+                                    blockedReason={processBlock(p.name)}
+                                    onClick={() => setRequest({ kind: "kill", pid: p.pid, name: p.name })}
+                                  />
+                                )}
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 )}
@@ -420,6 +573,19 @@ export default function DeviceInventoryPanel({ inventory, loading, error, onLoad
             )}
           </div>
         </section>
+      )}
+
+      {manage && request && (
+        <ManageDialog
+          request={request}
+          manage={manage}
+          onClose={() => setRequest(null)}
+          onQueued={(req, action) => {
+            manage.onQueued(action);
+            track(req, action);
+            setRequest(null);
+          }}
+        />
       )}
     </>
   );
