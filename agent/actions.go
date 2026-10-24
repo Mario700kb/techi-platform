@@ -67,9 +67,19 @@ func processActions(cfg *Config, actions []PendingAction) {
 	}
 	log.Printf("processing %d pending action(s)", len(actions))
 	for _, action := range actions {
+		// An uninstall can take minutes; run here in line it would hold the
+		// next heartbeat back and the PC would read offline meanwhile.
+		if detachedActions[action.Action] {
+			go runAction(cfg, action)
+			continue
+		}
 		runAction(cfg, action)
 	}
 }
+
+// detachedActions run beside the heartbeat loop when delivered by a heartbeat
+// (the command channel runs every action detached already).
+var detachedActions = map[string]bool{"uninstall_software": true}
 
 func runAction(cfg *Config, action PendingAction) {
 	log.Printf("action %d: starting %s", action.ActionID, action.Action)
@@ -155,6 +165,12 @@ func dispatch(ctx context.Context, cfg *Config, action PendingAction) actionResu
 		return handleOpenTerminal(ctx, cfg, action.Parameters)
 	case "self_update":
 		return handleSelfUpdate(ctx, action.Parameters)
+	case "kill_process":
+		return handleKillProcess(ctx, cfg, action.Parameters)
+	case "service_control":
+		return handleServiceControl(ctx, cfg, action.Parameters)
+	case "uninstall_software":
+		return handleUninstallSoftware(ctx, cfg, action.Parameters)
 	default:
 		return actionResult{err: fmt.Errorf("unknown action type: %q", action.Action)}
 	}

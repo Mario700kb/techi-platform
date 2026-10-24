@@ -32,12 +32,18 @@ type ServiceInfo struct {
 	StartupType string `json:"startup_type,omitempty"`
 }
 
-// SoftwareInfo is a read-only installed software/package inventory entry.
+// SoftwareInfo is an installed software/package inventory entry. On Windows,
+// an app that can be removed without anyone at the PC also carries how
+// (Uninstall: "msi" for a Windows Installer product, "quiet" for a quiet
+// uninstall command) and its registry key, which the uninstall_software
+// action reads again before it runs anything.
 type SoftwareInfo struct {
-	Name        string `json:"name"`
-	Version     string `json:"version,omitempty"`
-	Publisher   string `json:"publisher,omitempty"`
-	InstallDate string `json:"install_date,omitempty"`
+	Name         string `json:"name"`
+	Version      string `json:"version,omitempty"`
+	Publisher    string `json:"publisher,omitempty"`
+	InstallDate  string `json:"install_date,omitempty"`
+	Uninstall    string `json:"uninstall,omitempty"`
+	UninstallKey string `json:"uninstall_key,omitempty"`
 }
 
 // PatchStatus eshte snapshot i lehte read-only per OS updates.
@@ -164,11 +170,17 @@ func collectWindowsSoftware() []SoftwareInfo {
 func parseWindowsUninstallRegistry(raw string) []SoftwareInfo {
 	var current SoftwareInfo
 	var software []SoftwareInfo
+	key, windowsInstaller, quiet := "", false, false
 	flush := func() {
 		if strings.TrimSpace(current.Name) != "" {
+			if method := uninstallMethod(key, windowsInstaller, quiet); method != "" {
+				current.Uninstall = method
+				current.UninstallKey = key
+			}
 			software = append(software, current)
 		}
 		current = SoftwareInfo{}
+		key, windowsInstaller, quiet = "", false, false
 	}
 
 	for _, line := range strings.Split(raw, "\n") {
@@ -179,6 +191,7 @@ func parseWindowsUninstallRegistry(raw string) []SoftwareInfo {
 		}
 		if strings.HasPrefix(trimmed, "HKEY_") {
 			flush()
+			key = trimmed
 			continue
 		}
 		name, value := parseRegValueLine(trimmed)
@@ -191,10 +204,55 @@ func parseWindowsUninstallRegistry(raw string) []SoftwareInfo {
 			current.Publisher = value
 		case "InstallDate":
 			current.InstallDate = value
+		case "WindowsInstaller":
+			windowsInstaller = value == "0x1" || value == "1"
+		case "QuietUninstallString":
+			quiet = strings.TrimSpace(value) != ""
 		}
 	}
 	flush()
 	return software
+}
+
+// uninstallMethod is how an app can be removed with nobody at the PC: "msi"
+// for a Windows Installer product (its key is the product code), "quiet" for
+// an app that registered a quiet uninstall command, "" when it cannot be.
+func uninstallMethod(key string, windowsInstaller bool, quiet bool) string {
+	if windowsInstaller && isProductCode(registryLeaf(key)) {
+		return "msi"
+	}
+	if quiet {
+		return "quiet"
+	}
+	return ""
+}
+
+func registryLeaf(key string) string {
+	if i := strings.LastIndex(key, `\`); i >= 0 {
+		return key[i+1:]
+	}
+	return key
+}
+
+// isProductCode reports a braced GUID, the form of a Windows Installer
+// product code: {8-4-4-4-12 hex}.
+func isProductCode(s string) bool {
+	if len(s) != 38 || s[0] != '{' || s[37] != '}' {
+		return false
+	}
+	for i, c := range s[1:37] {
+		switch i {
+		case 8, 13, 18, 23:
+			if c != '-' {
+				return false
+			}
+		default:
+			if !strings.ContainsRune("0123456789abcdefABCDEF", c) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func parseRegValueLine(line string) (string, string) {
