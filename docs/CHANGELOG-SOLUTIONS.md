@@ -5,6 +5,23 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-25] ACTION-EXPIRY-2026-10-25 — backend `eec3902`: open actions past their timeout expire every minute
+
+**Owner: "deploy backend".** Expiry was lazy (only when the planner, batch
+progress or a device's action list read an action); five self-updates of the
+night stayed "running" in the table for ~50 min. A sweep every 60 s (first
+3 min after start) now expires them with the same rule; unit test
+`tests/test_action_expiry.py`; 1799 backend tests pass.
+- Deploy 02:09: dump `pre-action-expiry-20261025-015729.sql.gz` (241 MB, gzip
+  -t OK; a first attempt with the wrong container name gave 4 KB and was
+  removed); rollback image `pre-action-expiry-3154342`; no migration; ready in
+  ~10 s; guard + smoke passed; no errors.
+- The night's stuck actions had already been expired at 02:01 by a console
+  read, so the sweep had nothing to expire yet. Since then Anxhelina-LA (875)
+  came back online on 2.1.35 (asleep, not dead) and DESKTOP-INFN0DN (128)
+  reached 2.1.46; pos1-qtu (164) is online on 2.1.35; PC001 and Z400
+  (Adpascucci) are still offline.
+
 ## [2026-10-25] PREMIUM-FRONTEND-2026-10-25 — frontend `4f58d59`: motion, live detail, prefetch, toasts, motion budget
 
 **Owner: "beji te gjitha", then "deplooy".** Five commits, frontend only:

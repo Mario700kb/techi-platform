@@ -26,7 +26,7 @@
 
 | Component | Running | Since | Rollback | Evidence |
 |---|---|---|---|---|
-| Backend | `504a206` | 2026-10-25 00:05 | image `pre-automation-afd9ae0`; dump `pre-automation-20261024-235709.sql.gz` | `AUTOMATION-2026-10-25` |
+| Backend | `eec3902` | 2026-10-25 02:09 | image `pre-action-expiry-3154342`; dump `pre-action-expiry-20261025-015729.sql.gz` | `ACTION-EXPIRY-2026-10-25` |
 | Frontend | `4f58d59` | 2026-10-25 01:53 | image `pre-premium-bd50aae` | `PREMIUM-FRONTEND-2026-10-25` |
 | Database schema | Alembic `y3z4a5b6c7d8` (single head; repository head matches) | 2026-10-25 00:04 | `alembic downgrade x2y3z4a5b6c7` | `AUTOMATION-2026-10-25` |
 | Repository path | `/opt/techi/techi-platform` | — | — | — |
