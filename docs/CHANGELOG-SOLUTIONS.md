@@ -5,6 +5,24 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-26] SOFTWARE-AGENT-VERSION-2026-10-26 — backend `c6cf14f`: installed software shows the TECHI Agent version that runs
+
+**Owner: "deploy commit push".** Self-update swaps only techi-agent.exe, so
+Windows keeps listing the TECHI Agent MSI at its install version (e.g.
+2.1.20.0) and the console showed that. The heartbeat that carries the
+software list now sets the "TECHI Agent" entry (publisher TECHI) to the agent
+version it reports; other entries (Update Bridge included) are untouched.
+Unit tests `tests/test_software_agent_version.py`; 1802 backend tests pass.
+- Deploy 20:02: dump `pre-software-agent-version-20261026-195828.sql.gz`
+  (308 MB, gzip -t OK); rollback image `pre-software-agent-version-be57455`
+  (= eec3902); no migration; ready in ~10 s; guard + smoke passed; no errors
+  (load 7.5 during the fleet reconnect, 2.7 after ~2 min).
+- Stored lists correct themselves as each agent sends software (hourly).
+  Programs and Features on the PC itself still shows the MSI version; fixing
+  that needs an agent release that rewrites DisplayVersion (not done).
+- Disk after the build: 940 MB free (96%) — cleanup or resize before the next
+  build.
+
 ## [2026-10-25] ACTION-EXPIRY-2026-10-25 — backend `eec3902`: open actions past their timeout expire every minute
 
 **Owner: "deploy backend".** Expiry was lazy (only when the planner, batch
