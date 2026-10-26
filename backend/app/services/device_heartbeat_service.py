@@ -28,7 +28,7 @@ from app.services.alert_rules import RECONNECT_WINDOW_SECONDS
 from app.services.device_assignment_service import AssignmentSignal, DeviceAssignmentService
 from app.services.device_fingerprint_service import DeviceFingerprintService, FingerprintMatch
 from app.services.device_health_score_service import DeviceHealthScoreService
-from app.services.device_inventory_service import DeviceInventoryService
+from app.services.device_inventory_service import DeviceInventoryService, with_running_agent_version
 from app.services.device_maintenance_service import DeviceMaintenanceService, is_maintenance_active
 from app.services.device_status_service import DeviceStatusService
 from app.services.device_telemetry_service import DeviceTelemetryService
@@ -881,7 +881,7 @@ class DeviceHeartbeatService:
                 device_id=device.id,
                 processes=payload.processes,
                 services=payload.services,
-                software=payload.software,
+                software=with_running_agent_version(payload.software, payload.agent_version or device.agent_version),
                 patch_status=payload.patch_status,
                 security_posture=posture,
                 device_health=health,

@@ -21,6 +21,28 @@ from app.services.security_posture import posture_from_json
 
 logger = logging.getLogger(__name__)
 
+AGENT_PRODUCT_NAME = "TECHI Agent"
+
+
+def with_running_agent_version(software: Optional[List[Dict[str, Any]]], agent_version: Optional[str]) -> Optional[List[Dict[str, Any]]]:
+    """Windows lists the TECHI Agent MSI at the version it was installed with
+    (e.g. 2.1.20.0): self_update swaps only techi-agent.exe, never the MSI
+    registration. The agent that sent the list knows its own version, so that
+    one entry shows the version that actually runs."""
+    version = (agent_version or "").strip()
+    if not software or not version:
+        return software
+    fixed = []
+    for app in software:
+        if (
+            isinstance(app, dict)
+            and str(app.get("name") or "").strip().lower() == AGENT_PRODUCT_NAME.lower()
+            and str(app.get("publisher") or "").strip().upper().startswith("TECHI")
+        ):
+            app = {**app, "version": version}
+        fixed.append(app)
+    return fixed
+
 
 class DeviceInventoryService:
     def __init__(self, db: Session):
