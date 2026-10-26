@@ -61,11 +61,11 @@ class DeviceAlert(Base):
     message = Column(String(512), nullable=False)
     detail = Column(String(1024), nullable=True)
     # Indexed for the dashboard's 30-day alert trend (opened / resolved in window).
-    created_at = Column(DateTime, default=utcnow_naive, nullable=False, index=True)
-    updated_at = Column(DateTime, default=utcnow_naive, nullable=False)
-    resolved_at = Column(DateTime, nullable=True, index=True)
-    acknowledged_at = Column(DateTime, nullable=True)
-    cooldown_until = Column(DateTime, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow_naive, nullable=False, index=True)
+    updated_at = Column(DateTime(timezone=True), default=utcnow_naive, nullable=False)
+    resolved_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    acknowledged_at = Column(DateTime(timezone=True), nullable=True)
+    cooldown_until = Column(DateTime(timezone=True), nullable=True)
     # One open alert per (device, kind, fingerprint): the fingerprint names
     # what inside the device is affected ("svc:spooler", "vol:D:",
     # "evt:shutdown"), "" when the kind alone says it.
@@ -73,35 +73,35 @@ class DeviceAlert(Base):
     # A problem that comes back within a day reopens the same row: how many
     # times it has opened, and when it was last seen.
     occurrences = Column(Integer, nullable=False, default=1, server_default="1")
-    last_seen_at = Column(DateTime, nullable=True)
+    last_seen_at = Column(DateTime(timezone=True), nullable=True)
     # 1 (act now) … 4 (whenever): severity weighed by the device's role.
     priority = Column(Integer, nullable=True, index=True)
     assigned_to_id = Column(Integer, ForeignKey("operators.id", ondelete="SET NULL"), nullable=True, index=True)
-    snoozed_until = Column(DateTime, nullable=True)
+    snoozed_until = Column(DateTime(timezone=True), nullable=True)
     # Snoozed "until it gets worse": a higher severity wakes it.
     snooze_until_worse = Column(Boolean, nullable=False, default=False, server_default=sa_false())
     # auto | fixed | false_positive | expected | duplicate | muted
     resolution = Column(String(32), nullable=True)
     resolved_by = Column(String(128), nullable=True)
     # When an unowned P1 was last escalated (reminder notification).
-    escalated_at = Column(DateTime, nullable=True)
+    escalated_at = Column(DateTime(timezone=True), nullable=True)
     # Deadlines (app/services/alert_sla.py): stamped once when the alert opens
     # or reopens, so no read computes the working-hours calendar. The clock
     # starts at sla_started_at; time spent waiting on someone else is added
     # back as sla_paused_minutes. sla_24x7: a P1 on a server counts every hour.
-    sla_started_at = Column(DateTime, nullable=True)
-    ack_due_at = Column(DateTime, nullable=True)
-    resolve_due_at = Column(DateTime, nullable=True)
+    sla_started_at = Column(DateTime(timezone=True), nullable=True)
+    ack_due_at = Column(DateTime(timezone=True), nullable=True)
+    resolve_due_at = Column(DateTime(timezone=True), nullable=True)
     sla_24x7 = Column(Boolean, nullable=False, default=False, server_default=sa_false())
     sla_paused_minutes = Column(Integer, nullable=False, default=0, server_default="0")
     # The last escalation step taken (0 none … 4 deadline missed) and when the
     # next one is due: the sweep reads only rows whose next_check_at passed.
     sla_step = Column(Integer, nullable=False, default=0, server_default="0")
-    next_check_at = Column(DateTime, nullable=True)
+    next_check_at = Column(DateTime(timezone=True), nullable=True)
     # Work on it: the first note, waiting on the client / a vendor / a part.
-    first_action_at = Column(DateTime, nullable=True)
+    first_action_at = Column(DateTime(timezone=True), nullable=True)
     waiting_reason = Column(String(32), nullable=True)
-    waiting_since = Column(DateTime, nullable=True)
+    waiting_since = Column(DateTime(timezone=True), nullable=True)
     # One problem on several devices of a client: the first alert leads, the
     # others follow its owner and close with it.
     parent_id = Column(Integer, ForeignKey("device_alerts.id", ondelete="SET NULL"), nullable=True, index=True)
@@ -128,11 +128,11 @@ class AlertDutyShift(Base):
     id = Column(Integer, primary_key=True)
     starts_on = Column(Date, nullable=False, index=True)
     ends_on = Column(Date, nullable=False, index=True)
-    operator_id = Column(Integer, ForeignKey("operators.id", ondelete="CASCADE"), nullable=False)
-    backup_operator_id = Column(Integer, ForeignKey("operators.id", ondelete="SET NULL"), nullable=True)
+    operator_id = Column(Integer, ForeignKey("operators.id", ondelete="CASCADE"), nullable=False, index=True)
+    backup_operator_id = Column(Integer, ForeignKey("operators.id", ondelete="SET NULL"), nullable=True, index=True)
     note = Column(String(200), nullable=True)
     created_by = Column(String(128), nullable=True)
-    created_at = Column(DateTime, default=utcnow_naive, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow_naive, nullable=False)
 
     operator = relationship("Operator", foreign_keys=[operator_id], lazy="joined")
     backup = relationship("Operator", foreign_keys=[backup_operator_id], lazy="joined")
@@ -155,7 +155,7 @@ class AlertActivity(Base):
 
     id = Column(Integer, primary_key=True)
     alert_id = Column(Integer, ForeignKey("device_alerts.id", ondelete="CASCADE"), nullable=False, index=True)
-    at = Column(DateTime, default=utcnow_naive, nullable=False)
+    at = Column(DateTime(timezone=True), default=utcnow_naive, nullable=False)
     actor = Column(String(128), nullable=True)  # operator username, or None for the platform
     action = Column(String(32), nullable=False)
     detail = Column(String(1000), nullable=True)
@@ -171,11 +171,11 @@ class AlertMute(Base):
     client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=True, index=True)
     kind = Column(String(64), nullable=True)
     fingerprint = Column(String(128), nullable=True)
-    until = Column(DateTime, nullable=True)  # None: until removed
+    until = Column(DateTime(timezone=True), nullable=True)  # None: until removed
     reason = Column(String(500), nullable=False)
     created_by = Column(String(128), nullable=True)
-    created_at = Column(DateTime, default=utcnow_naive, nullable=False)
-    removed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow_naive, nullable=False)
+    removed_at = Column(DateTime(timezone=True), nullable=True)
     removed_by = Column(String(128), nullable=True)
 
 
@@ -196,6 +196,6 @@ class AlertAnalysis(Base):
     cost_usd = Column(Float, nullable=True)
     occurrences = Column(Integer, nullable=True)  # the alert's count when analysed
     created_by = Column(String(128), nullable=True)
-    created_at = Column(DateTime, default=utcnow_naive, nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow_naive, nullable=False, index=True)
     rating = Column(Integer, nullable=True)  # 1 useful, -1 not useful
     rated_by = Column(String(128), nullable=True)

@@ -63,8 +63,8 @@ class NotificationChannel(Base):
     secret_ciphertext = Column(Text, nullable=True)
     secret_dek_wrapped = Column(Text, nullable=True)
     created_by = Column(String(128), nullable=True)
-    created_at = Column(DateTime, default=utcnow, nullable=False)
-    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
 
 
 class NotificationRule(Base):
@@ -85,8 +85,8 @@ class NotificationRule(Base):
     cooldown_seconds = Column(Integer, nullable=False, default=0)
     rate_limit_per_hour = Column(Integer, nullable=True)  # None = unlimited
     created_by = Column(String(128), nullable=True)
-    created_at = Column(DateTime, default=utcnow, nullable=False)
-    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
 
 
 class NotificationDelivery(Base):
@@ -108,6 +108,6 @@ class NotificationDelivery(Base):
     status = Column(String(16), nullable=False, default=NotificationDeliveryStatus.PENDING.value, index=True)
     attempt_count = Column(Integer, nullable=False, default=0)
     last_error = Column(String(1024), nullable=True)
-    created_at = Column(DateTime, default=utcnow, nullable=False, index=True)
-    sent_at = Column(DateTime, nullable=True)
-    next_retry_at = Column(DateTime, nullable=True, index=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+    sent_at = Column(DateTime(timezone=True), nullable=True)
+    next_retry_at = Column(DateTime(timezone=True), nullable=True, index=True)

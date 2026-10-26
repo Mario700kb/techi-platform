@@ -24,7 +24,7 @@ class TelemetrySample(Base):
     __tablename__ = "telemetry_samples"
 
     device_id = Column(Integer, ForeignKey("devices.id", ondelete="CASCADE"), primary_key=True)
-    ts = Column(DateTime, primary_key=True)  # UTC, minute the sample was taken
+    ts = Column(DateTime, primary_key=True)  # UTC, minute the sample was taken; timestamp, not timestamptz: a partition key cannot change type
     seq = Column(BigInteger, nullable=False)
     cpu = Column(Float, nullable=True)
     mem = Column(Float, nullable=True)
@@ -51,7 +51,7 @@ class TelemetrySample(Base):
 
 class _Rollup:
     device_id = Column(Integer, ForeignKey("devices.id", ondelete="CASCADE"), primary_key=True)
-    bucket = Column(DateTime, primary_key=True)  # UTC start of the bucket
+    bucket = Column(DateTime(timezone=True), primary_key=True)  # UTC start of the bucket
     samples = Column(Integer, nullable=False, default=0)
     expected = Column(Integer, nullable=False, default=0)
     late = Column(Integer, nullable=False, default=0)  # samples that arrived from the device buffer after an outage
@@ -100,10 +100,10 @@ class DeviceTelemetryState(Base):
 
     device_id = Column(Integer, ForeignKey("devices.id", ondelete="CASCADE"), primary_key=True)
     last_seq = Column(BigInteger, nullable=False, default=0)
-    last_upload_at = Column(DateTime, nullable=True)
-    last_sample_at = Column(DateTime, nullable=True)
+    last_upload_at = Column(DateTime(timezone=True), nullable=True)
+    last_sample_at = Column(DateTime(timezone=True), nullable=True)
     pending = Column(Integer, nullable=False, default=0)  # samples still on the device after this upload
-    oldest_pending_at = Column(DateTime, nullable=True)
+    oldest_pending_at = Column(DateTime(timezone=True), nullable=True)
     dropped_total = Column(BigInteger, nullable=False, default=0)  # samples the device had to discard, ever
     clock_offset_ms = Column(Integer, nullable=True)  # device clock minus server clock
     sample_seconds = Column(Integer, nullable=True)
@@ -133,5 +133,5 @@ class MonitoringPolicy(Base):
     buffer_mb = Column(Integer, nullable=False, default=50)
     keep_days = Column(Integer, nullable=False, default=7)
     monitors = Column(JSON, nullable=False, default=list)
-    updated_at = Column(DateTime, nullable=False, default=utcnow_naive)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow_naive)
     updated_by = Column(String(120), nullable=True)

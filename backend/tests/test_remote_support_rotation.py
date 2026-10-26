@@ -3,7 +3,7 @@
 The agent applies a new password on the heartbeat that delivers it, so until
 the device has checked in after a change, Connect must use the previous one.
 """
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from sqlalchemy import create_engine
@@ -86,7 +86,7 @@ def test_rotate_due_replaces_old_generated_passwords_only(db, monkeypatch):
     custom = _device(db, hostname="custom")
     legacy = _device(db, hostname="legacy", agent_version="2.1.0")
     in_session = _device(db, hostname="busy", rustdesk_session_active=True)
-    archived = _device(db, hostname="gone", is_archived=True)
+    archived = _device(db, hostname="gone", is_archived=True, archived_at=datetime(2026, 1, 1))
     for device in (due, fresh, custom, legacy, in_session, archived):
         svc.get_or_create(device)
     svc.set_custom(custom, "Custom-Pass-123")

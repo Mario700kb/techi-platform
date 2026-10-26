@@ -37,9 +37,9 @@ class RemoteSupportPeer(Base):
     device_id = Column(Integer, ForeignKey("devices.id", ondelete="SET NULL"), nullable=True, index=True)
     # machine_guid | same_machine | id_match | hostname_ip | manual
     bound_by = Column(String(16), nullable=True)
-    bound_at = Column(DateTime, nullable=True)
-    first_seen_at = Column(DateTime, default=utcnow_naive, nullable=False)
-    last_seen_at = Column(DateTime, default=utcnow_naive, nullable=False, index=True)
-    sysinfo_at = Column(DateTime, nullable=True)
+    bound_at = Column(DateTime(timezone=True), nullable=True)
+    first_seen_at = Column(DateTime(timezone=True), default=utcnow_naive, nullable=False)
+    last_seen_at = Column(DateTime(timezone=True), default=utcnow_naive, nullable=False, index=True)
+    sysinfo_at = Column(DateTime(timezone=True), nullable=True)
     # Why it is not applied to its device, when it is not (clone, conflict…).
     note = Column(String(255), nullable=True)

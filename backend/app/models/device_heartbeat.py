@@ -32,6 +32,6 @@ class DeviceHeartbeat(Base):
     rustdesk_status = Column(String(32), nullable=True)
     rustdesk_version = Column(String(80), nullable=True)
     rustdesk_install_path = Column(String(512), nullable=True)
-    created_at = Column(DateTime, default=utcnow_naive, nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow_naive, nullable=False, index=True)
 
     device = relationship("Device", back_populates="heartbeats")

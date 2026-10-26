@@ -14,7 +14,7 @@ class TrustedDomain(Base):
     client_name = Column(String(160), nullable=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True, index=True)
     is_active = Column(Boolean, default=True, nullable=False, index=True)
-    created_at = Column(DateTime, default=utcnow_naive, nullable=False)
-    updated_at = Column(DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow_naive, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow_naive, onupdate=utcnow_naive, nullable=False)
 
     client = relationship("Client")

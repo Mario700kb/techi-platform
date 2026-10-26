@@ -11,8 +11,8 @@ class DeviceGroup(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String(120), nullable=False, index=True)
     description = Column(String(255), nullable=True)
-    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
-    created_at = Column(DateTime, default=utcnow_naive, nullable=False)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow_naive, nullable=False)
 
     client = relationship("Client", back_populates="device_groups")
     devices = relationship("Device", back_populates="group")

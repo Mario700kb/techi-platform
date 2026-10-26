@@ -601,6 +601,7 @@ class TestDeviceDirectory:
         online.last_seen = utcnow() - timedelta(seconds=30)
         archived = _device(db, "RUST-DIR-2", client_id=1, hostname="archived")
         archived.is_archived = True
+        archived.archived_at = utcnow()
         _device(db, "RUST-DIR-3", client_id=2, hostname="outside")
         db.commit()
 

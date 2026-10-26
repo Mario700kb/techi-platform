@@ -29,12 +29,12 @@ class ReenrollmentRequest(Base):
     os_caption = Column(String(255), nullable=True)
     platform = Column(String(64), nullable=True)
     token_name = Column(String(255), nullable=True)
-    created_at = Column(DateTime, nullable=False, default=utcnow_naive)
-    last_seen_at = Column(DateTime, nullable=True)
-    decided_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow_naive)
+    last_seen_at = Column(DateTime(timezone=True), nullable=True)
+    decided_at = Column(DateTime(timezone=True), nullable=True)
     decided_by = Column(String(128), nullable=True)
     decision = Column(String(16), nullable=True)
-    new_device_id = Column(Integer, ForeignKey("devices.id", ondelete="SET NULL"), nullable=True)
+    new_device_id = Column(Integer, ForeignKey("devices.id", ondelete="SET NULL"), nullable=True, index=True)
 
     __table_args__ = (
         UniqueConstraint("device_id", "agent_id", name="uq_reenrollment_request_device_agent"),

@@ -19,4 +19,4 @@ class AuditLog(Base):
     # a client's activity is an indexed lookup rather than a scan of details_json.
     device_id = Column(Integer, nullable=True, index=True)
     client_id = Column(Integer, nullable=True, index=True)
-    created_at = Column(DateTime, default=utcnow_naive, nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow_naive, nullable=False, index=True)

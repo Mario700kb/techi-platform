@@ -1,7 +1,8 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Integer
 
 from app.core.time import utcnow
 from app.db.base import Base
+from app.db.types import JSONBText
 
 
 class DeviceInventory(Base):
@@ -14,17 +15,17 @@ class DeviceInventory(Base):
         nullable=False,
         unique=True,
     )
-    processes_json = Column(Text, nullable=True)
-    services_json = Column(Text, nullable=True)
-    software_json = Column(Text, nullable=True)
-    patch_json = Column(Text, nullable=True)
+    processes_json = Column(JSONBText, nullable=True)
+    services_json = Column(JSONBText, nullable=True)
+    software_json = Column(JSONBText, nullable=True)
+    patch_json = Column(JSONBText, nullable=True)
     # Windows security posture (agent >= 2.1.31): the normalised JSON of
     # app.schemas.security_posture.SecurityPosture, and when the agent read it.
-    security_json = Column(Text, nullable=True)
-    security_collected_at = Column(DateTime, nullable=True)
+    security_json = Column(JSONBText, nullable=True)
+    security_collected_at = Column(DateTime(timezone=True), nullable=True)
     # Device health (agent >= 2.1.33): the normalised JSON of
     # app.schemas.device_health.DeviceHealth — physical disks, pending restart,
     # critical System events (merged, 7 days) — and when it was stored.
-    health_json = Column(Text, nullable=True)
-    health_collected_at = Column(DateTime, nullable=True)
-    collected_at = Column(DateTime, nullable=False, default=utcnow)
+    health_json = Column(JSONBText, nullable=True)
+    health_collected_at = Column(DateTime(timezone=True), nullable=True)
+    collected_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)

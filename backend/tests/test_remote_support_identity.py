@@ -7,7 +7,7 @@ heartbeats and dropped, so a device whose client ID had changed (here
 """
 import base64
 import json
-from datetime import timedelta
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -169,6 +169,7 @@ def test_an_id_held_by_another_live_device_is_a_conflict_and_a_dead_one_is_relea
 
     other = db.get(Device, 2)
     other.is_archived = True
+    other.archived_at = datetime(2026, 1, 1)
     db.commit()
     CACHE.clear()
     _beat(api, "700000001")

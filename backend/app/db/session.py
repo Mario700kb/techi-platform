@@ -1,6 +1,8 @@
 import logging
+from datetime import datetime, timezone
 from typing import Optional
 
+from psycopg.types.datetime import TimestamptzBinaryLoader, TimestamptzLoader
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
@@ -26,7 +28,8 @@ def engine_kwargs(url: str, *, statement_timeout_ms: Optional[int], pool_size: i
         kwargs["connect_args"] = {"check_same_thread": False}
         return kwargs
 
-    options = [f"-c idle_in_transaction_session_timeout={settings.DB_IDLE_IN_TRANSACTION_TIMEOUT_MS}"]
+    # Times are stored as timestamptz and read in UTC (see naive_utc_timestamps).
+    options = ["-c timezone=UTC", f"-c idle_in_transaction_session_timeout={settings.DB_IDLE_IN_TRANSACTION_TIMEOUT_MS}"]
     if statement_timeout_ms:
         options.append(f"-c statement_timeout={statement_timeout_ms}")
     kwargs.update(
@@ -41,11 +44,36 @@ def engine_kwargs(url: str, *, statement_timeout_ms: Optional[int], pool_size: i
     return kwargs
 
 
+def _naive_utc(value: datetime) -> datetime:
+    return value.astimezone(timezone.utc).replace(tzinfo=None) if value.tzinfo is not None else value
+
+
+class _NaiveUTCLoader(TimestamptzLoader):
+    def load(self, data):
+        return _naive_utc(super().load(data))
+
+
+class _NaiveUTCBinaryLoader(TimestamptzBinaryLoader):
+    def load(self, data):
+        return _naive_utc(super().load(data))
+
+
+def naive_utc_timestamps(dbapi_conn, _record=None) -> None:
+    """Every time column is timestamptz; the code works in naive UTC
+    (utcnow_naive, ensure_utc). This connection returns them as naive UTC, as
+    the old timestamp columns did, for the ORM and raw SQL alike."""
+    dbapi_conn.adapters.register_loader("timestamptz", _NaiveUTCLoader)
+    dbapi_conn.adapters.register_loader("timestamptz", _NaiveUTCBinaryLoader)
+
+
 def _build_engine(*, statement_timeout_ms: Optional[int], pool_size: int, max_overflow: int):
     url = settings.DATABASE_URL
     engine = create_engine(
         url, **engine_kwargs(url, statement_timeout_ms=statement_timeout_ms, pool_size=pool_size, max_overflow=max_overflow)
     )
+
+    if not url.startswith("sqlite"):
+        event.listen(engine, "connect", naive_utc_timestamps)
 
     if url.startswith("sqlite"):
         # Enable WAL mode so concurrent readers don't block writes.

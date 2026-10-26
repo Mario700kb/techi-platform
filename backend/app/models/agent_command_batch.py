@@ -13,8 +13,8 @@ class AgentCommandBatch(Base):
     payload = Column(Text, nullable=False, default="{}")
     target = Column(String(32), nullable=False)
     timeout_seconds = Column(Integer, nullable=False, default=30)
-    created_at = Column(DateTime, default=utcnow, nullable=False)
-    created_by = Column(Integer, ForeignKey("operators.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    created_by = Column(Integer, ForeignKey("operators.id", ondelete="SET NULL"), nullable=True, index=True)
 
     remote_actions = relationship(
         "RemoteAction",

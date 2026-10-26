@@ -65,7 +65,7 @@ def db(monkeypatch):
         Device(id=22, hostname="Maint", agent_id="a22", platform="windows", status=DeviceStatus.ONLINE,
                agent_version="2.1.35", client_id=1, is_in_maintenance=True),
         Device(id=23, hostname="Archived", agent_id="a23", platform="windows", status=DeviceStatus.ONLINE,
-               agent_version="2.1.35", client_id=1, is_archived=True),
+               agent_version="2.1.35", client_id=1, is_archived=True, archived_at=datetime(2026, 1, 1)),
     ]
     session.add_all(devices)
     session.commit()

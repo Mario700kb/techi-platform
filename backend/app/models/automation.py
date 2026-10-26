@@ -33,7 +33,7 @@ class AutomationTask(Base):
     # When, in the operators' timezone: once (run_at, naive UTC), daily,
     # weekly (weekday 0 = Monday) or monthly (day 1–28), at time_of_day.
     schedule = Column(String(16), nullable=False, default="once")
-    run_at = Column(DateTime, nullable=True)
+    run_at = Column(DateTime(timezone=True), nullable=True)
     time_of_day = Column(String(5), nullable=True)  # "HH:MM"
     weekday = Column(Integer, nullable=True)
     day_of_month = Column(Integer, nullable=True)
@@ -46,11 +46,11 @@ class AutomationTask(Base):
     wave_wait_minutes = Column(Integer, nullable=False, default=30)
     max_failure_percent = Column(Integer, nullable=False, default=5)
 
-    next_run_at = Column(DateTime, nullable=True, index=True)
-    last_run_at = Column(DateTime, nullable=True)
+    next_run_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    last_run_at = Column(DateTime(timezone=True), nullable=True)
     created_by = Column(String(128), nullable=False)
-    created_at = Column(DateTime, default=utcnow_naive, nullable=False)
-    updated_at = Column(DateTime, default=utcnow_naive, onupdate=utcnow_naive, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow_naive, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow_naive, onupdate=utcnow_naive, nullable=False)
 
 
 class AutomationRun(Base):
@@ -62,9 +62,9 @@ class AutomationRun(Base):
     status = Column(String(16), nullable=False, default="running", index=True)
     trigger = Column(String(16), nullable=False, default="schedule")  # schedule | manual
     started_by = Column(String(128), nullable=True)
-    started_at = Column(DateTime, default=utcnow_naive, nullable=False)
-    finished_at = Column(DateTime, nullable=True)
-    next_wave_at = Column(DateTime, nullable=True)
+    started_at = Column(DateTime(timezone=True), default=utcnow_naive, nullable=False)
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+    next_wave_at = Column(DateTime(timezone=True), nullable=True)
     # [{"wave": 1, "batch_id": "...", "device_ids": [...], "started_at": iso,
     #   "settled_at": iso|None, "completed": n, "failed": n, "unfinished": n}]
     waves = Column(JSON, nullable=False, default=list)

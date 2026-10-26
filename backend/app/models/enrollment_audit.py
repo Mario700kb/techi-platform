@@ -14,7 +14,7 @@ class EnrollmentAudit(Base):
     )
 
     id = Column(Integer, primary_key=True)
-    created_at = Column(DateTime, default=utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     token_id = Column(Integer, nullable=True)
     token_name = Column(String(160), nullable=True)
     token_prefix = Column(String(12), nullable=True)

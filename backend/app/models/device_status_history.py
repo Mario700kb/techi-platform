@@ -18,4 +18,4 @@ class DeviceStatusHistory(Base):
     previous_status = Column(SQLEnum(DeviceStatus), nullable=True)
     new_status = Column(SQLEnum(DeviceStatus), nullable=False)
     reason = Column(String(160), nullable=False)
-    created_at = Column(DateTime, default=utcnow_naive, nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow_naive, nullable=False, index=True)

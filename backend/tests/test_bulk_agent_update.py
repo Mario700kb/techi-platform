@@ -4,6 +4,7 @@ without an agent to update are left out with their reason — then queued,
 announced and pushed over the live channel where the agent holds one."""
 from types import SimpleNamespace
 
+from datetime import datetime
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -63,7 +64,7 @@ def db(monkeypatch):
         Device(id=6, hostname="web-01", agent_id="a6", platform="linux", architecture="x86_64",
                status=DeviceStatus.ONLINE, agent_version="2.1.23"),
         Device(id=7, hostname="Old-PC", agent_id="a7", platform="windows", status=DeviceStatus.ONLINE,
-               agent_version="2.1.20", is_archived=True),
+               agent_version="2.1.20", is_archived=True, archived_at=datetime(2026, 1, 1)),
     ])
     session.add(RemoteAction(device_id=4, action_type="restart_agent", status=ActionStatus.QUEUED, payload="{}",
                              created_by="denis"))

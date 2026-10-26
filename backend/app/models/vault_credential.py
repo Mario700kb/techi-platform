@@ -62,17 +62,17 @@ class VaultCredential(Base):
     dek_wrapped = Column(Text, nullable=False)
     notes = Column(String(500), nullable=True)
     created_by = Column(String(128), nullable=True)
-    created_at = Column(DateTime, default=utcnow, nullable=False)
-    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
-    rotated_at = Column(DateTime, nullable=True)
-    last_used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+    rotated_at = Column(DateTime(timezone=True), nullable=True)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
     # Enterprise Vault (2026-07-10) — additive, all nullable/defaulted so every
     # existing row keeps working untouched.
     purpose = Column(String(64), nullable=True, index=True)  # e.g. "embedded_terminal", "notifications_smtp"
     status = Column(String(16), nullable=False, default=VaultCredentialStatus.ACTIVE.value, index=True)
-    expires_at = Column(DateTime, nullable=True)
-    rotation_due_at = Column(DateTime, nullable=True)
-    last_tested_at = Column(DateTime, nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    rotation_due_at = Column(DateTime(timezone=True), nullable=True)
+    last_tested_at = Column(DateTime(timezone=True), nullable=True)
     last_test_status = Column(String(16), nullable=True)  # success|failed
     # Non-secret, type-specific fields (port, TLS mode, auth protocol, ...),
     # validated server-side against vault_credential_types.py before storage.
@@ -91,7 +91,7 @@ class VaultCredentialUsage(Base):
     device_id = Column(Integer, nullable=True)
     action = Column(String(24), nullable=False)  # use|reveal|test|create|update|rotate|delete
     reason = Column(String(300), nullable=True)
-    created_at = Column(DateTime, default=utcnow, nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
 
 
 class VaultCredentialAssignment(Base):
@@ -108,4 +108,4 @@ class VaultCredentialAssignment(Base):
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True, index=True)
     device_id = Column(Integer, ForeignKey("devices.id"), nullable=True, index=True)
     created_by = Column(String(128), nullable=True)
-    created_at = Column(DateTime, default=utcnow, nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)

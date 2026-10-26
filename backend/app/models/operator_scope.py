@@ -23,7 +23,7 @@ class OperatorScope(Base):
     )
     scope_type = Column(String(16), nullable=False)   # 'client' | 'group' | 'device'
     scope_id = Column(Integer, nullable=False)
-    created_at = Column(DateTime, default=utcnow_naive, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow_naive, nullable=False)
 
     __table_args__ = (
         UniqueConstraint("operator_id", "scope_type", "scope_id", name="uq_operator_scope"),

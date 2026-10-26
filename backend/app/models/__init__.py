@@ -90,3 +90,7 @@ __all__ = [
     "VaultCredentialAssignment",
     "VaultCredentialUsage",
 ]
+
+from app.models.constraints import attach_checks  # noqa: E402
+
+attach_checks()

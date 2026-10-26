@@ -52,10 +52,10 @@ class TerminalSession(Base):
     operator_ticket_hash = Column(String(64), nullable=False)
     agent_ticket_hash = Column(String(64), nullable=False)
 
-    created_at = Column(DateTime, default=utcnow, nullable=False)
-    expires_at = Column(DateTime, nullable=False)          # ticket TTL
-    started_at = Column(DateTime, nullable=True)           # both sides attached
-    ended_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)          # ticket TTL
+    started_at = Column(DateTime(timezone=True), nullable=True)           # both sides attached
+    ended_at = Column(DateTime(timezone=True), nullable=True)
     disconnect_reason = Column(String(64), nullable=True)  # operator_closed|idle_timeout|agent_gone|expired|error
 
     # Prepared for future session recording — NOT written yet (Phase 5 defers it).

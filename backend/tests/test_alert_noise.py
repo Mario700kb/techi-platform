@@ -218,7 +218,7 @@ def _stale_alert(db, device, kind, age):
 
 def test_the_nightly_sweep_closes_what_nothing_else_would(db):
     offline = Device(hostname="gone", rustdesk_id="2", status=DeviceStatus.OFFLINE)
-    archived = Device(hostname="old", rustdesk_id="3", status=DeviceStatus.ONLINE, is_archived=True)
+    archived = Device(hostname="old", rustdesk_id="3", status=DeviceStatus.ONLINE, is_archived=True, archived_at=datetime(2026, 1, 1))
     online = Device(hostname="live", rustdesk_id="4", status=DeviceStatus.ONLINE)
     db.add_all([offline, archived, online])
     db.commit()

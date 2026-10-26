@@ -13,5 +13,5 @@ class DeviceActivityEvent(Base):
     summary = Column(String(255), nullable=False)
     detail = Column(Text, nullable=True)
     actor = Column(String(128), nullable=True)
-    occurred_at = Column(DateTime, default=utcnow, nullable=False, index=True)
+    occurred_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
 

@@ -34,5 +34,5 @@ class OperatorConnectPreference(Base):
     platform = Column(String(32), nullable=False, index=True)
     device_id = Column(Integer, ForeignKey("devices.id"), nullable=True, index=True)
     method_id = Column(String(32), nullable=False)
-    created_at = Column(DateTime, default=utcnow, nullable=False)
-    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)

@@ -23,9 +23,9 @@ class RemoteSupportConnection(Base):
     peer_name = Column(String(128), nullable=True)
     peer_ip = Column(String(64), nullable=True)
     conn_type = Column(Integer, nullable=True)
-    opened_at = Column(DateTime, nullable=False, default=utcnow_naive)
-    authorized_at = Column(DateTime, nullable=True)
-    closed_at = Column(DateTime, nullable=True)
+    opened_at = Column(DateTime(timezone=True), nullable=False, default=utcnow_naive)
+    authorized_at = Column(DateTime(timezone=True), nullable=True)
+    closed_at = Column(DateTime(timezone=True), nullable=True)
     # closed: RustDesk reported the close. lost: a newer connection showed this
     # one was gone without a close (RustDesk restarted, or the client reconnected).
     close_reason = Column(String(16), nullable=True)

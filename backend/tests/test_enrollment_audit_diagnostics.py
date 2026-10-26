@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from datetime import datetime
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -222,7 +223,7 @@ def test_diagnostics_returns_event_counts():
     db = _db()
     token, _ = _token(db, use_count=4)
     device_one = Device(hostname="one", enrollment_count=2, is_archived=False)
-    device_two = Device(hostname="two", enrollment_count=1, is_archived=True)
+    device_two = Device(hostname="two", enrollment_count=1, is_archived=True, archived_at=datetime(2026, 1, 1))
     db.add_all([device_one, device_two])
     db.commit()
     audit = EnrollmentAuditService(db)

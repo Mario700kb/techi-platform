@@ -13,8 +13,8 @@ class DeviceNote(Base):
     device_id = Column(Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, index=True)
     note = Column(Text, nullable=False)
     created_by = Column(String(128), nullable=True)
-    created_at = Column(DateTime, default=utcnow_naive, nullable=False)
-    updated_at = Column(DateTime, default=utcnow_naive, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow_naive, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow_naive, nullable=False)
 
     device = relationship("Device", back_populates="notes")
 

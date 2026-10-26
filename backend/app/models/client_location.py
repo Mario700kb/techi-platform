@@ -23,8 +23,8 @@ class ClientLocation(Base):
     notes = Column(Text, nullable=True)
     created_by = Column(String(128), nullable=True)
     updated_by = Column(String(128), nullable=True)
-    created_at = Column(DateTime, default=utcnow_naive, nullable=False)
-    updated_at = Column(DateTime, default=utcnow_naive, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow_naive, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow_naive, nullable=False)
 
     rules = relationship(
         "ClientLocationRule",

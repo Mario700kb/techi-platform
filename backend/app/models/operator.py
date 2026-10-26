@@ -23,8 +23,8 @@ class Operator(Base):
     role = Column(String(32), default=OperatorRole.READONLY.value, nullable=False, index=True)
     is_active = Column(Boolean, default=True, nullable=False)
     is_superuser = Column(Boolean, default=False, nullable=False)
-    created_at = Column(DateTime, default=utcnow_naive, nullable=False)
-    last_login_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow_naive, nullable=False)
+    last_login_at = Column(DateTime(timezone=True), nullable=True)
     # Two-factor authentication (TOTP). The secret is sealed with the vault
     # cipher; mfa_last_step blocks replaying a code inside its 30s window.
     mfa_enabled = Column(Boolean, default=False, nullable=False, server_default=false())
@@ -34,4 +34,4 @@ class Operator(Base):
     mfa_pending_dek = Column(Text, nullable=True)
     mfa_recovery_codes = Column(Text, nullable=True)  # JSON list of sha256 hex digests
     mfa_last_step = Column(Integer, nullable=True)
-    mfa_enabled_at = Column(DateTime, nullable=True)
+    mfa_enabled_at = Column(DateTime(timezone=True), nullable=True)

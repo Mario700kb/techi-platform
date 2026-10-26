@@ -13,7 +13,7 @@ class Team(Base):
     description = Column(String(512), nullable=True)
     color = Column(String(16), nullable=True, default="#f97316")
     permissions = Column(Text, nullable=True)  # JSON-encoded list of permission strings; NULL = no team-level overrides
-    created_at = Column(DateTime, default=utcnow_naive, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow_naive, nullable=False)
 
 
 class TeamMember(Base):
@@ -31,7 +31,7 @@ class TeamClientAccess(Base):
 
     id = Column(Integer, primary_key=True)
     team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
-    client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False)
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True)
 
     __table_args__ = (UniqueConstraint("team_id", "client_id", name="uq_team_client"),)
 
@@ -41,7 +41,7 @@ class TeamGroupAccess(Base):
 
     id = Column(Integer, primary_key=True)
     team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
-    group_id = Column(Integer, ForeignKey("device_groups.id", ondelete="CASCADE"), nullable=False)
+    group_id = Column(Integer, ForeignKey("device_groups.id", ondelete="CASCADE"), nullable=False, index=True)
 
     __table_args__ = (UniqueConstraint("team_id", "group_id", name="uq_team_group"),)
 
@@ -51,6 +51,6 @@ class TeamDeviceAccess(Base):
 
     id = Column(Integer, primary_key=True)
     team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
-    device_id = Column(Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False)
+    device_id = Column(Integer, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, index=True)
 
     __table_args__ = (UniqueConstraint("team_id", "device_id", name="uq_team_device"),)

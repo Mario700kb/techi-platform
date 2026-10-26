@@ -14,4 +14,4 @@ class DeviceTelemetry(Base):
     disk_percent = Column(Float, nullable=True)
     uptime_seconds = Column(Integer, nullable=True)
     heartbeat_latency_ms = Column(Integer, nullable=True)
-    created_at = Column(DateTime, default=utcnow_naive, nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow_naive, nullable=False, index=True)

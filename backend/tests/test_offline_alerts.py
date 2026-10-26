@@ -295,7 +295,7 @@ def test_a_closed_working_hours_warning_does_not_hide_the_long_absence_one(db):
 
 def test_archived_and_maintenance_devices_are_skipped(db):
     lost = tirana(13, 3)
-    archived = _device(db, lost, server=True, hostname="old-srv", is_archived=True)
+    archived = _device(db, lost, server=True, hostname="old-srv", is_archived=True, archived_at=datetime(2026, 1, 1))
     maintained = _device(db, lost, server=True, hostname="maint-srv", is_in_maintenance=True)
     online = _device(db, lost, server=True, hostname="up-srv", status=DeviceStatus.ONLINE)
 

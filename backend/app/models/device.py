@@ -1,11 +1,14 @@
 from datetime import timedelta
 from enum import Enum
-from sqlalchemy import JSON, Boolean, Column, DateTime, Enum as SQLEnum, Float, ForeignKey, Integer, String, Text, and_, event, false, func, not_, or_, text
+from sqlalchemy import JSON, Boolean, Column, Computed, DateTime, Enum as SQLEnum, Float, ForeignKey, Integer, String, Text, and_, event, false, func, not_, or_, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm.base import NO_VALUE
 
 from app.db.base import Base
 from app.core.time import ensure_utc, utcnow
+
+
+LIFECYCLE_STATE_SQL = "CASE WHEN deleted_at IS NOT NULL THEN 'trashed' WHEN is_archived THEN 'archived' ELSE 'active' END"
 
 
 class DeviceType(str, Enum):
@@ -54,9 +57,9 @@ class Device(Base):
     connect_port = Column(Integer, nullable=True)
     device_type = Column(SQLEnum(DeviceType), default=DeviceType.UNASSIGNED, nullable=False)
     status = Column(SQLEnum(DeviceStatus), default=DeviceStatus.OFFLINE, nullable=False)
-    registered_at = Column(DateTime, default=utcnow, nullable=False)
-    last_seen = Column(DateTime, nullable=True)
-    last_enrollment_at = Column(DateTime, nullable=True)
+    registered_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    last_seen = Column(DateTime(timezone=True), nullable=True)
+    last_enrollment_at = Column(DateTime(timezone=True), nullable=True)
     enrollment_count = Column(Integer, default=0, nullable=False)
     reenrolled_from_agent_id = Column(String(80), nullable=True)
     cpu = Column(String(120), nullable=True)
@@ -69,35 +72,39 @@ class Device(Base):
     architecture = Column(String(40), nullable=True)
     mac_address = Column(String(64), nullable=True)
     timezone = Column(String(64), nullable=True)
-    last_boot_at = Column(DateTime, nullable=True)
+    last_boot_at = Column(DateTime(timezone=True), nullable=True)
     capabilities = Column(JSON, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     is_archived = Column(Boolean, default=False, nullable=False)
-    archived_at = Column(DateTime, nullable=True)
+    archived_at = Column(DateTime(timezone=True), nullable=True)
     archived_by = Column(String(128), nullable=True)
     # Trash: an archived device an admin deleted. Restorable until the nightly
     # purge removes it TRASH_RETENTION_DAYS after deleted_at.
-    deleted_at = Column(DateTime, nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
     deleted_by = Column(String(128), nullable=True)
     delete_reason = Column(String(500), nullable=True)
+    # The one answer to "where is this device in its life", kept by the
+    # database from the flags above (which app.models.constraints keeps
+    # consistent): for reports and SQL; the code still sets the flags.
+    lifecycle_state = Column(String(16), Computed(LIFECYCLE_STATE_SQL, persisted=True))
     rustdesk_install_status = Column(String(32), default="unknown", nullable=False)
     rustdesk_status = Column(String(32), default="unknown", nullable=False)
     rustdesk_version = Column(String(80), nullable=True)
     rustdesk_install_path = Column(String(512), nullable=True)
-    rustdesk_last_seen_at = Column(DateTime, nullable=True)
-    rustdesk_synced_at = Column(DateTime, nullable=True)
+    rustdesk_last_seen_at = Column(DateTime(timezone=True), nullable=True)
+    rustdesk_synced_at = Column(DateTime(timezone=True), nullable=True)
     rustdesk_sync_state = Column(String(32), default="unknown", nullable=False)
     rustdesk_sync_message = Column(String(255), nullable=True)
-    rustdesk_verified_at = Column(DateTime, nullable=True)
+    rustdesk_verified_at = Column(DateTime(timezone=True), nullable=True)
     rustdesk_manual_override = Column(Boolean, default=False, nullable=False)
     rustdesk_conflict_detected = Column(Boolean, default=False, nullable=False)
-    rustdesk_last_repair_at = Column(DateTime, nullable=True)
+    rustdesk_last_repair_at = Column(DateTime(timezone=True), nullable=True)
     rustdesk_repair_count = Column(Integer, default=0, nullable=False)
     # Where rustdesk_id came from: "remote_support" (the client itself told
     # the platform), "agent" (read by the agent), "manual" (an operator).
     rustdesk_id_source = Column(String(16), nullable=True)
     # Last time Remote Support itself reported in (its heartbeat, every 15 s).
-    rustdesk_presence_at = Column(DateTime, nullable=True)
+    rustdesk_presence_at = Column(DateTime(timezone=True), nullable=True)
     # The ID the agent last reported, kept when it disagrees with the client.
     agent_rustdesk_id = Column(String(32), nullable=True)
     # Windows MachineGuid (agents >= 2.1.34): what Remote Support's uuid encodes.
@@ -110,13 +117,13 @@ class Device(Base):
     # Offline reason engine — populated by agent or inferred by backend
     offline_reason = Column(String(64), nullable=True)        # shutdown|restart|sleep|hibernate|network_lost|agent_stopped|rs_stopped|unknown
     offline_confidence = Column(String(16), nullable=True)    # high|medium|low
-    last_boot_time = Column(DateTime, nullable=True)
-    last_shutdown_time = Column(DateTime, nullable=True)
-    network_disconnect_time = Column(DateTime, nullable=True)
+    last_boot_time = Column(DateTime(timezone=True), nullable=True)
+    last_shutdown_time = Column(DateTime(timezone=True), nullable=True)
+    network_disconnect_time = Column(DateTime(timezone=True), nullable=True)
 
     is_in_maintenance = Column(Boolean, default=False, nullable=False)
-    maintenance_started_at = Column(DateTime, nullable=True)
-    maintenance_ends_at = Column(DateTime, nullable=True)
+    maintenance_started_at = Column(DateTime(timezone=True), nullable=True)
+    maintenance_ends_at = Column(DateTime(timezone=True), nullable=True)
     maintenance_note = Column(String(255), nullable=True)
     maintenance_started_by = Column(String(128), nullable=True)
 
@@ -127,7 +134,7 @@ class Device(Base):
     # at rest. Server-generated unique value (or operator-set custom). Replaces
     # the fleet-wide shared password so one device compromise can't expose all.
     remote_support_password_ciphertext = Column(Text, nullable=True)
-    remote_support_password_updated_at = Column(DateTime, nullable=True)
+    remote_support_password_updated_at = Column(DateTime(timezone=True), nullable=True)
     remote_support_password_source = Column(String(16), nullable=True)  # "generated" | "custom"
     # The password before the last change, still what the agent holds until
     # its next heartbeat delivers the new one; Connect uses it until then.
@@ -135,17 +142,17 @@ class Device(Base):
     # A live Remote Support session, as reported by agents that send
     # remote_session_active (from 2.1.24); older agents leave it False.
     rustdesk_session_active = Column(Boolean, default=False, server_default=text("false"), nullable=False)
-    rustdesk_session_started_at = Column(DateTime, nullable=True)
+    rustdesk_session_started_at = Column(DateTime(timezone=True), nullable=True)
     rustdesk_session_operator = Column(String(128), nullable=True)
     # Which writer owns the current/last session: "rustdesk" (its own
     # /api/audit/conn reports, second-accurate) or "heartbeat" (the agent's
     # coarse per-beat flag). RustDesk reports win; a heartbeat yields while
     # RustDesk is reporting. rustdesk_last_report_at marks the last such report.
     rustdesk_session_source = Column(String(16), nullable=True)
-    rustdesk_last_report_at = Column(DateTime, nullable=True)
+    rustdesk_last_report_at = Column(DateTime(timezone=True), nullable=True)
 
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
-    group_id = Column(Integer, ForeignKey("device_groups.id"), nullable=True)
+    group_id = Column(Integer, ForeignKey("device_groups.id"), nullable=True, index=True)
     auto_assigned = Column(Boolean, default=False, nullable=False)
     assignment_source = Column(String(40), default="manual", nullable=False)
     # The client's site the device is at: set by a location rule ("rule") or

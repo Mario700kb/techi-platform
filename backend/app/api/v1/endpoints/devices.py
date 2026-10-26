@@ -629,6 +629,9 @@ def update_device(
     device: Device = Depends(get_scoped_device),
     device_in: DeviceUpdate,
 ):
+    if device_in.model_fields_set & {"is_archived", "archived_at", "archived_by"}:
+        # Archiving also revokes the agent and closes the device's alerts.
+        raise HTTPException(status_code=400, detail="Archive and restore a device with their own actions")
     try:
         updated = DeviceService(db).update_device(device.id, device_in)
     except ValueError as exc:

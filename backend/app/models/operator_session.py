@@ -17,11 +17,11 @@ class OperatorSession(Base):
     # rotation: several tabs renew at the same moment with the same cookie,
     # and only the first would otherwise succeed (the rest signed out).
     previous_refresh_token_hash = Column(String(64), nullable=True, index=True)
-    refresh_rotated_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=utcnow, nullable=False)
-    last_used_at = Column(DateTime, default=utcnow, nullable=False)
-    expires_at = Column(DateTime, nullable=False)
-    revoked_at = Column(DateTime, nullable=True)
+    refresh_rotated_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    last_used_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
     mfa_verified = Column(Boolean, default=False, nullable=False)
     ip_address = Column(String(64), nullable=True)
     user_agent = Column(String(300), nullable=True)
