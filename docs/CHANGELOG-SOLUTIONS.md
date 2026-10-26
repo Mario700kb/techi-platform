@@ -5,6 +5,26 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-26] FLEET-2147-2026-10-26 — fleet agent update to 2.1.47 in five waves
+
+**Owner: "update agent".** Every online Windows PC not on 2.1.47 except
+Adpascucci (14, excluded since the 22 Oct self-update deaths) and Linux (5,
+not piloted): 486 devices, oldest versions first, five batches of ≤100 created
+through `AgentCommandService` (timeout 600 s), each followed to the end:
+`154689c8…` 21:03, `46b54520…` 21:13, `62baded3…` 21:23, `5b5463ee…` 21:32,
+`142b644a…` 21:38. Peak load 2.74, no backend errors.
+- **451 online on 2.1.47**; 456 online Windows PCs on 2.1.47 in all (with the
+  pilot); 17 still on 2.1.46 (Adpascucci 13 + below).
+- 10 updated, then went offline: Gffa (5) and Metropolgroup (3) shut down every
+  evening at this hour (same times on 25 Oct); Vasgroup 252/262 were already
+  going on and off every ~30 min before their update. Not agent deaths —
+  confirm tomorrow morning that they come back on 2.1.47.
+- 21 expired: offline before the command reached them (17), plus four online
+  ones that did not finish in 600 s: DESKTOP-RISC46U (2.1.35), W10-VM8
+  (2.1.20), DESKTOP-P6TB25O (2.0.0), Zoomtrip-3 (2.1.46).
+- 1 failed: W10-VM19 (Rhg) — "not enough space on the disk" writing the
+  download to C:\ProgramData\TechiAgent\cache.
+
 ## [2026-10-26] AGENT-2147-PACKAGES-2026-10-26 — agent 2.1.47 uploaded, inactive
 
 **Owner: "fute agjentin ne package".** From CI 40387693761 (Windows) and
