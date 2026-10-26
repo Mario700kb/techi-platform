@@ -14,8 +14,11 @@ Linux 2.1.39 stay active): agent binary `4b0ec25f…` (package `eeef8d70…`),
 Endpoint MSI `ae2b7977…` (`6f0ba852…`), Update Bridge `d792a71f…`
 (`ee361459…`), Linux amd64 `7b7007c7…` (`78828c64…`), arm64 `8da08970…`
 (`9a153bda…`), armhf `ad8de700…` (`5091d279…`). Manifest backup
-`manifest.json.bak-pre-2.1.47-20261026-204752`. Activation and pilot wait for
-the owner.
+`manifest.json.bak-pre-2.1.47-20261026-204752`.
+- **Activated 20:51** (owner: "aktivizo"): all six packages; 2.1.46 (Windows)
+  and 2.1.39 (Linux) kept inactive as rollback. `active-version` returns
+  2.1.47 and the public agent-binary download serves `4b0ec25f…`. No device
+  updated (heartbeats never carry `agent_update`); pilot not started.
 
 ## [2026-10-26] RAM-RETENTION-2026-10-26 — backend `c0a8127`: installed RAM, 2 days of minute telemetry, disk cleanup
 
