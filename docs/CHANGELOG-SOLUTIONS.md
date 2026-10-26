@@ -5,6 +5,18 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-26] AGENT-2147-PACKAGES-2026-10-26 — agent 2.1.47 uploaded, inactive
+
+**Owner: "fute agjentin ne package".** From CI 40387693761 (Windows) and
+40387693825 (Linux), checksums verified against the CI `.sha256` files;
+registered 20:48 through `AgentPackageService`, all **inactive** (2.1.46 and
+Linux 2.1.39 stay active): agent binary `4b0ec25f…` (package `eeef8d70…`),
+Endpoint MSI `ae2b7977…` (`6f0ba852…`), Update Bridge `d792a71f…`
+(`ee361459…`), Linux amd64 `7b7007c7…` (`78828c64…`), arm64 `8da08970…`
+(`9a153bda…`), armhf `ad8de700…` (`5091d279…`). Manifest backup
+`manifest.json.bak-pre-2.1.47-20261026-204752`. Activation and pilot wait for
+the owner.
+
 ## [2026-10-26] RAM-RETENTION-2026-10-26 — backend `c0a8127`: installed RAM, 2 days of minute telemetry, disk cleanup
 
 **Owner: "po" (deploy commit push + dump cleanup).** Two backend changes:
