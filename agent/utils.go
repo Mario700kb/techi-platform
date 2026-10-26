@@ -48,12 +48,31 @@ func getLocalIP() string {
 	return ""
 }
 
+// buildRAMInfo is the memory as people know it: "4 GB", "512 MB". Windows
+// reports what is installed; elsewhere (or when Windows cannot tell) the
+// usable total is rounded to the nearest GB, never down: 3.8 GB usable on a
+// 4 GB PC used to show "3 GB".
 func buildRAMInfo() string {
-	stats, err := mem.VirtualMemory()
-	if err != nil {
+	size := installedRAMBytes()
+	if size == 0 {
+		stats, err := mem.VirtualMemory()
+		if err != nil {
+			return ""
+		}
+		size = stats.Total
+	}
+	return formatRAM(size)
+}
+
+func formatRAM(size uint64) string {
+	const mib, gib = 1 << 20, 1 << 30
+	if size == 0 {
 		return ""
 	}
-	return fmt.Sprintf("%d GB", stats.Total/1024/1024/1024)
+	if size < gib-gib/10 {
+		return fmt.Sprintf("%d MB", (size+mib/2)/mib)
+	}
+	return fmt.Sprintf("%d GB", (size+gib/2)/gib)
 }
 
 func buildStorageInfo() string {

@@ -27,6 +27,7 @@ from app.services.agent_revocation import refuse_if_revoked
 from app.services.alert_rules import RECONNECT_WINDOW_SECONDS
 from app.services.device_assignment_service import AssignmentSignal, DeviceAssignmentService
 from app.services.device_fingerprint_service import DeviceFingerprintService, FingerprintMatch
+from app.services.device_hardware import installed_ram_label
 from app.services.device_health_score_service import DeviceHealthScoreService
 from app.services.device_inventory_service import DeviceInventoryService, with_running_agent_version
 from app.services.device_maintenance_service import DeviceMaintenanceService, is_maintenance_active
@@ -189,6 +190,7 @@ class DeviceHeartbeatService:
         Fast path: resolve/create/update device record + write heartbeat row.
         Returns (device, heartbeat, ctx) where ctx carries data needed by _run_side_effects.
         """
+        payload.ram = installed_ram_label(payload.ram, payload.agent_version)
         if feature_enabled("FEATURE_PLATFORM_CORE"):
             device_type = get_adapter(payload.platform).classify_device_type(payload)
         else:
