@@ -26,9 +26,9 @@
 
 | Component | Running | Since | Rollback | Evidence |
 |---|---|---|---|---|
-| Backend | `a68e881` | 2026-10-26 22:39 | `alembic downgrade z4a5b6c7d8e9`, then image `pre-data-model-06f33c3`; dump `pre-data-model-20261026-223423.sql.gz` | `DATA-MODEL-2026-10-26` |
+| Backend | `7ad2bcd` | 2026-10-26 22:51 | `alembic downgrade a5b6c7d8e9f0`, then image `pre-devices-hot-d2f9262`; dump `pre-devices-hot-20261026-224745.sql.gz` | `DEVICES-HOT-2026-10-26` |
 | Frontend | `c20925c` | 2026-10-26 22:12 | image `pre-overview-5m-939cd02` | `OVERVIEW-5M-2026-10-26` |
-| Database schema | Alembic `a5b6c7d8e9f0` (single head; repository head matches) | 2026-10-26 22:38 | `alembic downgrade z4a5b6c7d8e9` | `DATA-MODEL-2026-10-26` |
+| Database schema | Alembic `b6c7d8e9f0a1` (single head; repository head matches) | 2026-10-26 22:49 | `alembic downgrade a5b6c7d8e9f0` | `DEVICES-HOT-2026-10-26` |
 | Repository path | `/opt/techi/techi-platform` | — | — | — |
 
 Release identity is the Git SHA. Backend `1.0.0` and frontend `0.1.0` are package metadata only.

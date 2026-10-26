@@ -5,6 +5,22 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-26] DEVICES-HOT-2026-10-26 — migration `b6c7d8e9f0a1` (`7ad2bcd`): heartbeats update devices in place
+
+**Owner: "po"** to keeping `devices` as one table and taking the cheap win
+instead of a split (measured: 2.4 MB, ~950 B/row, 0.2–0.4 ms per update; 53%
+of updates non-HOT, each writing into all 14 indexes; 86,798 autovacuums).
+- Dropped `ix_devices_last_seen` and `ix_devices_status_last_seen` (used 18
+  and 34 times in total); `fillfactor = 80`; `VACUUM FULL` (heap 1.6 → 1.2 MB).
+  No code change (the models never declared those indexes).
+- Tested up/down/up on a schema copy (dropped after). Applied live 22:49 (the
+  running code does not need it), then the backend restarted on the new image
+  22:51 (ready in ~10 s); guard + smoke passed; 0 errors.
+- HOT share of devices updates **47% → 84%** (22:47–22:55, reconnect
+  included); heartbeat p95 0.11 s.
+- Dump `pre-devices-hot-20261026-224745.sql.gz` (184 MB); rollback image
+  `pre-devices-hot-d2f9262` after `alembic downgrade a5b6c7d8e9f0`.
+
 ## [2026-10-26] DATA-MODEL-2026-10-26 — backend `a68e881`, migration `a5b6c7d8e9f0`: data model integrity
 
 **Owner: "backup leri per sot bej te gjitha te tjerat", then "deploy commit
