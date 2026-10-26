@@ -18,7 +18,11 @@ Endpoint MSI `ae2b7977…` (`6f0ba852…`), Update Bridge `d792a71f…`
 - **Activated 20:51** (owner: "aktivizo"): all six packages; 2.1.46 (Windows)
   and 2.1.39 (Linux) kept inactive as rollback. `active-version` returns
   2.1.47 and the public agent-binary download serves `4b0ec25f…`. No device
-  updated (heartbeats never carry `agent_update`); pilot not started.
+  updated (heartbeats never carry `agent_update`).
+- Pilot batch `2906b5d7-ba65-49ba-ad8e-7deda6c1e0b4` (20:54, owner: "nis
+  pilotin") on 12, 781, 983, 985 from 2.1.46: all on 2.1.47 by 20:59, online,
+  no backend errors. Mario-Lenovo (983) went from 14 GB (usable, integrated
+  GPU) to 16 GB installed; the others unchanged (16/64/64 GB).
 
 ## [2026-10-26] RAM-RETENTION-2026-10-26 — backend `c0a8127`: installed RAM, 2 days of minute telemetry, disk cleanup
 
