@@ -5,6 +5,29 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-26] RAM-RETENTION-2026-10-26 — backend `c0a8127`: installed RAM, 2 days of minute telemetry, disk cleanup
+
+**Owner: "po" (deploy commit push + dump cleanup).** Two backend changes:
+- `1685727`: minute telemetry is kept 2 days (only the 1 h / 24 h charts read
+  it; 7 d reads 5-minute rollups); buffers up to 7 days old are still accepted.
+- `c0a8127`: devices show installed RAM. Agents before 2.1.47 rounded usable
+  memory down ("3 GB" on a 4 GB PC); the heartbeat now reads those as the next
+  GB up, "0 GB" as "<1 GB", MikroTik bytes as a size. Migration
+  `z4a5b6c7d8e9` (data only) corrected stored values. Agent 2.1.47 reports
+  installed RAM itself (CI 40387693761 MSI, 40387693825 Linux, both green;
+  **built, not uploaded or activated**).
+- Deploy 20:36: dump `pre-ram-retention-20261026-203304.sql.gz` (309 MB, gzip
+  -t OK); rollback image `pre-ram-retention-a2e5c41`; ready in ~15 s; guard +
+  smoke passed; no errors.
+- **Mistake, corrected:** the migration ran after the restart, so ~50 devices
+  that sent a heartbeat in between got +1 GB twice (5/9/17 GB). Fixed at 20:41
+  from the original values in the pre-deploy dump (49 rows); distribution now
+  matches pre-deploy +1 GB exactly (291×8, 237×16, 200×4, 104×32 GB). Next time:
+  data migrations before the restart.
+- Telemetry cleanup run at once: partitions 18–23 Oct dropped, DB 2640 → 1651 MB.
+- Owner OK: 20 pre-deploy dumps removed (3.5 GB), newest 3 kept + 7 nightly.
+  Disk 1.5 GB → **6.0 GB free (75%)**.
+
 ## [2026-10-26] SOFTWARE-AGENT-VERSION-2026-10-26 — backend `c6cf14f`: installed software shows the TECHI Agent version that runs
 
 **Owner: "deploy commit push".** Self-update swaps only techi-agent.exe, so
