@@ -5,6 +5,19 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-26] AGENTS-TILE-2026-10-26 — backend `9f6b4ab`: the agents tile names PCs without a live channel
+
+**Owner: "po", then "deploy commit push"** after asking why the System
+"Agents" tile was yellow with 486 reporting: 4 online Windows PCs had no
+command channel (Klevi 2.1.35, LAPTOP3 2.1.33, manager-opa and
+DESKTOP-J7TGSP6 on 2.1.46; one flapping), and a single one turned the tile
+yellow. Now the first three are named (+N) and the tile turns yellow only
+above 2% of the online fleet. The 9 `403`s on /ws/agent/commands at 22:51
+were refusals during startup; all nine connected seconds later.
+- Deploy 23:10: dump `pre-agents-tile-20261026-230616.sql.gz` (185 MB);
+  rollback image `pre-agents-tile-8e9efb7`; no migration; ready in ~10 s;
+  guard + smoke passed; 470 channels back in 2 min; 0 errors.
+
 ## [2026-10-26] DEVICES-HOT-2026-10-26 — migration `b6c7d8e9f0a1` (`7ad2bcd`): heartbeats update devices in place
 
 **Owner: "po"** to keeping `devices` as one table and taking the cheap win
