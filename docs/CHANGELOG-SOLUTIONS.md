@@ -5,6 +5,23 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-26] OVERVIEW-5M-2026-10-26 — backend + frontend `c20925c`: Overview's last 24 hours from 5-minute points
+
+**Owner: "deploy commit push"** after "kjo vonon te behet load". Measured
+first: warm `metrics?range=24h` = 90 ms (1439 minute points, ~640 KB JSON,
+41 KB gzipped by the backend's GZipMiddleware); slow console requests
+(2–2.6 s) only during the 2.1.47 fleet waves. The Overview card now asks
+`resolution=5m`: 288 rollup points, same peaks, averages and coverage; the
+Monitoring tab keeps minutes. Label "5-minute points · nothing lost".
+- Proxy detour, undone: a `/data/nginx/custom/http.conf` with gzip_types was
+  added at 21:59 on the wrong assumption that API JSON went uncompressed, and
+  removed the same minute (`nginx -t` + reload both times).
+- Deploy 22:12: dump `pre-overview-5m-20261026-220801.sql.gz` (183 MB, gzip -t
+  OK); rollback images `pre-overview-5m-939cd02` (backend and frontend); both
+  images built before the backend restart (load peak 4.8 during the builds);
+  `nginx -t` in the new frontend image; backend ready in ~15 s; guard + smoke
+  passed; no errors. 1818 backend tests, 483 frontend unit tests, 16 e2e.
+
 ## [2026-10-26] FLEET-2147-2026-10-26 — fleet agent update to 2.1.47 in five waves
 
 **Owner: "update agent".** Every online Windows PC not on 2.1.47 except

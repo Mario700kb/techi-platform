@@ -26,8 +26,8 @@
 
 | Component | Running | Since | Rollback | Evidence |
 |---|---|---|---|---|
-| Backend | `c0a8127` | 2026-10-26 20:36 | image `pre-ram-retention-a2e5c41`; dump `pre-ram-retention-20261026-203304.sql.gz` | `RAM-RETENTION-2026-10-26` |
-| Frontend | `4f58d59` | 2026-10-25 01:53 | image `pre-premium-bd50aae` | `PREMIUM-FRONTEND-2026-10-25` |
+| Backend | `c20925c` | 2026-10-26 22:12 | image `pre-overview-5m-939cd02`; dump `pre-overview-5m-20261026-220801.sql.gz` | `OVERVIEW-5M-2026-10-26` |
+| Frontend | `c20925c` | 2026-10-26 22:12 | image `pre-overview-5m-939cd02` | `OVERVIEW-5M-2026-10-26` |
 | Database schema | Alembic `z4a5b6c7d8e9` (single head; repository head matches) | 2026-10-26 20:37 | data-only migration; restore from dump `pre-ram-retention-20261026-203304.sql.gz` | `RAM-RETENTION-2026-10-26` |
 | Repository path | `/opt/techi/techi-platform` | — | — | — |
 
