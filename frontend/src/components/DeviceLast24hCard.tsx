@@ -83,7 +83,8 @@ export default function DeviceLast24hCard({
   active: boolean;
   onOpenMonitoring?: () => void;
 }) {
-  const metricsQuery = useDeviceMetrics(deviceId, "24h", active);
+  // 5-minute points: a fifth of the data, the same peaks; minutes are in Monitoring.
+  const metricsQuery = useDeviceMetrics(deviceId, "24h", active, true);
   const monitorsQuery = useDeviceMonitors(deviceId, active);
   const metrics = metricsQuery.data;
   const s = metrics?.summary;
@@ -98,7 +99,7 @@ export default function DeviceLast24hCard({
         meta={
           source && metrics?.source !== "none"
             ? metrics?.source === "agent"
-              ? "1-minute data · nothing lost"
+              ? "5-minute points · nothing lost"
               : "5-minute heartbeat data"
             : undefined
         }

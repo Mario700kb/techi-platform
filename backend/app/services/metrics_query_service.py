@@ -265,7 +265,7 @@ class MetricsQueryService:
 
     # ── a device ────────────────────────────────────────────────────────────
 
-    def device_metrics(self, device: Device, range_key: str) -> DeviceMetrics:
+    def device_metrics(self, device: Device, range_key: str, coarse: bool = False) -> DeviceMetrics:
         now = utcnow_naive()
         start = now - RANGES[range_key]
         policy = effective_policy(self.db, device)
@@ -274,7 +274,7 @@ class MetricsQueryService:
             or self.db.query(TelemetryRollup1h.bucket).filter(TelemetryRollup1h.device_id == device.id).first() is not None
 
         if has_agent:
-            points, resolution = self._agent_points(device.id, range_key, start)
+            points, resolution = self._agent_points(device.id, range_key, start, coarse=coarse)
             source = "agent"
         else:
             points, resolution = self._heartbeat_points(device.id, range_key, start)
@@ -354,8 +354,9 @@ class MetricsQueryService:
             end=a.resolved_at.replace(tzinfo=None) if a.resolved_at else None,
         ) for a in reversed(rows)]
 
-    def _agent_points(self, device_id: int, range_key: str, start: datetime) -> Tuple[List[MetricPoint], str]:
-        if range_key in ("1h", "24h"):
+    def _agent_points(self, device_id: int, range_key: str, start: datetime,
+                      coarse: bool = False) -> Tuple[List[MetricPoint], str]:
+        if range_key == "1h" or (range_key == "24h" and not coarse):
             rows = (
                 self.db.query(TelemetrySample)
                 .filter(TelemetrySample.device_id == device_id, TelemetrySample.ts >= start)
@@ -376,7 +377,7 @@ class MetricsQueryService:
                     top=r.top or None, **extra,
                 ))
             return points, "1m"
-        model = TelemetryRollup5m if range_key == "7d" else TelemetryRollup1h
+        model = TelemetryRollup5m if range_key in ("24h", "7d") else TelemetryRollup1h
         rows = self.db.query(model).filter(model.device_id == device_id, model.bucket >= start).order_by(model.bucket).all()
         points = [MetricPoint(
             t=r.bucket, samples=r.samples, expected=r.expected, cpu_avg=r.cpu_avg, cpu_max=r.cpu_max,
@@ -386,7 +387,7 @@ class MetricsQueryService:
         ) for r in rows]
         if range_key == "13mo":
             return self._fold_days(points), "1d"
-        return points, "5m" if range_key == "7d" else "1h"
+        return points, "5m" if range_key in ("24h", "7d") else "1h"
 
     @staticmethod
     def _fold_days(points: List[MetricPoint]) -> List[MetricPoint]:

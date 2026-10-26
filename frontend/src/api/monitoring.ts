@@ -335,8 +335,15 @@ export interface PipelineHealth {
   storage: StorageTier[];
 }
 
-export function getDeviceMetrics(deviceId: number, range: MetricsRange = "24h"): Promise<DeviceMetrics> {
-  return fetchJson<DeviceMetrics>(`/api/v1/devices/${deviceId}/metrics?range=${range}`);
+/** `coarse`: the 24-hour view from 5-minute points (the Overview card). */
+export function getDeviceMetrics(
+  deviceId: number,
+  range: MetricsRange = "24h",
+  coarse = false,
+): Promise<DeviceMetrics> {
+  return fetchJson<DeviceMetrics>(
+    `/api/v1/devices/${deviceId}/metrics?range=${range}${coarse ? "&resolution=5m" : ""}`,
+  );
 }
 
 export function getDeviceMonitoring(deviceId: number): Promise<DeviceMonitoring> {

@@ -43,7 +43,7 @@ test("Overview sums up the last 24 hours and opens Monitoring", async ({ page },
   await openReception(page);
 
   const card = page.getByRole("region", { name: "Last 24 hours" });
-  await expect(card.getByText("1-minute data · nothing lost")).toBeVisible();
+  await expect(card.getByText("5-minute points · nothing lost")).toBeVisible();
   await expect(card.getByText(/peak 71% at/)).toBeVisible();
   await expect(card.getByText(/peak 48%/)).toBeVisible();
   await expect(card.getByTestId("monitors-summary")).toHaveText("1 firing · CPU above 95% for 15 min");

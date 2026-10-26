@@ -224,7 +224,7 @@ for (const theme of ["dark", "light"] as const) {
     const panel = drawer.getByRole("region", { name: "Live" });
     await expect(panel.getByText("Live · every 3 s")).toBeVisible();
     await expect(panel.getByText("57%")).toBeVisible();
-    await expect(drawer.getByText("1-minute data · nothing lost")).toBeVisible();
+    await expect(drawer.getByText("5-minute points · nothing lost")).toBeVisible();
     await expect(drawer.getByText("TECHI Remote Support").first()).toBeVisible();
     const dir = process.env.OVERVIEW_SHOTS;
     const name = `overview-live-${process.env.OVERVIEW_SHOTS_TAG ?? "after"}-${theme}.png`;
@@ -342,7 +342,7 @@ test("the Overview reads top to bottom in one order, with one header style", asy
   await liveServer(page, 100);
   const drawer = await openHvProd(page);
   await expect(drawer.getByText("TECHI Remote Support").first()).toBeVisible();
-  await expect(drawer.getByText("1-minute data · nothing lost")).toBeVisible();
+  await expect(drawer.getByText("5-minute points · nothing lost")).toBeVisible();
   expect(await sectionTitles(page)).toEqual([
     "Status",
     "Live",

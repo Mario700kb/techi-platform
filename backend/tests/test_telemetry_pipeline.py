@@ -362,6 +362,21 @@ def test_a_day_of_minutes_tells_device_off_from_missing_data(db):
     assert metrics.delivery is not None and metrics.delivery.policy_current is True
 
 
+def test_the_overview_reads_the_day_in_five_minute_points(db):
+    """The Overview card asks for resolution=5m: a fifth of the points, the
+    same peaks, coverage and summary as the minutes."""
+    start = (utcnow_naive() - timedelta(hours=3)).replace(minute=0, second=0, microsecond=0)
+    _ingest(db, _minutes(start, 60, cpu=lambda i: 90.0 if i == 7 else 10.0))
+    service = MetricsQueryService(db)
+    fine = service.device_metrics(db.get(Device, 924), "24h")
+    coarse = service.device_metrics(db.get(Device, 924), "24h", coarse=True)
+    assert (fine.resolution, len(fine.points)) == ("1m", 60)
+    assert (coarse.resolution, len(coarse.points)) == ("5m", 12)
+    assert coarse.summary.cpu_peak == fine.summary.cpu_peak == 90.0
+    assert coarse.summary.cpu_avg == fine.summary.cpu_avg
+    assert coarse.coverage == fine.coverage
+
+
 def test_a_device_without_the_new_agent_is_charted_from_its_heartbeats(db):
     now = utcnow_naive()
     for i in range(12):

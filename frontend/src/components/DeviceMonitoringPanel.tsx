@@ -58,9 +58,10 @@ const REFRESH_MS = 60_000;
 
 // One cache per device and range, shared with the Overview card, so switching
 // between the two shows the last answer at once.
-export function useDeviceMetrics(deviceId: number, range: MetricsRange, enabled: boolean) {
-  return useCachedQuery<DeviceMetrics>(enabled ? `mem.device.${deviceId}.metrics.${range}` : null, () =>
-    getDeviceMetrics(deviceId, range),
+export function useDeviceMetrics(deviceId: number, range: MetricsRange, enabled: boolean, coarse = false) {
+  return useCachedQuery<DeviceMetrics>(
+    enabled ? `mem.device.${deviceId}.metrics.${range}${coarse ? ".5m" : ""}` : null,
+    () => (coarse ? getDeviceMetrics(deviceId, range, true) : getDeviceMetrics(deviceId, range)),
   );
 }
 

@@ -2,7 +2,7 @@
 and the health of the telemetry pipeline."""
 import asyncio
 import logging
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -119,8 +119,11 @@ def pipeline_health(db: Session = Depends(get_db), _: Operator = Depends(_requir
 
 @router.get("/devices/{device_id}/metrics", response_model=DeviceMetrics)
 def device_metrics(range: Range = Query(default="24h"), device: Device = Depends(get_scoped_device),
-                   db: Session = Depends(get_db)):
-    return MetricsQueryService(db).device_metrics(device, range)
+                   db: Session = Depends(get_db),
+                   resolution: Optional[Literal["5m"]] = Query(default=None)):
+    """resolution=5m: the 24-hour view from the 5-minute rollups (the Overview
+    card); the Monitoring tab keeps the minutes."""
+    return MetricsQueryService(db).device_metrics(device, range, coarse=resolution == "5m")
 
 
 @router.get("/devices/{device_id}/monitoring", response_model=DeviceMonitoring)

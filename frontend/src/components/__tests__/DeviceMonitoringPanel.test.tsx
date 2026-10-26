@@ -122,7 +122,8 @@ describe("DeviceLast24hCard", () => {
     expect(within(card).getByText(/peak 71% at/)).toBeInTheDocument();
     expect(within(card).getByText(/peak 48%/)).toBeInTheDocument();
     expect(within(card).getByText("of the time it was on").parentElement).toHaveTextContent("Coverage100%");
-    expect(within(card).getByText("1-minute data · nothing lost")).toBeInTheDocument();
+    expect(within(card).getByText("5-minute points · nothing lost")).toBeInTheDocument();
+    expect(getMetrics).toHaveBeenCalledWith(7, "24h", true); // the light 5-minute view
     expect(await within(card).findByTestId("monitors-summary")).toHaveTextContent("1 near the limit · Disk above 90%");
     fireEvent.click(within(card).getByRole("button", { name: /Open Monitoring/ }));
     expect(open).toHaveBeenCalled();
