@@ -5,6 +5,34 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-10-26] DATA-MODEL-2026-10-26 — backend `a68e881`, migration `a5b6c7d8e9f0`: data model integrity
+
+**Owner: "backup leri per sot bej te gjitha te tjerat", then "deploy commit
+push".** From the data-model review (offsite backup deferred):
+- 10 foreign-key indexes (terminal_sessions.operator_id was declared in the
+  model but missing in production).
+- 23 CHECK rules on configuration/bookkeeping columns (`app/models/constraints.py`,
+  also enforced by the SQLite tests); none on telemetry. All rows passed.
+- 139 `timestamp` columns → `timestamptz` (only telemetry_samples.ts stays: a
+  partition key cannot change type). Catalog-only with the session in UTC (no
+  rewrite of device_status_history, remote_actions, telemetry_rollup_5m).
+  Connections read timestamptz as naive UTC (`naive_utc_timestamps`), so the
+  code is unchanged; agent_command_batches.created_at is now naive like the rest.
+- device_inventory lists → jsonb (`JSONBText`) + GIN on software: 780 PCs with
+  AnyDesk answered by one indexed query.
+- `devices.lifecycle_state` (947 active / 1 archived / 1 trashed), generated;
+  rules: trash ⇒ archived, is_archived ⇔ archived_at. PUT /devices/{id}
+  refuses archive fields (archiving revokes the agent and closes alerts).
+- Tested first on a schema-only copy (`techi_migtest`, dropped after):
+  upgrade ~5 s, downgrade + re-upgrade OK. Running the new image against it
+  before the restart caught a bug (SQLAlchemy cast inventory text to VARCHAR
+  for the jsonb columns), fixed in `a68e881`. New code needs the new schema,
+  so: backend stopped 22:38:41, migration, started; ready 22:39:11 (30 s).
+  Fleet back within ~2 min (heartbeat p95 2.6 s, 12 shed during reconnect;
+  then 0.13 s); 484/487 online seen in 5 min; 0 errors.
+- Dump `pre-data-model-20261026-223423.sql.gz` (184 MB, gzip -t OK); rollback
+  image `pre-data-model-06f33c3` needs `alembic downgrade z4a5b6c7d8e9` first.
+
 ## [2026-10-26] OVERVIEW-5M-2026-10-26 — backend + frontend `c20925c`: Overview's last 24 hours from 5-minute points
 
 **Owner: "deploy commit push"** after "kjo vonon te behet load". Measured
