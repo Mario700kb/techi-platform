@@ -5,7 +5,7 @@ An agent from 2.1.29 samples on the device, keeps the samples in a buffer on
 disk and uploads them every 15 minutes; the platform stores each sample once
 (device_id + ts is the key, so a re-sent batch changes nothing) and folds it
 into 5-minute and hourly rollups that keep min, average, max and how many
-samples arrived (coverage). Raw minutes are kept 7 days, 5-minute points 30
+samples arrived (coverage). Raw minutes are kept 2 days, 5-minute points 8
 days, hourly points 13 months.
 
 On PostgreSQL telemetry_samples is partitioned by day (the migration creates

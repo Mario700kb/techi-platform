@@ -35,7 +35,12 @@ logger = logging.getLogger(__name__)
 # device's buffer after an outage; counted separately so the coverage view can
 # tell "late" from "on time".
 SOURCE_AGENT_LATE = 3
-RAW_KEEP = timedelta(days=7)
+# Minutes are read only by the 1-hour and 24-hour charts (7 days reads the
+# 5-minute rollups), so two days of them are kept. A device back from a week
+# offline still delivers its buffer: its rollups are built, and its old minutes
+# go with the next nightly cleanup.
+RAW_KEEP = timedelta(days=2)
+ACCEPT_LATE = timedelta(days=7)
 # A volume smaller than this (recovery, EFI, a small data partition) is kept
 # and shown, but never decides "the fullest disk" nor raises a disk alert.
 SMALL_VOLUME_GB = 5.0
@@ -77,7 +82,7 @@ _EXTRA = {
 }
 
 
-def ensure_partitions(db: Session, days_back: int = 7, days_ahead: int = 3) -> int:
+def ensure_partitions(db: Session, days_back: int = ACCEPT_LATE.days, days_ahead: int = 3) -> int:
     """PostgreSQL: make sure daily partitions exist around today. Idempotent."""
     if db.get_bind().dialect.name != "postgresql":
         return 0
@@ -121,7 +126,7 @@ class TelemetryIngestService:
         for sample in upload.samples:
             max_seq = max(max_seq, sample.seq)
             ts = (_naive(sample.ts) - correction).replace(microsecond=0)
-            if ts < now - RAW_KEEP or ts > now + FUTURE_TOLERANCE:
+            if ts < now - ACCEPT_LATE or ts > now + FUTURE_TOLERANCE:
                 rejected += 1
                 continue
             rows.append({
@@ -301,14 +306,15 @@ class TelemetryIngestService:
 
 
 def cleanup_telemetry_pipeline(db: Session) -> int:
-    """Nightly: keep 7 days of minutes, 30 days of 5-minute points and 13
+    """Nightly: keep 2 days of minutes, 8 days of 5-minute points and 13
     months of hours. On PostgreSQL an expired day is a partition dropped in one
     step, and the coming days' partitions are created."""
     removed = 0
     now = utcnow_naive()
     if db.get_bind().dialect.name == "postgresql":
-        ensure_partitions(db)
-        cutoff = (now - RAW_KEEP - timedelta(days=1)).date()
+        ensure_partitions(db, days_back=RAW_KEEP.days)
+        # A day goes once all of it is older than RAW_KEEP.
+        cutoff = (now - RAW_KEEP).date()
         names = db.execute(text(
             "SELECT inhrelid::regclass::text FROM pg_inherits WHERE inhparent = 'telemetry_samples'::regclass"
         )).scalars().all()

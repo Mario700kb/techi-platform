@@ -385,13 +385,28 @@ def test_the_client_view_has_a_heatmap_trend_and_attention(db):
     assert next(d for d in view.devices if d.device_id == 924).one_minute is True
 
 
-def test_retention_keeps_seven_days_of_minutes(db):
-    old = utcnow_naive() - timedelta(days=8)
-    db.add(TelemetrySample(device_id=924, ts=old, seq=1, cpu=1))
-    db.add(TelemetryRollup5m(device_id=924, bucket=utcnow_naive() - timedelta(days=31), samples=5, expected=5))
+def test_retention_keeps_two_days_of_minutes(db):
+    now = utcnow_naive()
+    db.add(TelemetrySample(device_id=924, ts=now - timedelta(days=3), seq=1, cpu=1))
+    db.add(TelemetrySample(device_id=924, ts=now - timedelta(hours=40), seq=2, cpu=2))
+    db.add(TelemetryRollup5m(device_id=924, bucket=now - timedelta(days=9), samples=5, expected=5))
+    db.add(TelemetryRollup5m(device_id=924, bucket=now - timedelta(days=6), samples=5, expected=5))
     db.commit()
     assert cleanup_telemetry_pipeline(db) == 2
+    assert [s.seq for s in db.query(TelemetrySample).all()] == [2]
+    assert db.query(TelemetryRollup5m).count() == 1
+
+
+def test_a_buffer_from_a_week_offline_still_builds_its_rollups(db):
+    """Minutes are kept two days, but a device back after five days offline
+    still delivers what it buffered: the 7-day chart reads the rollups."""
+    start = (utcnow_naive() - timedelta(days=5)).replace(minute=0, second=0, microsecond=0)
+    ack = _ingest(db, _minutes(start, 10))
+    assert (ack.stored, ack.rejected) == (10, 0)
+    assert db.get(TelemetryRollup1h, (924, start)).samples == 10
+    cleanup_telemetry_pipeline(db)
     assert db.query(TelemetrySample).count() == 0
+    assert db.get(TelemetryRollup5m, (924, start)).samples == 5
 
 
 def test_a_device_in_the_servers_group_gets_the_server_policy_whatever_its_type_column(db):

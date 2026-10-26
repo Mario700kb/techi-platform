@@ -747,7 +747,7 @@ class MetricsQueryService:
         )
 
     def _storage(self) -> List[StorageTier]:
-        tiers = [("1-minute", "7 days", "telemetry_samples"), ("5-minute", "30 days", "telemetry_rollup_5m"),
+        tiers = [("1-minute", "2 days", "telemetry_samples"), ("5-minute", "8 days", "telemetry_rollup_5m"),
                  ("Hourly", "13 months", "telemetry_rollup_1h")]
         out = []
         postgres = self.db.get_bind().dialect.name == "postgresql"
