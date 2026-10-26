@@ -96,10 +96,18 @@ def agents_tile(db: Session, now: datetime) -> ServiceTile:
                            value=reporting, total=online)
     missing = devices_missing_channel(db, now)
     if missing:
-        sub += f" · {len(missing)} without live channel"
-        return ServiceTile(key="agents", state="warn", label="Live", detail=detail, sub=sub,
-                           value=reporting, total=online)
+        sub += f" · {len(missing)} without live channel: {_names(db, missing)}"
+        if len(missing) > online * CHANNEL_MISSING_WARN_SHARE:
+            return ServiceTile(key="agents", state="warn", label="Live", detail=detail, sub=sub,
+                               value=reporting, total=online)
     return ServiceTile(key="agents", state="ok", label="Live", detail=detail, sub=sub, value=reporting, total=online)
+
+
+def _names(db: Session, device_ids: List[int], shown: int = 3) -> str:
+    rows = db.query(Device.display_name, Device.hostname).filter(Device.id.in_(device_ids)).all()
+    names = sorted(display or host or "?" for display, host in rows)
+    more = len(device_ids) - shown
+    return ", ".join(names[:shown]) + (f" +{more}" if more > 0 else "")
 
 
 # Agents from this version keep a command channel open. One that reports by
@@ -109,6 +117,10 @@ def agents_tile(db: Session, now: datetime) -> ServiceTile:
 # had).
 CHANNEL_AGENT_VERSION = "2.1.26"
 CHANNEL_MISSING_AFTER = timedelta(minutes=15)
+# A PC or two on a flaky network always lack a channel; the tile turns
+# yellow when more than this share of the online fleet does. They are named
+# in the tile either way.
+CHANNEL_MISSING_WARN_SHARE = 0.02
 
 
 def devices_missing_channel(db: Session, now: datetime) -> List[int]:

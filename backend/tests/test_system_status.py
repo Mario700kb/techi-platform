@@ -89,6 +89,25 @@ def test_agents_live_and_stalled(db):
     assert _tiles(db)["agents"].state == "down"  # newest heartbeat > 2 min with devices online
 
 
+def test_a_few_agents_without_channel_are_named_but_do_not_turn_the_tile_yellow(db, monkeypatch):
+    now = utcnow().replace(tzinfo=None)
+    devices = [Device(hostname=f"pc-{i:03d}", status=DeviceStatus.ONLINE, last_seen=now, is_archived=False)
+               for i in range(100)]
+    db.add_all(devices)
+    db.commit()
+    ids = [d.id for d in devices]
+
+    monkeypatch.setattr(svc, "devices_missing_channel", lambda _db, _now: ids[:2])  # 2% of 100
+    tile = _tiles(db)["agents"]
+    assert tile.state == "ok"
+    assert tile.sub.endswith("2 without live channel: pc-000, pc-001")
+
+    monkeypatch.setattr(svc, "devices_missing_channel", lambda _db, _now: ids[:5])
+    tile = _tiles(db)["agents"]
+    assert tile.state == "warn"
+    assert tile.sub.endswith("5 without live channel: pc-000, pc-001, pc-002 +2")
+
+
 def test_agent_versions_synced_threshold(db, monkeypatch):
     monkeypatch.setattr(svc.version_service, "get_active_version", lambda platform: "2.1.20")
     db.add_all([Device(hostname=f"d{i}", agent_version="2.1.20", platform="windows", is_archived=False) for i in range(9)])
