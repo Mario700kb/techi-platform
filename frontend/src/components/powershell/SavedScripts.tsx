@@ -4,11 +4,10 @@ import type { ConsoleScript } from "../../api/terminal";
 import { Button, Modal } from "../ui";
 import { PanelSection } from "./parts";
 
-const TOP = 5;
-
-/** The most-used scripts first; ties by name. */
-export function topScripts(scripts: ConsoleScript[], n = TOP): ConsoleScript[] {
-  return [...scripts].sort((a, b) => b.uses - a.uses || a.name.localeCompare(b.name)).slice(0, n);
+/** Every script, most used first; ties by name. A new script (no uses yet)
+ * is listed too, below the rest; the list scrolls past about five rows. */
+export function orderScripts(scripts: ConsoleScript[]): ConsoleScript[] {
+  return [...scripts].sort((a, b) => b.uses - a.uses || a.name.localeCompare(b.name));
 }
 
 export function ScriptRunModal({
@@ -80,7 +79,7 @@ export function ScriptRunModal({
   );
 }
 
-/** Side panel: the top saved scripts, each one click (and a confirmation) from running. */
+/** Side panel: the saved scripts, each one click (and a confirmation) from running. */
 export default function SavedScripts({
   scripts,
   loading,
@@ -98,7 +97,7 @@ export default function SavedScripts({
   onOpenLibrary: () => void;
   className?: string;
 }) {
-  const top = topScripts(scripts ?? []);
+  const ordered = orderScripts(scripts ?? []);
   return (
     <PanelSection
       title="Saved scripts"
@@ -119,11 +118,11 @@ export default function SavedScripts({
         <p className="ps-empty" style={{ color: "var(--th-status-critical)" }}>
           Couldn't load saved scripts.
         </p>
-      ) : top.length === 0 ? (
+      ) : ordered.length === 0 ? (
         <p className="ps-empty">No saved scripts yet. Add one in the Library.</p>
       ) : (
         <ul aria-label="Saved scripts" className="ps-scripts">
-          {top.map((s) => (
+          {ordered.map((s) => (
             <li key={s.id} className="ps-script">
               <div className="min-w-0 flex-1">
                 <p className="ps-script-name">{s.name}</p>

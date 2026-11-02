@@ -346,6 +346,9 @@
   flex-direction: column;
   gap: 2px;
   margin: 0 -8px;
+  /* About five rows; the rest scroll. */
+  max-height: 248px;
+  overflow-y: auto;
 }
 .ps-script {
   display: flex;

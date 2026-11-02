@@ -9,11 +9,13 @@ import { appCache } from "../../../store/appCache";
 
 const listScripts = vi.fn();
 const runScript = vi.fn();
+const createScript = vi.fn();
 
 vi.mock("../../../api/terminal", async (importActual) => ({
   ...(await importActual<typeof import("../../../api/terminal")>()),
   listConsoleScripts: (...a: unknown[]) => listScripts(...a),
   runConsoleScript: (...a: unknown[]) => runScript(...a),
+  createConsoleScript: (...a: unknown[]) => createScript(...a),
 }));
 
 interface FakeProps {
@@ -96,6 +98,7 @@ describe("PowerShellConsole", () => {
     close.mockClear();
     listScripts.mockReset().mockResolvedValue(SCRIPTS);
     runScript.mockReset();
+    createScript.mockReset();
   });
 
   it("draws the header, a local banner and the session details", async () => {
@@ -163,12 +166,12 @@ describe("PowerShellConsole", () => {
     });
     renderConsole();
     const list = await screen.findByRole("list", { name: "Saved scripts" });
-    // Top five by use, most used first.
+    // Every script, most used first; one never run is still listed.
     expect(
       within(list)
         .getAllByRole("listitem")
         .map((li) => li.querySelector(".ps-script-name")?.textContent),
-    ).toEqual(["Flush DNS", "Clear print queue", "Restart spooler", "Disk cleanup", "List services"]);
+    ).toEqual(["Flush DNS", "Clear print queue", "Restart spooler", "Disk cleanup", "List services", "Rarely used"]);
     expect(within(list).getByRole("button", { name: "Run Flush DNS" })).toBeDisabled();
     open();
     fireEvent.click(within(list).getByRole("button", { name: "Run Flush DNS" }));
@@ -184,6 +187,20 @@ describe("PowerShellConsole", () => {
     expect(runScript.mock.invocationCallOrder[0]).toBeLessThan(send.mock.invocationCallOrder[0]);
     const commands = screen.getByRole("list", { name: "Commands this session" });
     expect(within(commands).getByText("Script · Flush DNS")).toBeInTheDocument();
+  });
+
+  it("lists a script created in the library, though it has no uses yet", async () => {
+    createScript.mockResolvedValue(script(7, "Uptime", 0));
+    renderConsole();
+    const list = await screen.findByRole("list", { name: "Saved scripts" });
+    fireEvent.click(screen.getByRole("button", { name: "Library" }));
+    const dialog = await screen.findByRole("dialog", { name: /Script library/ });
+    fireEvent.click(within(dialog).getByRole("button", { name: /New/ }));
+    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Uptime" } });
+    fireEvent.change(within(dialog).getByLabelText("Script"), { target: { value: 'Write-Output "Uptime"' } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create script" }));
+    expect(await within(list).findByText("Uptime")).toBeInTheDocument();
+    expect(within(list).getAllByRole("listitem")).toHaveLength(7);
   });
 
   it("shows why a script could not run and sends nothing", async () => {
