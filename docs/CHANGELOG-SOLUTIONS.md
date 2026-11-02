@@ -5,6 +5,20 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-11-02] SAVED-SCRIPTS-PANEL-2026-11-02 — frontend `38b9b71`: every saved script shows in the console panel
+
+**Owner: "deploy"** after reporting that a script added in the Library did
+not appear under Saved scripts. Saving had worked (`POST /console/scripts`
+201 at 14:57, script 6; `PUT` 200 at 16:25); the panel listed only the top
+five by uses, and the five seeded scripts all had runs, so a new script with
+0 uses sorted sixth and was cut. The panel now lists every script, most used
+first, and scrolls past about five rows (`max-height: 248px`). New Vitest case:
+a script created in the Library appears in the panel. Vitest 484 passed.
+- Deploy 19:03: frontend only, no dump; rollback image
+  `pre-saved-scripts-6179032`; image built on the server under `nice`
+  (~5 min, load peak ~5); `nginx -t` in the new image; healthy in ~10 s;
+  guard + smoke passed. Disk 4.7 GB free (80%) before the build.
+
 ## [2026-10-26] AGENTS-TILE-2026-10-26 — backend `9f6b4ab`: the agents tile names PCs without a live channel
 
 **Owner: "po", then "deploy commit push"** after asking why the System
