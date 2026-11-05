@@ -487,9 +487,6 @@ html.light .th-dash-hero {
 .th-sla-row:hover {
   background: var(--th-sidebar-nav-hover);
 }
-.th-sla-row[data-overdue] {
-  box-shadow: inset 2px 0 0 var(--th-status-critical);
-}
 .th-sla-title {
   display: block;
   overflow: hidden;

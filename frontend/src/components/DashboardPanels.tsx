@@ -102,7 +102,7 @@ export function SlaAtRiskCard({
             const deadline = alertDeadline(alert);
             return (
               <li key={alert.id} className="th-share-row" style={{ "--i": index } as CSSProperties}>
-                <Link to="/alerts" className="th-sla-row" data-overdue={deadline?.overdue || undefined}>
+                <Link to="/alerts" className="th-sla-row">
                   <PriorityChip priority={alert.priority} />
                   <span className="min-w-0 flex-1">
                     <span className="th-sla-title">
