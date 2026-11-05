@@ -761,7 +761,7 @@ class DeviceHeartbeatService:
         alert_counts = None
         if open_alerts is not None:
             alert_counts = dict(Counter(alert.severity.value for alert in open_alerts))
-        inventory = score_service.inventory_repo.get_by_device(device.id)
+        inventory = score_service.inventory_repo.get_for_scoring(device.id)
         _, prev_state, _ = score_service.compute_for_device(
             device, prev_snapshot, alert_counts=alert_counts, inventory=inventory
         )

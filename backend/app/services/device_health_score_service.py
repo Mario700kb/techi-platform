@@ -35,7 +35,7 @@ class DeviceHealthScoreService:
         if alert_counts is None:
             alert_counts = self.alert_repo.count_open_by_device_and_severity([device.id]).get(device.id, {})
         if inventory is _LOAD:
-            inventory = self.inventory_repo.get_by_device(device.id)
+            inventory = self.inventory_repo.get_for_scoring(device.id)
         return compute_device_health_score(device, snapshot, alert_counts, inventory)
 
     def compute_for_devices(self, devices: List[Device]) -> Dict[int, Tuple[int, str, List[str]]]:

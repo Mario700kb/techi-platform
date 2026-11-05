@@ -1,9 +1,21 @@
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from app.models.device_inventory import DeviceInventory
+
+
+# The process, service and software lists are ~47 KB of JSON per device
+# (services alone ~32 KB). Health scoring and patch summaries never read them,
+# yet every heartbeat loaded them: the top statement by database time
+# (4.6M calls, 5 Nov 2026). Deferred here; the full row stays available
+# through get_by_device for the inventory views and upsert.
+_LARGE_LISTS = (
+    defer(DeviceInventory.processes_json),
+    defer(DeviceInventory.services_json),
+    defer(DeviceInventory.software_json),
+)
 
 
 class DeviceInventoryRepository:
@@ -17,11 +29,24 @@ class DeviceInventoryRepository:
             .first()
         )
 
+    def get_for_scoring(self, device_id: int) -> Optional[DeviceInventory]:
+        """The row without the large lists: patch status, health, security
+        and collection times only."""
+        return (
+            self.db.query(DeviceInventory)
+            .options(*_LARGE_LISTS)
+            .filter(DeviceInventory.device_id == device_id)
+            .first()
+        )
+
     def get_many_by_device_ids(self, device_ids: List[int]) -> List[DeviceInventory]:
+        """Rows without the large lists (callers read patch status and
+        collection times only)."""
         if not device_ids:
             return []
         return (
             self.db.query(DeviceInventory)
+            .options(*_LARGE_LISTS)
             .filter(DeviceInventory.device_id.in_(device_ids))
             .all()
         )
