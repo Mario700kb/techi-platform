@@ -27,7 +27,7 @@
 | Component | Running | Since | Rollback | Evidence |
 |---|---|---|---|---|
 | Backend | `e9a6612` | 2026-11-05 23:27 | image `pre-inventory-defer-3ceb7ac`; dump `pre-inventory-defer-20261105-231803.sql.gz` | `PERF-REVIEW-2026-11-05` |
-| Frontend | `38b9b71` | 2026-11-02 19:03 | image `pre-saved-scripts-6179032` | `SAVED-SCRIPTS-PANEL-2026-11-02` |
+| Frontend | `a7c3f32` | 2026-11-05 23:47 | image `pre-dashboard-modern-d8c7376` | `DASHBOARD-MODERN-2026-11-05` |
 | Database schema | Alembic `b6c7d8e9f0a1` (single head; repository head matches) | 2026-10-26 22:49 | `alembic downgrade a5b6c7d8e9f0` | `DEVICES-HOT-2026-10-26` |
 | Repository path | `/opt/techi/techi-platform` | — | — | — |
 

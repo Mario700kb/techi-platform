@@ -5,6 +5,27 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-11-05] DASHBOARD-MODERN-2026-11-05 — frontend `a7c3f32`: sectioned dashboard with fleet pulse and scorecard
+
+**Owner: "mund ta permirsosh dashboard por pa hequr analizat … supermoderne",
+then "deploy".** Every analysis stays (KPIs, fleet health, needs attention,
+system status, operators, alerts by type, devices by category, availability,
+alerts this week, problem devices, enrollments, actions), regrouped into
+sections: fleet pulse hero (health ring, status mix, 30-day availability
+with sparkline and 7-day change, briefing pills), six KPIs with icons and
+share bars, a new scorecard (availability, average health, patch
+compliance, agent currency, alert resolution), Right now, Fleet composition
+(Devices by client is its own card, each client's bar split by status from
+`by_client_status`), Trends, Activity. Needs attention lists rows with work
+first. Mobile unchanged. New `components/DashboardWidgets.tsx`,
+`pages/Dashboard.css` (scoped to `.th-dash`; `.th-score` was taken globally,
+so the scorecard uses `.th-dscore`). `e2e/dashboard-breakdown.spec.ts` now
+checks the two new rows. Vitest 484, Playwright 245 passed.
+- Deploy 23:47: frontend only, no dump; rollback image
+  `pre-dashboard-modern-d8c7376`; built on the server under `nice -n 15`
+  (~2.5 min, load peak ~3.9, 0 5xx); `nginx -t` in the new image; healthy in
+  8 s; guard + smoke passed. Disk 2.9 GB free (88%).
+
 ## [2026-11-05] PERF-REVIEW-2026-11-05 — proxy old workers ended; backend `e9a6612`: heartbeat scores health without the inventory lists
 
 **Owner: "beji kto"** after a read-only review of database, backend and
