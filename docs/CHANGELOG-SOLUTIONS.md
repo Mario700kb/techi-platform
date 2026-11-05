@@ -5,6 +5,36 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-11-05] PERF-REVIEW-2026-11-05 — proxy old workers ended; backend `e9a6612`: heartbeat scores health without the inventory lists
+
+**Owner: "beji kto"** after a read-only review of database, backend and
+server (owner asked whether they are optimised).
+- **Proxy (not in Git):** nginx-proxy-manager reloads nginx every 6 h
+  (05:55/11:55/17:55/23:55). Each reload left the old worker "shutting
+  down" forever because agent WebSockets never close: 26 since 26 Oct held
+  ~950 MB swap + 120 MB RAM (host swap 1.1 GB, 278 MB available). Added
+  `worker_shutdown_timeout 60s;` to
+  `/root/nginx-proxy-manager/data/nginx/custom/root_top.conf` (backup
+  `root_top.conf.bak-20261105`), `nginx -t`, reload 23:08; the 28 old workers
+  were ended with SIGTERM oldest first in batches of 9, the last one (403
+  sockets) alone. Agents reconnected in ~90 s, 0 5xx. Swap 1.1 GB → 0.24 GB.
+- **Backend `e9a6612`:** every heartbeat read the full `device_inventory`
+  row (processes/services/software, ~47 KB JSON) only to check patch status —
+  the top statement by DB time (4.6M calls, 1.77 ms). Scoring
+  (`get_for_scoring`) and `get_many_by_device_ids` defer the three lists;
+  `get_by_device` (inventory views, upsert) still loads the full row. After
+  deploy the lean query runs 0.43 ms. New `tests/test_inventory_scoring_load.py`;
+  pytest 1822 passed.
+- Deploy 23:27: dump `pre-inventory-defer-20261105-231803.sql.gz` (239 MB;
+  load peaked 7.4 during the dump, HeartbeatGuard shed 11); rollback image
+  `pre-inventory-defer-3ceb7ac`; no migration; built under `nice` after load
+  < 1.5; ready in 10 s; guard + smoke passed; 0 errors; p95 0.16 s a minute
+  later.
+- Not changed (already in place, the review was wrong): `device_status_history`
+  is pruned at 90 days nightly (data starts 20 Aug, first deletions 18 Nov);
+  `idle_in_transaction_session_timeout=5min` is set per app connection and on
+  role `techi_app` (SHOW as superuser `techi` printed 0).
+
 ## [2026-11-02] SAVED-SCRIPTS-PANEL-2026-11-02 — frontend `38b9b71`: every saved script shows in the console panel
 
 **Owner: "deploy"** after reporting that a script added in the Library did
