@@ -5,6 +5,39 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-11-06] DASHBOARD-RISK-2026-11-06 — `1218e82`: client filter, SLA at risk, security & risk, agent versions
+
+**Owner: "ec me 1,2,3,4", then "deploy".** Four dashboard additions; no
+analysis removed.
+- **Client filter** (`?client=<id>`): the client's `/clients/{id}/profile`
+  stands in for the fleet overview, so every card reads that client's
+  counts; enrollments, actions (`/actions/recent?client_id=`), trends,
+  risk and SLA are asked for the client. Operators and system status stay
+  platform-wide. Devices by client becomes Devices by group.
+- **SLA at risk**: open alerts with a running deadline (`/alerts/queue`
+  views open + overdue), nearest first, overdue count.
+- **Security & risk**: new `GET /devices/risk` (5-minute SWR cache,
+  optional client_id) — antivirus, real-time, firewall, BitLocker,
+  signatures (client_reports.security.evaluate), failing disks, disks over
+  90%, restarts pending over 7 days, crashes/hardware/disk events in 7 days;
+  each check opens its devices.
+- **Agent versions** per family with the share on the active version.
+- `/actions/recent` filters by scope in SQL (was one device read per action).
+- Tests: pytest 1827 + 5 new (`tests/test_fleet_risk.py`); Vitest 489,
+  Playwright 244 (a11y caught the overdue chip at 4.27:1, fixed).
+- Deploy 00:07–00:18: dump `pre-dashboard-risk-20261106-000744.sql.gz`
+  (240 MB, load 7 during the dump); rollback images
+  `pre-dashboard-risk-8c65558` (backend + frontend); no migration; both
+  images built under `nice` before any restart; backend ready in 10 s
+  (first minute p95 3.7 s while the fleet reconnected, then 0.21 s, 0 5xx);
+  frontend healthy in 8 s; guard + smoke passed; 0 errors.
+- Production numbers at deploy (1,045 active devices, compute 641 ms):
+  security reported by 908 (avg score 74.9, 844 protected); no antivirus 50,
+  real-time off 14, firewall off 108, BitLocker off 769, old signatures 32;
+  failing disks 10, disks over 90% 58, restarts pending over 7 days 25,
+  crashes/hardware/disk events this week 301 (worth tuning if it proves noisy).
+  Agents: 2.1.47 on 859 Windows, 2.1.20 on 117, 2.1.35 on 44.
+
 ## [2026-11-05] DASHBOARD-MODERN-2026-11-05 — frontend `a7c3f32`: sectioned dashboard with fleet pulse and scorecard
 
 **Owner: "mund ta permirsosh dashboard por pa hequr analizat … supermoderne",
