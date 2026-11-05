@@ -29,8 +29,17 @@ import {
   SubHead,
   percent,
 } from "../components/MeterPanels";
-import { Link, useNavigate } from "react-router-dom";
-import { Device, FleetInsights, getDevices, getFleetInsights } from "../api/devices";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import {
+  Device,
+  DeviceFleetOverview,
+  FleetInsights,
+  FleetRisk,
+  getDevices,
+  getFleetInsights,
+  getFleetRisk,
+} from "../api/devices";
+import { getAlertQueue } from "../api/alerts";
 import { AlertFlowChart, AvailabilityChart } from "../components/InsightCharts";
 import { Client, getClients } from "../api/clients";
 import SystemStatusCard from "../components/SystemStatusCard";
@@ -44,13 +53,21 @@ import {
   statusColor,
   statusDotColor,
 } from "../api/actions";
-import { AnimatedNumber, Button, EmptyState, PageHeader, SkeletonRows, TablePagination } from "../components/ui";
+import {
+  AnimatedNumber,
+  Button,
+  EmptyState,
+  PageHeader,
+  Select,
+  SkeletonRows,
+  TablePagination,
+} from "../components/ui";
 import { formatLocalDateTime, timeAgo } from "../utils/time";
 import { formatCount } from "../utils/number";
 import { freshnessTone, humanize, TERMS, TONE } from "../utils/deviceStatus";
 import { deviceFreshness } from "../utils/devicePresence";
 import { DeviceStatusChip } from "../components/DeviceStatusChip";
-import { ALERT_KIND_LABELS, ALERT_SEVERITY_TONE, AlertKind } from "../types/alert";
+import { Alert, ALERT_KIND_LABELS, ALERT_SEVERITY_TONE, AlertCount, AlertKind } from "../types/alert";
 import { usePollingRefresh } from "../hooks/usePollingRefresh";
 import { useNow } from "../hooks/useNow";
 import { DeviceRealtimeEvent } from "../services/deviceRealtime";
@@ -70,6 +87,8 @@ import {
   Sparkline,
   windowDelta,
 } from "../components/DashboardWidgets";
+import { AgentVersionsCard, SecurityRiskCard, SlaAtRiskCard } from "../components/DashboardPanels";
+import { useClientScope } from "../hooks/useClientScope";
 import "./Dashboard.css";
 
 // Latest enrollments: the newest 50, shown 10, 20 or 50 to a page.
@@ -98,6 +117,12 @@ const CATEGORY_FILTERS: Record<string, string> = {
   servers: "/devices?filter=servers",
   clientpc: "/devices?filter=workstations",
 };
+
+/** Security and agent-version checks are cached five minutes on the server. */
+const RISK_POLL_MS = 5 * 60_000;
+/** Deadlines count down in the browser; the list itself is re-read every minute. */
+const SLA_POLL_MS = 60_000;
+const NO_ALERTS: AlertCount = { total_open: 0, by_severity: {}, by_kind: {}, devices_affected: 0 };
 
 // Header chips sit next to a size="sm" Button, so they share its 32px height.
 const HEADER_CHIP = "th-status-chip !h-8";
@@ -132,16 +157,58 @@ export default function Dashboard() {
   useNow();
   const { user, hasPermission } = useAuth();
   const {
-    alertCount,
-    alertCountReady,
-    fleetOverview,
+    alertCount: fleetAlertCount,
+    alertCountReady: fleetAlertCountReady,
+    fleetOverview: fleetWideOverview,
     fleetOverviewLoading,
     lastFetchTime,
     latestEvent,
     realtimeStatus,
     refreshFleetOverview,
-    totalOpenAlerts,
+    totalOpenAlerts: fleetOpenAlerts,
   } = useAppData();
+
+  // ?client=<id> narrows the dashboard to one client: its profile stands in
+  // for the fleet overview, so every card below reads the same fields.
+  // Operators and system status stay platform-wide.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const clientParam = Number(searchParams.get("client"));
+  const clientId = Number.isInteger(clientParam) && clientParam > 0 ? clientParam : null;
+  const { data: scoped, reload: reloadScoped } = useClientScope(clientId);
+  const profile = clientId != null && scoped?.clientId === clientId ? scoped.profile : null;
+  const fleetOverview: DeviceFleetOverview | null =
+    clientId == null
+      ? fleetWideOverview
+      : profile
+        ? {
+            stats: profile.stats,
+            tree_counts: {
+              total: profile.stats.total,
+              unassigned: 0,
+              by_client: { [clientId]: profile.stats.total },
+              by_category: profile.by_category,
+              by_client_status: { [clientId]: profile.stats },
+            },
+            critical: profile.health_critical,
+            warnings: profile.health_warning,
+            average_health: profile.average_health,
+            needs_updates: profile.needs_updates,
+            agents_outdated: profile.agents_outdated,
+            active_agent_version: fleetWideOverview?.active_agent_version ?? null,
+            active_agent_sha256: fleetWideOverview?.active_agent_sha256 ?? null,
+            active_agent_versions: fleetWideOverview?.active_agent_versions,
+            loaded_at: fleetWideOverview?.loaded_at ?? new Date().toISOString(),
+          }
+        : null;
+  const alertCount = clientId == null ? fleetAlertCount : (profile?.alerts ?? NO_ALERTS);
+  const alertCountReady = clientId == null ? fleetAlertCountReady : profile != null;
+  const totalOpenAlerts = clientId == null ? fleetOpenAlerts : (profile?.alerts.total_open ?? 0);
+  const selectClient = (id: number | null) => {
+    const next = new URLSearchParams(searchParams);
+    if (id == null) next.delete("client");
+    else next.set("client", String(id));
+    setSearchParams(next, { replace: true });
+  };
 
   const stats = fleetOverview?.stats ?? { total: 0, online: 0, stale: 0, offline: 0 };
   const total = stats.total;
@@ -151,35 +218,34 @@ export default function Dashboard() {
   const averageHealth = fleetOverview?.average_health ?? null;
   const patchCount = fleetOverview?.needs_updates ?? 0;
   const criticalCount = fleetOverview?.critical ?? 0;
-  const loading = fleetOverviewLoading && fleetOverview === null;
-  const [recentDevices, setRecentDevices] = useState<Device[]>(
+  const loading = clientId == null ? fleetOverviewLoading && fleetOverview === null : profile === null;
+  const [allRecentDevices, setRecentDevices] = useState<Device[]>(
     () => appCache.peek<Device[]>(CACHE_KEYS.dashboardRecentDevices) ?? [],
   );
   // Mirrors recentDevices so realtime events can patch it without a stale closure.
-  const recentDevicesRef = useRef(recentDevices);
+  const recentDevicesRef = useRef(allRecentDevices);
   const [enrollmentPage, setEnrollmentPage] = useState(1);
   const [enrollmentPageSize, setEnrollmentPageSize] = useState(ENROLLMENT_PAGE_SIZES[0]);
   const [actionPage, setActionPage] = useState(1);
   const [actionPageSize, setActionPageSize] = useState(ACTION_PAGE_SIZES[0]);
-  const [recentActions, setRecentActions] = useState<RemoteActionWithDevice[]>(
+  const [allRecentActions, setRecentActions] = useState<RemoteActionWithDevice[]>(
     () => appCache.peek<RemoteActionWithDevice[]>(CACHE_KEYS.recentActions) ?? [],
   );
   const [operators, setOperators] = useState<OperatorPresenceRecord[]>(
     () => appCache.peek<OperatorPresenceRecord[]>(CACHE_KEYS.operatorPresence) ?? [],
   );
-  const [clientNames, setClientNames] = useState<Record<number, string>>(() =>
-    Object.fromEntries((appCache.peek<Client[]>(CACHE_KEYS.clientsList) ?? []).map((c) => [c.id, c.name])),
-  );
+  const [clients, setClients] = useState<Client[]>(() => appCache.peek<Client[]>(CACHE_KEYS.clientsList) ?? []);
+  const clientNames: Record<number, string> = Object.fromEntries(clients.map((c) => [c.id, c.name]));
   useEffect(() => {
     getClients()
-      .then((list) => setClientNames(Object.fromEntries(list.map((c) => [c.id, c.name]))))
+      .then(setClients)
       .catch(() => undefined);
   }, []);
   // Trends are kept per user, so returning to the dashboard shows the last
   // result at once while a fresh one loads.
   const insightsKey = `${CACHE_KEYS.dashboardInsights}.${user?.id ?? "anon"}`;
-  const [insights, setInsights] = useState<FleetInsights | null>(() => appCache.peek<FleetInsights>(insightsKey));
-  const [insightsFailed, setInsightsFailed] = useState(false);
+  const [allInsights, setInsights] = useState<FleetInsights | null>(() => appCache.peek<FleetInsights>(insightsKey));
+  const [allInsightsFailed, setInsightsFailed] = useState(false);
   const insightsLoadedAt = useRef(0);
   const loadInsights = useCallback(() => {
     setInsightsFailed(false);
@@ -214,7 +280,9 @@ export default function Dashboard() {
     actions: false,
     operators: false,
   });
-  const [activityReady, setActivityReady] = useState(() => appCache.peek(CACHE_KEYS.dashboardRecentDevices) !== null);
+  const [fleetActivityReady, setActivityReady] = useState(
+    () => appCache.peek(CACHE_KEYS.dashboardRecentDevices) !== null,
+  );
 
   /** Loads the sections whose cached copy is older than its TTL (or than maxAgeMs, if shorter). */
   const loadDashboard = useCallback(async (maxAgeMs = Infinity) => {
@@ -381,10 +449,86 @@ export default function Dashboard() {
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, [refreshDashboard, refreshStaleInsights]);
 
-  const retryActivity = useCallback(() => {
+  const retryFleetActivity = useCallback(() => {
     setActivityReady(false);
     void refreshDashboard();
   }, [refreshDashboard]);
+
+  // With a client chosen, the lists and trends are that client's.
+  const scopedReady = clientId != null && scoped?.clientId === clientId;
+  const recentDevices = clientId == null ? allRecentDevices : (scopedReady && scoped.devices) || [];
+  const recentActions = clientId == null ? allRecentActions : (scopedReady && scoped.actions) || [];
+  const insights = clientId == null ? allInsights : scopedReady ? scoped.insights : null;
+  const insightsFailed = clientId == null ? allInsightsFailed : scopedReady && scoped.failed.insights;
+  const activityReady =
+    clientId == null
+      ? fleetActivityReady
+      : scopedReady &&
+        (scoped.devices != null || scoped.failed.devices) &&
+        (scoped.actions != null || scoped.failed.actions);
+  const shownFailed =
+    clientId == null
+      ? failed
+      : {
+          devices: scopedReady && scoped.failed.devices,
+          actions: scopedReady && scoped.failed.actions,
+          operators: failed.operators,
+        };
+  const retryActivity = clientId == null ? retryFleetActivity : reloadScoped;
+  const retryInsights = clientId == null ? loadInsights : reloadScoped;
+
+  // Security & risk and agent versions: fleet-wide or for the chosen client.
+  const clientIdRef = useRef(clientId);
+  const [risk, setRisk] = useState<FleetRisk | null>(null);
+  const [riskFailed, setRiskFailed] = useState(false);
+  const loadRisk = useCallback(() => {
+    setRiskFailed(false);
+    const forClient = clientId;
+    getFleetRisk(forClient ?? undefined)
+      .then((data) => {
+        if (forClient === clientIdRef.current) setRisk(data);
+      })
+      .catch(() => {
+        if (forClient === clientIdRef.current) setRiskFailed(true);
+      });
+  }, [clientId]);
+  // SLA at risk: open alerts with a running deadline, and how many are overdue.
+  const [sla, setSla] = useState<{ alerts: Alert[] | null; overdue: number; failed: boolean }>({
+    alerts: null,
+    overdue: 0,
+    failed: false,
+  });
+  const loadSla = useCallback(() => {
+    const forClient = clientId ?? undefined;
+    Promise.all([
+      getAlertQueue({ view: "open", clientId: forClient, limit: 40 }),
+      getAlertQueue({ view: "overdue", clientId: forClient, limit: 1 }),
+    ])
+      .then(([open, overdue]) => {
+        if ((forClient ?? null) === clientIdRef.current)
+          setSla({ alerts: open.items, overdue: overdue.total, failed: false });
+      })
+      .catch(() => {
+        if ((forClient ?? null) === clientIdRef.current) setSla((prev) => ({ ...prev, failed: true }));
+      });
+  }, [clientId]);
+  useEffect(() => {
+    clientIdRef.current = clientId;
+    setRisk(null);
+    setSla({ alerts: null, overdue: 0, failed: false });
+    loadRisk();
+    loadSla();
+    const riskTimer = window.setInterval(() => {
+      if (document.visibilityState === "visible") loadRisk();
+    }, RISK_POLL_MS);
+    const slaTimer = window.setInterval(() => {
+      if (document.visibilityState === "visible") loadSla();
+    }, SLA_POLL_MS);
+    return () => {
+      window.clearInterval(riskTimer);
+      window.clearInterval(slaTimer);
+    };
+  }, [clientId, loadRisk, loadSla]);
 
   const availability = total > 0 ? Math.round((online / total) * 100) : 0;
   const onlinePct = total > 0 ? (online / total) * 100 : 0;
@@ -423,7 +567,21 @@ export default function Dashboard() {
   }));
   const clientStatus = fleetOverview?.tree_counts.by_client_status ?? {};
   const clientCount = Object.keys(fleetOverview?.tree_counts.by_client ?? {}).length;
+  const groupCount = profile?.groups.length ?? 0;
+  const clientName = clientId != null ? (profile?.client.name ?? clientNames[clientId] ?? `Client #${clientId}`) : null;
   const clientBreakdown: ClientRow[] = (() => {
+    if (clientId != null) {
+      // One client: its groups, each opening the client's folder.
+      return [...(profile?.groups ?? [])]
+        .filter((group) => group.devices > 0)
+        .sort((a, b) => b.devices - a.devices)
+        .map((group) => ({
+          id: `g${group.id}`,
+          name: group.name,
+          count: group.devices,
+          to: `/devices?folder=client-${clientId}`,
+        }));
+    }
     const byClient = fleetOverview?.tree_counts.by_client ?? {};
     const rows: ClientRow[] = Object.entries(byClient)
       .map(([id, count]) => ({
@@ -625,9 +783,28 @@ export default function Dashboard() {
       <div className="th-dash hidden md:block">
         <PageHeader
           title="Dashboard"
-          description="Fleet health, open issues and recent activity across all clients."
+          description={
+            clientName
+              ? `${clientName}: health, open issues and recent activity. Operators and system status are platform-wide.`
+              : "Fleet health, open issues and recent activity across all clients."
+          }
           actions={
             <>
+              <Select
+                value={clientId != null ? String(clientId) : "all"}
+                onChange={(value) => selectClient(value === "all" ? null : Number(value))}
+                aria-label="Show the dashboard for"
+                className="th-dash-client-picker"
+                options={[
+                  { value: "all", label: "All clients" },
+                  ...[...clients]
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((c) => ({ value: String(c.id), label: c.name })),
+                  ...(clientId != null && !clients.some((c) => c.id === clientId)
+                    ? [{ value: String(clientId), label: clientName ?? `Client #${clientId}` }]
+                    : []),
+                ]}
+              />
               {onlineOperators.length > 0 &&
                 (() => {
                   const content = (
@@ -677,6 +854,9 @@ export default function Dashboard() {
                   appCache.invalidate();
                   setActivityReady(false);
                   loadInsights();
+                  loadRisk();
+                  loadSla();
+                  if (clientId != null) reloadScoped();
                   void Promise.all([refreshFleetOverview(true), refreshDashboard()]);
                 }}
               >
@@ -701,7 +881,8 @@ export default function Dashboard() {
                 </span>
               </h2>
               <p className="th-dash-hero-note">
-                Average health score of active devices. Archived devices are excluded.
+                {clientName ? `${clientName} · ` : ""}Average health score of active devices. Archived devices are
+                excluded.
               </p>
               <Briefing items={briefing} loading={loading} />
             </div>
@@ -803,7 +984,16 @@ export default function Dashboard() {
 
         {/* What needs a decision now */}
         <DashSection label="Right now" hint={realtimeStatus === "connected" ? "Live" : "Refreshing every 30 s"}>
-          <div className={`grid gap-4 lg:grid-cols-2 ${isAdmin ? "xl:grid-cols-3" : ""}`}>
+          <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] lg:col-span-2 xl:col-span-1">
+              <SlaAtRiskCard
+                alerts={sla.alerts}
+                overdue={sla.overdue}
+                loading={sla.alerts === null && !sla.failed}
+                failed={sla.failed}
+                onRetry={loadSla}
+              />
+            </div>
             <section className="premium-card th-dash-card flex h-full flex-col p-0" aria-labelledby="attention-title">
               <div className="th-panel-head">
                 <h2 id="attention-title">Needs attention</h2>
@@ -959,7 +1149,20 @@ export default function Dashboard() {
                 )}
               </p>
             </section>
+          </div>
+        </DashSection>
 
+        {/* Protection, device health, agents and the platform itself */}
+        <DashSection label="Security & platform" hint="Refreshed every 5 minutes">
+          <div className={`grid gap-4 lg:grid-cols-2 ${isAdmin ? "xl:grid-cols-3" : ""}`}>
+            <SecurityRiskCard risk={risk} failed={riskFailed} onRetry={loadRisk} />
+            <AgentVersionsCard
+              risk={risk}
+              failed={riskFailed}
+              onRetry={loadRisk}
+              activeWindows={fleetOverview?.active_agent_version ?? null}
+              activeLinux={[...new Set(Object.values(fleetOverview?.active_agent_versions ?? {}))]}
+            />
             {isAdmin && (
               <div className="grid lg:col-span-2 xl:col-span-1">
                 <SystemStatusCard compact />
@@ -976,9 +1179,9 @@ export default function Dashboard() {
               aria-labelledby="devices-by-client-title"
             >
               <div className="th-panel-head">
-                <h2 id="devices-by-client-title">Devices by client</h2>
-                <Link to="/clients" className="th-link-btn">
-                  View clients
+                <h2 id="devices-by-client-title">{clientId != null ? "Devices by group" : "Devices by client"}</h2>
+                <Link to={clientId != null ? `/clients/${clientId}` : "/clients"} className="th-link-btn">
+                  {clientId != null ? "Client profile" : "View clients"}
                 </Link>
               </div>
               {loading ? (
@@ -996,8 +1199,9 @@ export default function Dashboard() {
                 </div>
               )}
               <p className="th-panel-foot mt-auto">
-                {formatCount(clientCount)} {clientCount === 1 ? "client" : "clients"} · bar length is the share of the
-                fleet, colours its status.
+                {clientId != null
+                  ? `${formatCount(groupCount)} ${groupCount === 1 ? "group" : "groups"} · bar length is the share of the client's devices.`
+                  : `${formatCount(clientCount)} ${clientCount === 1 ? "client" : "clients"} · bar length is the share of the fleet, colours its status.`}
               </p>
             </section>
 
@@ -1069,7 +1273,7 @@ export default function Dashboard() {
             <OperatorsPanel
               operators={operators}
               loading={operators.length === 0 && !activityReady}
-              failed={failed.operators}
+              failed={shownFailed.operators}
               onRetry={retryActivity}
               currentUserId={user?.id}
               canManage={canManageOperators}
@@ -1103,7 +1307,7 @@ export default function Dashboard() {
                   {insights ? (
                     <AvailabilityChart series={insights.availability.series} />
                   ) : insightsFailed ? (
-                    <SectionError what="availability" onRetry={loadInsights} />
+                    <SectionError what="availability" onRetry={retryInsights} />
                   ) : (
                     <div
                       className="h-full min-h-[120px] animate-pulse rounded-lg"
@@ -1159,7 +1363,7 @@ export default function Dashboard() {
                   {insights ? (
                     <AlertFlowChart series={insights.alerts.series} />
                   ) : insightsFailed ? (
-                    <SectionError what="alert trends" onRetry={loadInsights} />
+                    <SectionError what="alert trends" onRetry={retryInsights} />
                   ) : (
                     <div
                       className="h-full min-h-[120px] animate-pulse rounded-lg"
@@ -1188,7 +1392,7 @@ export default function Dashboard() {
                 </span>
               </div>
               {!insights && insightsFailed ? (
-                <SectionError what="problem devices" onRetry={loadInsights} />
+                <SectionError what="problem devices" onRetry={retryInsights} />
               ) : !insights ? (
                 <SkeletonRows rows={4} />
               ) : insights.problem_devices.length === 0 ? (
@@ -1263,7 +1467,7 @@ export default function Dashboard() {
                 <p className="flex-1 px-5 py-8 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>
                   Loading devices…
                 </p>
-              ) : recentDevices.length === 0 && failed.devices ? (
+              ) : recentDevices.length === 0 && shownFailed.devices ? (
                 <SectionError what="devices" onRetry={retryActivity} />
               ) : recentDevices.length === 0 ? (
                 <EmptyState
@@ -1346,7 +1550,7 @@ export default function Dashboard() {
                 <p className="flex-1 px-5 py-8 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>
                   Loading actions…
                 </p>
-              ) : recentActions.length === 0 && failed.actions ? (
+              ) : recentActions.length === 0 && shownFailed.actions ? (
                 <SectionError what="remote actions" onRetry={retryActivity} />
               ) : recentActions.length === 0 ? (
                 <EmptyState

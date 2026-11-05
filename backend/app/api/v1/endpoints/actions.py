@@ -61,15 +61,19 @@ def list_recent_actions(
     _: Operator = Depends(get_current_operator),
     scope: Optional[AllowedScope] = Depends(get_operator_scope),
     limit: int = Query(default=20, le=100),
+    client_id: Optional[int] = None,
 ):
-    """Return the most recent actions across all devices (scope-filtered)."""
-    actions = RemoteActionService(db).get_recent_global(limit=limit * 3 if scope else limit)
+    """Return the most recent actions across all devices (scope-filtered);
+    with client_id, only that client's devices."""
+    if client_id is not None:
+        from app.services.operator_scope_service import OperatorScopeService
+
+        scope = OperatorScopeService(db).scope_for_client(scope, client_id)
+        if scope is None:
+            raise HTTPException(status_code=404, detail="Client not found")
+    actions = RemoteActionService(db).get_recent_global(limit=limit, scope=scope)
     result = []
     for action in actions:
-        if scope is not None:
-            device = DeviceService(db).get_device(action.device_id)
-            if not device or not device_in_scope(device.client_id, device.group_id, device.id, scope):
-                continue
         resp = RemoteActionWithDevice.model_validate(action)
         if action.device:
             resp.device_hostname = action.device.hostname

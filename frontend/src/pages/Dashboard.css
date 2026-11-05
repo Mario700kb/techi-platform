@@ -46,6 +46,7 @@ html.light .th-dash {
 
 /* Cards: rounder, and a quiet lift on hover. */
 .th-dash .th-dash-card {
+  min-width: 0;
   border-radius: var(--dash-radius);
   transition:
     border-color 200ms ease,
@@ -465,6 +466,164 @@ html.light .th-dash-hero {
     transform: none;
   }
   .th-dash-kpi-bar > span {
+    transition: none;
+  }
+}
+
+/* ── Client picker in the header ── */
+.th-dash-client-picker {
+  min-width: 200px;
+}
+
+/* ── SLA at risk ── */
+.th-sla-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  transition: background-color 150ms ease;
+}
+.th-sla-row:hover {
+  background: var(--th-sidebar-nav-hover);
+}
+.th-sla-row[data-overdue] {
+  box-shadow: inset 2px 0 0 var(--th-status-critical);
+}
+.th-sla-title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--th-text-primary);
+}
+.th-sla-meta {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--th-text-muted);
+}
+.th-sla-due {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--due-tone) 35%, transparent);
+  background: color-mix(in srgb, var(--due-tone) 10%, transparent);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  /* Toward the text colour: 4.5:1 on the tinted chip in both themes. */
+  color: color-mix(in srgb, var(--due-tone) 72%, var(--th-text-primary));
+}
+
+/* ── Security & risk ── */
+.th-risk-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--th-text-secondary);
+  transition: background-color 150ms ease;
+}
+.th-risk-row:not(:disabled):hover {
+  background: var(--th-sidebar-nav-hover);
+}
+.th-risk-row > i {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--row-tone);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--row-tone) 18%, transparent);
+}
+.th-risk-row strong {
+  font-weight: 650;
+  color: var(--th-text-primary);
+}
+.th-risk-row[data-empty] {
+  cursor: default;
+  color: var(--th-text-faint);
+}
+.th-risk-row[data-empty] > i {
+  box-shadow: none;
+}
+.th-risk-row[data-empty] strong {
+  color: var(--th-text-faint);
+  font-weight: 500;
+}
+.th-risk-chevron {
+  flex: none;
+  color: var(--th-text-faint);
+  transition: transform 200ms var(--th-ease-out);
+}
+.th-risk-row[data-empty] .th-risk-chevron {
+  visibility: hidden;
+}
+.th-risk-chevron[data-open] {
+  transform: rotate(180deg);
+}
+.th-risk-devices {
+  margin: 2px 8px 8px 30px;
+  padding-left: 10px;
+  border-left: 1px solid var(--th-border-strong);
+  animation: th-rise 220ms var(--th-ease-out) backwards;
+}
+.th-risk-device {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--th-text-primary);
+}
+.th-risk-device:hover {
+  background: var(--th-sidebar-nav-hover);
+}
+.th-risk-client {
+  color: var(--th-text-muted);
+}
+.th-risk-detail {
+  flex: none;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--th-text-faint);
+}
+.th-risk-more {
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--th-text-faint);
+}
+
+/* ── Agent versions ── */
+.th-version-hero {
+  padding: 0 20px 6px;
+}
+.th-version-pct {
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  color: var(--th-text-primary);
+}
+.th-version-caption {
+  font-size: 12px;
+  color: var(--th-text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .th-risk-devices {
+    animation: none;
+  }
+  .th-risk-chevron {
     transition: none;
   }
 }

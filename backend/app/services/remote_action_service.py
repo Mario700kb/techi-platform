@@ -300,8 +300,8 @@ class RemoteActionService:
         total = sum(counts.values())
         return ActionStatusStats(total=total, **{k: counts.get(k, 0) for k in ActionStatusStats.model_fields if k != "total"})
 
-    def get_recent_global(self, limit: int = 20) -> List[RemoteAction]:
-        return self.repo.get_recent_global(limit=limit)
+    def get_recent_global(self, limit: int = 20, scope=None) -> List[RemoteAction]:
+        return self.repo.get_recent_global(limit=limit, scope=scope)
 
     def cancel_action(self, action_id: int) -> Optional[RemoteAction]:
         action = self.repo.get(action_id)

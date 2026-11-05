@@ -418,6 +418,37 @@ export async function getFleetInsights(days = 30, clientId?: number): Promise<Fl
   return fetchJson<FleetInsights>(`/api/v1/devices/insights?days=${days}${client}`);
 }
 
+export interface RiskDevice {
+  id: number;
+  name: string;
+  client_name: string | null;
+  detail: string;
+}
+
+export interface RiskCheck {
+  key: string;
+  label: string;
+  group: "security" | "health";
+  severity: "critical" | "warning";
+  count: number;
+  /** The most serious few; `count` is the full number. */
+  devices: RiskDevice[];
+}
+
+export interface FleetRisk {
+  devices: number;
+  security: { reported: number; average_score: number | null; protected: number };
+  health_reported: number;
+  checks: RiskCheck[];
+  agent_versions: { family: "windows" | "linux"; version: string; count: number }[];
+  generated_at: string;
+}
+
+/** Security posture and device health checks, and agent versions in use (cached 5 min on the server). */
+export async function getFleetRisk(clientId?: number): Promise<FleetRisk> {
+  return fetchJson<FleetRisk>(`/api/v1/devices/risk${clientId != null ? `?client_id=${clientId}` : ""}`);
+}
+
 // Counts for every status tab and quick filter over one selection — the same
 // conditions the list uses, so a chip's number equals the rows it opens.
 export async function getDeviceQuickCounts(

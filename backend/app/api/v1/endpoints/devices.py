@@ -46,6 +46,8 @@ from app.services.device_service import DeviceService
 from app.services.device_overview_service import DeviceOverviewService
 from app.services.fleet_insights_service import FleetInsightsService
 from app.schemas.fleet_insights import FleetInsights
+from app.schemas.fleet_risk import FleetRisk
+from app.services.fleet_risk_service import FleetRiskService
 from app.services.device_summary_service import DeviceSummaryService
 from app.services.device_telemetry_service import DeviceTelemetryService
 from app.services.device_offline_analysis_service import analyze_device
@@ -284,6 +286,22 @@ def read_fleet_insights(
         if scope is None:
             raise HTTPException(status_code=404, detail="Client not found")
     return FleetInsightsService(db).get_insights(scope=scope, days=days)
+
+
+@router.get("/risk", response_model=FleetRisk)
+def read_fleet_risk(
+    client_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    scope: Optional[AllowedScope] = Depends(get_operator_scope),
+):
+    """Dashboard "Security & risk": security posture and device health checks
+    with the devices behind each, and the agent versions in use. With
+    client_id, the same for that client."""
+    if client_id is not None:
+        scope = OperatorScopeService(db).scope_for_client(scope, client_id)
+        if scope is None:
+            raise HTTPException(status_code=404, detail="Client not found")
+    return FleetRiskService(db).get_risk(scope=scope)
 
 
 @router.get("/count")

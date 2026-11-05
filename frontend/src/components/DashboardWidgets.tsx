@@ -245,6 +245,8 @@ export function ScoreTile({
 
 export interface ClientRow {
   id: string;
+  /** Where the row leads; by default the client's folder in the device list. */
+  to?: string;
   name: string;
   count: number;
   online?: number;
@@ -260,11 +262,12 @@ export function ClientStatusList({ rows, total }: { rows: ClientRow[]; total: nu
         const hasMix = row.online != null && row.count > 0;
         const onlineShare = hasMix ? Math.round(((row.online ?? 0) / row.count) * 100) : null;
         const to =
-          row.id === "none"
+          row.to ??
+          (row.id === "none"
             ? "/devices?folder=unassigned"
             : row.id === "other"
               ? "/clients"
-              : `/devices?folder=client-${row.id}`;
+              : `/devices?folder=client-${row.id}`);
         return (
           <li key={row.id} className="th-share-row" style={{ "--i": index } as CSSProperties}>
             <Link

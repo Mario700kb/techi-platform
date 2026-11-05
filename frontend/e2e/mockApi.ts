@@ -215,6 +215,105 @@ export const overview: DeviceFleetOverview = {
   loaded_at: iso(0),
 };
 
+// Security & risk: a few failing checks with the devices behind them.
+const fleetRisk = {
+  devices: 5,
+  security: { reported: 4, average_score: 81.5, protected: 3 },
+  health_reported: 4,
+  checks: [
+    {
+      key: "no_antivirus",
+      label: "No antivirus enabled",
+      group: "security",
+      severity: "critical",
+      count: 0,
+      devices: [],
+    },
+    {
+      key: "realtime_off",
+      label: "Real-time protection off",
+      group: "security",
+      severity: "critical",
+      count: 1,
+      devices: [
+        { id: 4, name: "BH-WH-SCANNER", client_name: "Blue Harbor Logistics", detail: "Real-time protection off" },
+      ],
+    },
+    {
+      key: "firewall_off",
+      label: "Firewall off",
+      group: "security",
+      severity: "warning",
+      count: 2,
+      devices: [
+        { id: 2, name: "NW-DOCTOR-02", client_name: "Northwind Clinic", detail: "Firewall off: Public" },
+        {
+          id: 5,
+          name: "BH-OFFICE-LAPTOP",
+          client_name: "Blue Harbor Logistics",
+          detail: "Firewall off: Private, Public",
+        },
+      ],
+    },
+    {
+      key: "bitlocker_off",
+      label: "BitLocker off on the system drive",
+      group: "security",
+      severity: "warning",
+      count: 1,
+      devices: [
+        { id: 5, name: "BH-OFFICE-LAPTOP", client_name: "Blue Harbor Logistics", detail: "BitLocker off on C:" },
+      ],
+    },
+    {
+      key: "signatures_old",
+      label: "Antivirus signatures over 7 days old",
+      group: "security",
+      severity: "warning",
+      count: 0,
+      devices: [],
+    },
+    {
+      key: "disk_failing",
+      label: "Disk reporting health problems",
+      group: "health",
+      severity: "critical",
+      count: 0,
+      devices: [],
+    },
+    {
+      key: "disk_full",
+      label: "Disk over 90% full",
+      group: "health",
+      severity: "warning",
+      count: 1,
+      devices: [{ id: 3, name: "NW-SRV-01", client_name: "Northwind Clinic", detail: "94% used" }],
+    },
+    {
+      key: "reboot_pending",
+      label: "Restart pending over 7 days",
+      group: "health",
+      severity: "warning",
+      count: 1,
+      devices: [{ id: 1, name: "NW-RECEPTION-01", client_name: "Northwind Clinic", detail: "9 days" }],
+    },
+    {
+      key: "crashes",
+      label: "Crashes or hardware errors this week",
+      group: "health",
+      severity: "warning",
+      count: 0,
+      devices: [],
+    },
+  ],
+  agent_versions: [
+    { family: "windows", version: "2.1.20", count: 3 },
+    { family: "windows", version: "2.1.19", count: 1 },
+    { family: "linux", version: "2.1.39", count: 1 },
+  ],
+  generated_at: new Date().toISOString(),
+};
+
 const insights: FleetInsights = {
   availability: {
     days: 30,
@@ -666,6 +765,7 @@ const HANDLERS: Record<string, Handler> = {
   "GET /api/v1/platform/features": (route) => json(route, features),
   "GET /api/v1/devices/overview": (route) => json(route, overview),
   "GET /api/v1/devices/insights": (route) => json(route, insights),
+  "GET /api/v1/devices/risk": (route) => json(route, fleetRisk),
   "GET /api/v1/trusted-domains": (route) => json(route, []),
   "GET /api/v1/devices/tree": (route) => json(route, overview.tree_counts),
   "GET /api/v1/devices/quick-counts": (route) => json(route, quickCounts),

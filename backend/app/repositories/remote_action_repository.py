@@ -87,13 +87,18 @@ class RemoteActionRepository:
             counts[key] = counts.get(key, 0) + 1
         return counts
 
-    def get_recent_global(self, limit: int = 20) -> List[RemoteAction]:
-        actions = (
-            self.db.query(RemoteAction)
-            .order_by(RemoteAction.created_at.desc())
-            .limit(limit)
-            .all()
-        )
+    def get_recent_global(self, limit: int = 20, scope=None) -> List[RemoteAction]:
+        """Newest actions; with *scope*, only on devices it allows (filtered
+        in SQL, so a narrow scope still fills the page)."""
+        query = self.db.query(RemoteAction)
+        if scope is not None:
+            from app.models.device import Device
+            from app.repositories.device_repository import DeviceRepository
+
+            query = DeviceRepository(self.db)._apply_scope_filter(
+                query.join(Device, Device.id == RemoteAction.device_id), scope
+            )
+        actions = query.order_by(RemoteAction.created_at.desc()).limit(limit).all()
         for action in actions:
             self._expire_if_needed(action)
         return actions

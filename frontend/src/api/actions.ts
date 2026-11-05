@@ -164,8 +164,9 @@ export async function retryAction(actionId: number): Promise<RemoteAction> {
   return fetchJson<RemoteAction>(`/api/v1/actions/${actionId}/retry`, { method: "POST" });
 }
 
-export async function getRecentActions(limit = 20): Promise<RemoteActionWithDevice[]> {
-  return fetchJson<RemoteActionWithDevice[]>(`/api/v1/actions/recent?limit=${limit}`);
+export async function getRecentActions(limit = 20, clientId?: number): Promise<RemoteActionWithDevice[]> {
+  const client = clientId != null ? `&client_id=${clientId}` : "";
+  return fetchJson<RemoteActionWithDevice[]>(`/api/v1/actions/recent?limit=${limit}${client}`);
 }
 
 export function isTerminalStatus(status: ActionStatus): boolean {
