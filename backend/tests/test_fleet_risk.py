@@ -104,6 +104,46 @@ def test_security_and_health_checks_name_the_devices_behind_them(db):
     assert _check(result, "realtime_off")["count"] == 0
 
 
+def _events(*items):
+    return {"events": [
+        {"record_id": i, "source": source, "event_id": event_id, "at": (NOW - timedelta(hours=hours)).isoformat()}
+        for i, (source, event_id, hours) in enumerate(items)
+    ]}
+
+
+POWER = "microsoft-windows-kernel-power"
+
+
+def test_a_lost_power_is_not_a_crash_and_counts_only_as_a_pattern(db):
+    _device(db, 1, "ONE-OFF")  # one shutdown: both events of the same boot
+    _inventory(db, 1, health=_events((POWER, 41, 30), ("eventlog", 6008, 30)))
+    _device(db, 2, "PATTERN")
+    _inventory(db, 2, health=_events((POWER, 41, 30), ("eventlog", 6008, 30), (POWER, 41, 60)))
+    db.add(Device(id=3, hostname="SERVER", client_id=1, platform="windows", device_type=DeviceType.SERVER,
+                  status=DeviceStatus.ONLINE, last_seen=_naive(NOW)))
+    db.commit()
+    _inventory(db, 3, health=_events((POWER, 41, 30)))
+
+    result = svc.FleetRiskService(db).get_risk()
+
+    assert _check(result, "crashes")["count"] == 0
+    shutdowns = _check(result, "shutdowns")
+    assert [(d["name"], d["detail"]) for d in shutdowns["devices"]] == [("PATTERN", "2 shutdowns"), ("SERVER", "1 shutdown")]
+
+
+def test_real_errors_count_and_a_few_disk_retries_do_not(db):
+    _device(db, 1, "BLUE-SCREEN")
+    _inventory(db, 1, health=_events(("bugcheck", 1001, 5)))
+    _device(db, 2, "USB-RETRIES")
+    _inventory(db, 2, health=_events(("disk", 153, 5), ("disk", 153, 6)))
+    _device(db, 3, "BAD-DISK")
+    _inventory(db, 3, health=_events(("disk", 153, 5), ("disk", 153, 6), ("disk", 51, 7)))
+
+    crashes = _check(svc.FleetRiskService(db).get_risk(), "crashes")
+
+    assert [(d["name"], d["detail"]) for d in crashes["devices"]] == [("BAD-DISK", "3 events"), ("BLUE-SCREEN", "1 event")]
+
+
 def test_agent_versions_by_family_most_common_first_without_connectors(db):
     for i in range(3):
         _device(db, 10 + i, f"W{i}", version="2.1.47")

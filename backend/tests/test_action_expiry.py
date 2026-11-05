@@ -48,3 +48,50 @@ def test_overdue_open_actions_expire_and_the_rest_stay(db):
     assert fresh.status == ActionStatus.RUNNING
     assert done.status == ActionStatus.COMPLETED
     assert RemoteActionRepository(db).expire_overdue() == 0
+
+
+def test_expiry_is_announced_to_live_consoles_with_the_reason(db, monkeypatch):
+    """A console holds the last state it heard: without an event an update that
+    ran out of time stayed on "Confirming the new version" until a reload."""
+    from app.services import remote_action_service as svc
+
+    published = []
+    monkeypatch.setattr(svc, "_publish_action_status", lambda a, event: published.append((a.id, a.status, event.value)))
+
+    swept = action(db, ActionStatus.RUNNING, age_s=2700)
+    swept.stage = "confirming"
+    db.commit()
+    read = action(db, ActionStatus.RUNNING, age_s=2700)
+    read.stage = "restarting"
+    db.commit()
+
+    repo = RemoteActionRepository(db)
+    repo._expire_if_needed(read)
+    repo.expire_overdue()
+
+    assert sorted(published) == sorted([
+        (read.id, ActionStatus.EXPIRED, "action_status_changed"),
+        (swept.id, ActionStatus.EXPIRED, "action_status_changed"),
+    ])
+    assert "did not report the new version" in swept.error_message
+    assert "did not come back" in read.error_message
+
+
+def test_an_action_expired_before_any_progress_keeps_no_invented_reason(db):
+    never_started = action(db, ActionStatus.SENT, age_s=2700)
+    RemoteActionRepository(db).expire_overdue()
+    db.refresh(never_started)
+    assert never_started.status == ActionStatus.EXPIRED
+    assert never_started.error_message is None
+
+
+def test_a_self_update_without_a_timeout_outlasts_the_swap_watch(db):
+    from app.schemas.remote_action import ActionType, RemoteActionCreate
+    from app.services.remote_action_service import _execution_timeout
+
+    def update(timeout):
+        return RemoteActionCreate(action_type=ActionType.SELF_UPDATE, execution_timeout_seconds=timeout)
+
+    assert _execution_timeout(update(None)) == 900
+    assert _execution_timeout(update(120)) == 120  # a timeout the caller gives is kept
+    assert _execution_timeout(RemoteActionCreate(action_type=ActionType.RESTART_AGENT)) == 300

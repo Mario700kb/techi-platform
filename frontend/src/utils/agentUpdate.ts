@@ -1,4 +1,5 @@
 import type { ActionStage, RemoteAction } from "../api/actions";
+import { parseUTC } from "./time";
 
 // Live progress of a TECHI Agent self-update (action_type "self_update").
 //
@@ -169,7 +170,9 @@ export function isActiveUpdate(action: RemoteAction | null | undefined): boolean
 
 /** When the update was asked for, in ms (for the elapsed clock). */
 export function updateStartedAt(action: Pick<RemoteAction, "queued_at" | "created_at">): number | null {
-  const at = Date.parse(action.queued_at ?? action.created_at ?? "");
+  // parseUTC: the API sends UTC without a zone, which Date.parse reads as local
+  // time: every running update showed an hour too many in Tirana.
+  const at = parseUTC(action.queued_at ?? action.created_at ?? "").getTime();
   return Number.isFinite(at) ? at : null;
 }
 

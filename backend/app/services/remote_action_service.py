@@ -135,6 +135,20 @@ def _record_audit(db: Session, action: RemoteAction, summary: str, actor: Option
         logger.debug("audit record skipped", exc_info=True)
 
 
+# A self_update may take three 120 s download attempts, a service stop and the
+# helper's own 10-minute watch of the new agent, so the 300 s default ended it
+# while the swap was still being watched. A single update from the panel sends
+# no timeout and got that default; bulk updates send 900. A timeout the caller
+# gives is kept.
+SELF_UPDATE_DEFAULT_TIMEOUT_SECONDS = 900
+
+
+def _execution_timeout(create_in: RemoteActionCreate) -> int:
+    if create_in.execution_timeout_seconds:
+        return create_in.execution_timeout_seconds
+    return SELF_UPDATE_DEFAULT_TIMEOUT_SECONDS if create_in.action_type == ActionType.SELF_UPDATE else 300
+
+
 def _self_update_target_sha(payload: dict) -> str:
     return (payload.get("target_sha256") or payload.get("sha256") or "").strip().lower()
 
@@ -234,7 +248,7 @@ class RemoteActionService:
             action_type=create_in.action_type.value,
             parameters=create_in.parameters,
             created_by=create_in.created_by,
-            execution_timeout_seconds=create_in.execution_timeout_seconds or 300,
+            execution_timeout_seconds=_execution_timeout(create_in),
         )
         logger.info(
             "[action] queued #%d type=%s device=%d by=%s",

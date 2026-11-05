@@ -8,6 +8,7 @@ import {
   mergeActionUpdate,
   pickAgentUpdate,
   updatePercent,
+  updateStartedAt,
   updateStageText,
   updateStep,
   updateTargetVersion,
@@ -104,5 +105,19 @@ describe("merging copies of an update", () => {
     expect(
       latestAgentUpdate([update({ id: 3 }), update({ id: 8 }), { ...update({ id: 20 }), action_type: "ping" }])?.id,
     ).toBe(8);
+  });
+});
+
+describe("updateStartedAt", () => {
+  it("reads the API's zone-less times as UTC, so a running update does not show extra hours", () => {
+    const at = updateStartedAt({ queued_at: "2026-11-05T23:20:06", created_at: "2026-11-05T23:20:06" });
+    expect(at).toBe(Date.UTC(2026, 10, 5, 23, 20, 6));
+  });
+
+  it("falls back to the creation time and to nothing", () => {
+    expect(updateStartedAt({ queued_at: null, created_at: "2026-11-05T23:20:06Z" })).toBe(
+      Date.UTC(2026, 10, 5, 23, 20, 6),
+    );
+    expect(updateStartedAt({ queued_at: null, created_at: "" })).toBeNull();
   });
 });

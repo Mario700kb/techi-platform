@@ -11,6 +11,19 @@ from app.models.remote_action import ActionStatus, EXPIRABLE_STATUSES, RemoteAct
 
 logger = logging.getLogger(__name__)
 
+# Why a self_update ran out of time, by the stage it had reached: the last
+# progress message ("Agent back; confirming the new version") is no reason.
+_SELF_UPDATE_EXPIRED_REASON = {
+    "downloading": "The download did not finish in time.",
+    "verifying": "The agent did not finish checking the download in time.",
+    "installing": "The agent did not finish installing in time.",
+    "restarting": "The agent did not come back after the restart in time.",
+    "confirming": (
+        "The agent came back but did not report the new version in time. "
+        "If it stays on the old version, deploy.log on the device says why."
+    ),
+}
+
 _DEFAULT_LIMIT = 30
 
 
@@ -209,24 +222,38 @@ class RemoteActionRepository:
         logger.info("[action] expired action #%d (type=%s device=%d)", action.id, action.action_type, action.device_id)
         action.status = ActionStatus.EXPIRED
         action.expired_at = utcnow()
+        if action.action_type == "self_update" and action.stage in _SELF_UPDATE_EXPIRED_REASON:
+            action.error_message = _SELF_UPDATE_EXPIRED_REASON[action.stage]
         self.db.add(action)
+
+    def _announce_expired(self, action: RemoteAction) -> None:
+        """A live console holds the action's last state and reads it again only
+        when its socket is down: without this event an update that ran out of
+        time stayed on "Confirming the new version" until a reload."""
+        from app.services.remote_action_service import _publish_action_status
+        from app.websocket.events import RealtimeEventType
+
+        _publish_action_status(action, RealtimeEventType.ACTION_STATUS_CHANGED)
 
     def _expire_if_needed(self, action: RemoteAction) -> RemoteAction:
         if self._overdue(action):
             self._mark_expired(action)
             self.db.commit()
             self.db.refresh(action)
+            self._announce_expired(action)
         return action
 
     def expire_overdue(self) -> int:
         """Expire every open action past its timeout, read or not — an agent
         that died mid-update leaves its action "running" otherwise, and
         reports and counts that read the table directly would believe it."""
-        expired = 0
+        expired = []
         for action in self.db.query(RemoteAction).filter(RemoteAction.status.in_(list(EXPIRABLE_STATUSES))).all():
             if self._overdue(action):
                 self._mark_expired(action)
-                expired += 1
+                expired.append(action)
         if expired:
             self.db.commit()
-        return expired
+            for action in expired:
+                self._announce_expired(action)
+        return len(expired)

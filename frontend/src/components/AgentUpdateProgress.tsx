@@ -23,6 +23,7 @@ import {
   updateStartedAt,
   updateStep,
 } from "../utils/agentUpdate";
+import { parseUTC } from "../utils/time";
 
 // The live progress of a TECHI Agent self-update: the full block that takes
 // the place of the TECHI Agent card's buttons while the update runs, and the
@@ -138,7 +139,7 @@ export function AgentUpdateLive({
   onDismiss,
 }: AgentUpdateLiveProps) {
   const startMs = updateStartedAt(action);
-  const endAt = Date.parse(action.completed_at ?? action.failed_at ?? action.expired_at ?? "");
+  const endAt = parseUTC(action.completed_at ?? action.failed_at ?? action.expired_at ?? "").getTime();
   const elapsed = useElapsed(
     startMs,
     outcome === "active",

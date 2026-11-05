@@ -22,15 +22,25 @@ from app.models.device import Device
 from app.models.device_inventory import DeviceInventory
 from app.repositories.device_repository import DeviceRepository
 from app.repositories.device_telemetry_repository import DeviceTelemetryRepository
+from app.services.alert_engine import device_is_server
+from app.services.alert_rules import EVENT_GROUP_OF
 from app.services.client_reports.common import json_dict
 from app.services.client_reports.security import evaluate
-from app.services.device_health import alerting_events, disks_with_problems, health_from_json, reboot_pending_days
+from app.services.device_health import (
+    _incidents, alerting_events, disks_with_problems, health_from_json, reboot_pending_days,
+)
 
 _cache: SWRCache[dict] = SWRCache("fleet-risk", ttl=300.0, max_age=3600.0)
 
 DISK_FULL_PCT = 90.0
 REBOOT_PENDING_DAYS = 7
 EVENT_WINDOW = timedelta(days=7)
+# As the alert rules (alert_rules.EVENT_GROUPS): power lost or a held button is
+# no problem once on a PC, only as a pattern; retries are common on USB drives
+# and busy VMs. On 6 Nov 2026 counting them all put 301 devices under "crashes",
+# 268 of them for an unclean shutdown.
+SHUTDOWNS_ON_A_PC = 2
+RETRIES_THAT_COUNT = 3
 # Devices listed under each check; the count is always the full number.
 SAMPLE = 8
 
@@ -44,7 +54,8 @@ CHECKS = [
     ("disk_failing", "Disk reporting health problems", "health", "critical"),
     ("disk_full", f"Disk over {int(DISK_FULL_PCT)}% full", "health", "warning"),
     ("reboot_pending", f"Restart pending over {REBOOT_PENDING_DAYS} days", "health", "warning"),
-    ("crashes", "Crashes or hardware errors this week", "health", "warning"),
+    ("crashes", "Crashes, disk or hardware errors this week", "health", "critical"),
+    ("shutdowns", "Repeated unexpected shutdowns this week", "health", "warning"),
 ]
 # Security checks from client_reports.security.evaluate → dashboard keys.
 _SECURITY_KEYS = {
@@ -79,10 +90,8 @@ class FleetRiskService:
     def _compute(self, scope: Optional[AllowedScope]) -> dict:
         now = utcnow()
         repo = DeviceRepository(self.db)
-        query = self.db.query(
-            Device.id, Device.hostname, Device.display_name, Device.client_id, Device.agent_version, Device.platform,
-        )
-        query = repo._apply_scope_filter(repo._apply_lifecycle_filter(query, "active"), scope)
+        # Whole rows: telling a server from a PC reads several of its columns.
+        query = repo._apply_scope_filter(repo._apply_lifecycle_filter(self.db.query(Device), "active"), scope)
         devices = query.all()
         ids = [d.id for d in devices]
         clients = dict(self.db.query(Client.id, Client.name).all())
@@ -141,10 +150,21 @@ class FleetRiskService:
                 waited = reboot_pending_days(health, now)
                 if waited is not None and waited >= REBOOT_PENDING_DAYS:
                     hits["reboot_pending"].append((-waited, entry(device, f"{int(waited)} days")))
-                events = alerting_events(health, now, window=EVENT_WINDOW)
-                if events:
+                by_group: Dict[str, list] = {}
+                for event in alerting_events(health, now, window=EVENT_WINDOW):
+                    group = EVENT_GROUP_OF.get((event.source.lower(), event.event_id), "other")
+                    by_group.setdefault(group, []).append(event)
+                shutdowns = len(_incidents("shutdown", by_group.pop("shutdown", [])))
+                if shutdowns >= (1 if device_is_server(device) else SHUTDOWNS_ON_A_PC):
+                    hits["shutdowns"].append(
+                        (-shutdowns, entry(device, f"{shutdowns} shutdown{'s' if shutdowns != 1 else ''}"))
+                    )
+                if len(by_group.get("disk_retry", [])) < RETRIES_THAT_COUNT:
+                    by_group.pop("disk_retry", None)
+                errors = sum(len(events) for events in by_group.values())
+                if errors:
                     hits["crashes"].append(
-                        (-len(events), entry(device, f"{len(events)} event{'s' if len(events) != 1 else ''}"))
+                        (-errors, entry(device, f"{errors} event{'s' if errors != 1 else ''}"))
                     )
 
             pct = disk_pct.get(device.id)

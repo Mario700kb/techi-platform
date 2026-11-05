@@ -299,7 +299,7 @@ const fleetRisk = {
     },
     {
       key: "crashes",
-      label: "Crashes or hardware errors this week",
+      label: "Crashes, disk or hardware errors this week",
       group: "health",
       severity: "warning",
       count: 0,
