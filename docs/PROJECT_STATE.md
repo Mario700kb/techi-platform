@@ -26,8 +26,8 @@
 
 | Component | Running | Since | Rollback | Evidence |
 |---|---|---|---|---|
-| Backend | `1218e82` | 2026-11-06 00:16 | image `pre-dashboard-risk-8c65558`; dump `pre-dashboard-risk-20261106-000744.sql.gz` | `DASHBOARD-RISK-2026-11-06` |
-| Frontend | `1218e82` | 2026-11-06 00:17 | image `pre-dashboard-risk-8c65558` | `DASHBOARD-RISK-2026-11-06` |
+| Backend | `5a82cb5` | 2026-11-06 00:53 | image `pre-update-progress-9549d57`; dump `pre-update-progress-20261106-003855.sql.gz` | `UPDATE-PROGRESS-2026-11-06` |
+| Frontend | `5a82cb5` | 2026-11-06 00:54 | image `pre-update-progress-9549d57` | `UPDATE-PROGRESS-2026-11-06` |
 | Database schema | Alembic `b6c7d8e9f0a1` (single head; repository head matches) | 2026-10-26 22:49 | `alembic downgrade a5b6c7d8e9f0` | `DEVICES-HOT-2026-10-26` |
 | Repository path | `/opt/techi/techi-platform` | — | — | — |
 

@@ -5,6 +5,41 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-11-06] UPDATE-PROGRESS-2026-11-06 — `5a82cb5`: agent update no longer looks stuck; risk counts follow the alert rules
+
+**Owner: screenshot of "Confirming the new version" at 1:02:34 on an update
+2.1.46 → 2.1.47 (DistriB-SRV), then "deploy".** Three separate causes:
+- **Elapsed +1 h:** the API sends UTC without a zone and `updateStartedAt` used
+  `Date.parse`, which reads it as local time. 1:02:34 was really 2:34. Now
+  `parseUTC`, also for the end time.
+- **Expiry was silent:** the sweep and lazy expiry published no event, and with
+  the socket up the panel never re-reads, so an expired update stayed on
+  "Confirming" until a reload. Both now publish `action_status_changed`, with a
+  reason per stage in `error_message`.
+- **300 s default:** a single update from the panel sends no timeout and got
+  300 s, shorter than the swap helper's 10-minute watch (14 days: 43/69 completed
+  against 1350/1447 for bulk at 900 s; singles are often retries, so not a clean
+  comparison). A self_update without a timeout now gets 900 s; explicit ones stay.
+
+Security & risk: "Crashes" counted unclean shutdowns (268 of 301 devices). Now
+errors (54 devices) and a new "Repeated unexpected shutdowns" check (152; at
+least 2 a week on a PC, 1 on a server, as `alert_rules`), and fewer than 3 disk
+retries no longer count.
+
+- Deploy 00:53–00:55: dump `pre-update-progress-20261106-003855.sql.gz` (241 MB);
+  rollback images `pre-update-progress-9549d57` (backend + frontend); no migration;
+  both images built under `nice` before any restart (the background script hit
+  its 590 s limit after the builds, so the images were checked for the new code
+  before restarting); backend ready in 8 s, frontend healthy in 6 s; guard + smoke
+  passed; 0 errors. pytest 1832, Vitest 491.
+- Not observed live yet: an expiry reaching an open panel (covered by tests).
+- **Open:** DistriB-SRV (#495) was verified on 2.1.47 on 26 Oct and is back on
+  2.1.46, the only one of 759; #6160 and #6162 failed; `deploy.log` from the
+  device is needed. Marketing-PC, LAPTOP3 (2.1.33), Q-Assurance01 (2.1.35) not
+  looked at. A heartbeat during "restarting" shows "confirming" before the service
+  restarted. An update reaching its version after expiry stays recorded as failed.
+- Disk 1.7 GB free (93%) after this deploy.
+
 ## [2026-11-06] DASHBOARD-RISK-2026-11-06 — `1218e82`: client filter, SLA at risk, security & risk, agent versions
 
 **Owner: "ec me 1,2,3,4", then "deploy".** Four dashboard additions; no
