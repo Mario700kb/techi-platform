@@ -82,7 +82,7 @@ async function largestGapBetweenRows(card: Locator): Promise<number> {
 }
 
 for (const width of [1280, 1440, 1920]) {
-  test(`operators, alerts by type and devices by category share one row at ${width}px`, async ({ page }) => {
+  test(`right-now and composition rows keep their cards level at ${width}px`, async ({ page }) => {
     test.skip(test.info().project.name !== "desktop", "the three cards are on the desktop dashboard");
     await productionShape(page);
     await page.setViewportSize({ width, height: 1000 });
@@ -107,10 +107,22 @@ for (const width of [1280, 1440, 1920]) {
       .evaluateAll((items) => new Set(items.map((item) => Math.round(item.getBoundingClientRect().top))).size);
     expect(tops).toBe(6);
 
-    const boxes = await Promise.all([operators, alerts, devices].map(async (card) => (await card.boundingBox())!));
-    const heights = boxes.map((box) => box.height);
-    expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(1);
-    expect(heights[0]).toBeLessThan(450);
+    // Two rows since the dashboard redesign (5 Nov 2026): "Right now" (needs
+    // attention, alerts by type, system status) and "Fleet composition" (by
+    // client, by category, operators). Cards in a row share one height and top.
+    const attention = page.locator("section[aria-labelledby='attention-title']");
+    const clients = page.locator("section[aria-labelledby='devices-by-client-title']");
+    for (const row of [
+      [attention, alerts],
+      [clients, devices, operators],
+    ]) {
+      const boxes = await Promise.all(row.map(async (card) => (await card.boundingBox())!));
+      const heights = boxes.map((box) => box.height);
+      const tops = boxes.map((box) => box.y);
+      expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(1);
+      expect(Math.max(...tops) - Math.min(...tops)).toBeLessThan(1);
+      expect(heights[0]).toBeLessThan(480);
+    }
 
     // Rows sit together under their heading, never spread apart to fill the
     // card (the gap the owner saw with two categories beside a taller card).

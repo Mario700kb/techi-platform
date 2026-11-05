@@ -15,6 +15,7 @@ import {
   Star,
   Terminal,
   Users,
+  Wifi,
   WifiOff,
 } from "lucide-react";
 import AlertKindIcon from "../components/AlertKindIcon";
@@ -55,6 +56,21 @@ import { useNow } from "../hooks/useNow";
 import { DeviceRealtimeEvent } from "../services/deviceRealtime";
 import { useAppData } from "../contexts/AppDataContext";
 import { actionRelevantTime, DASHBOARD_LABELS, DashboardMobile } from "./DashboardMobile";
+import {
+  Briefing,
+  BriefingItem,
+  ClientRow,
+  ClientStatusList,
+  DashSection,
+  DeltaChip,
+  HealthRing,
+  ScoreTile,
+  scoreTone,
+  shareOf,
+  Sparkline,
+  windowDelta,
+} from "../components/DashboardWidgets";
+import "./Dashboard.css";
 
 // Latest enrollments: the newest 50, shown 10, 20 or 50 to a page.
 const RECENT_DEVICES_LIMIT = 50;
@@ -405,20 +421,186 @@ export default function Dashboard() {
     value: counts.total,
     tone: CATEGORY_TONES[index % CATEGORY_TONES.length],
   }));
-  const clientBreakdown = (() => {
+  const clientStatus = fleetOverview?.tree_counts.by_client_status ?? {};
+  const clientCount = Object.keys(fleetOverview?.tree_counts.by_client ?? {}).length;
+  const clientBreakdown: ClientRow[] = (() => {
     const byClient = fleetOverview?.tree_counts.by_client ?? {};
-    const rows = Object.entries(byClient)
-      .map(([id, count]) => ({ id, name: clientNames[Number(id)] ?? `Client #${id}`, count }))
+    const rows: ClientRow[] = Object.entries(byClient)
+      .map(([id, count]) => ({
+        id,
+        name: clientNames[Number(id)] ?? `Client #${id}`,
+        count,
+        ...(clientStatus[id]
+          ? { online: clientStatus[id].online, stale: clientStatus[id].stale, offline: clientStatus[id].offline }
+          : {}),
+      }))
       .sort((a, b) => b.count - a.count);
-    const top = rows.slice(0, 4);
-    const rest = rows.slice(4).reduce((sum, r) => sum + r.count, 0);
+    const top = rows.slice(0, 6);
+    const rest = rows.slice(6).reduce((sum, r) => sum + r.count, 0);
     const unassigned = fleetOverview?.tree_counts.unassigned ?? 0;
     return [
       ...top,
-      ...(rest > 0 ? [{ id: "other", name: `${rows.length - 4} more clients`, count: rest }] : []),
+      ...(rest > 0 ? [{ id: "other", name: `${rows.length - 6} more clients`, count: rest }] : []),
       ...(unassigned > 0 ? [{ id: "none", name: TERMS.noClient, count: unassigned }] : []),
     ];
   })();
+
+  const agentsOutdated = fleetOverview?.agents_outdated ?? 0;
+  const activeAgentVersion = fleetOverview?.active_agent_version ?? null;
+  const availabilityValues = insights?.availability.series.map((day) => day.availability_pct) ?? [];
+  const availabilityDelta = windowDelta(availabilityValues, 7);
+  const criticalAlerts = alertCount.by_severity?.critical ?? 0;
+
+  const firstName = (user?.display_name ?? user?.username ?? "").split(" ")[0];
+  const hour = new Date().getHours();
+  const greeting = `${hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}${firstName ? `, ${firstName}` : ""}`;
+
+  // The briefing names what deserves a look first, most urgent first.
+  const briefing: BriefingItem[] = [
+    criticalCount > 0 && {
+      key: "critical",
+      text: `${formatCount(criticalCount)} ${criticalCount === 1 ? "device" : "devices"} in critical health`,
+      tone: TONE.critical,
+      to: "/devices?filter=critical",
+    },
+    totalOpenAlerts > 0 && {
+      key: "alerts",
+      text:
+        `${formatCount(totalOpenAlerts)} open ${totalOpenAlerts === 1 ? "alert" : "alerts"}` +
+        (criticalAlerts > 0 ? `, ${formatCount(criticalAlerts)} critical` : ""),
+      tone: criticalAlerts > 0 ? TONE.critical : TONE.warning,
+      to: "/alerts",
+    },
+    offline > 0 && {
+      key: "offline",
+      text: `${formatCount(offline)} not responding`,
+      tone: TONE.offline,
+      to: "/devices?filter=offline",
+    },
+    agentsOutdated > 0 && {
+      key: "agents",
+      text: `${formatCount(agentsOutdated)} ${agentsOutdated === 1 ? "agent" : "agents"} behind${activeAgentVersion ? ` ${activeAgentVersion}` : ""}`,
+      tone: "var(--th-status-agent)",
+      to: "/devices?filter=needs_agent_update",
+    },
+    patchCount > 0 && {
+      key: "patches",
+      text: `${formatCount(patchCount)} with patches waiting`,
+      tone: TONE.warning,
+      to: "/devices?filter=needs_updates",
+    },
+  ].filter((item): item is BriefingItem => Boolean(item));
+  if (briefing.length === 0 && total > 0) {
+    briefing.push({ key: "clear", text: "All clear: nothing needs attention", tone: TONE.online, to: "/devices" });
+  }
+
+  const kpis = [
+    {
+      to: "/devices",
+      label: "All devices",
+      value: total,
+      tone: TONE.neutral,
+      hint: "Managed endpoints",
+      icon: Monitor,
+      share: total > 0 ? 100 : 0,
+    },
+    {
+      to: "/devices?filter=online",
+      label: "Online",
+      value: online,
+      tone: TONE.online,
+      hint: `${availability}% available`,
+      icon: Wifi,
+      share: onlinePct,
+    },
+    {
+      to: "/devices?filter=stale",
+      label: "Stale",
+      value: stale,
+      tone: TONE.stale,
+      hint: "Last heartbeat 6–25 min ago",
+      icon: Clock3,
+      share: stalePct,
+    },
+    {
+      to: "/devices?filter=offline",
+      label: "Offline",
+      value: offline,
+      tone: TONE.offline,
+      hint: "Not responding",
+      icon: WifiOff,
+      share: offlinePct,
+    },
+    {
+      to: "/devices?filter=critical",
+      label: "Critical health",
+      value: criticalCount,
+      tone: TONE.critical,
+      hint: "Health score below 50",
+      icon: HeartPulse,
+      share: shareOf(criticalCount, total) ?? 0,
+    },
+    {
+      to: "/devices?filter=needs_updates",
+      label: DASHBOARD_LABELS.needsUpdates,
+      value: patchCount,
+      tone: TONE.warning,
+      hint: "Pending patches",
+      icon: Download,
+      share: shareOf(patchCount, total) ?? 0,
+    },
+  ];
+
+  const patchCompliance = shareOf(Math.max(0, total - patchCount), total);
+  const agentCurrency = shareOf(Math.max(0, total - agentsOutdated), total);
+  const alertDays = insights?.alerts.days ?? 7;
+  const resolution =
+    insights && insights.alerts.opened_total > 0
+      ? Math.min(100, (insights.alerts.resolved_total / insights.alerts.opened_total) * 100)
+      : null;
+  const pctLabel = (value: number | null, digits = 0) => (value == null ? "—" : `${value.toFixed(digits)}%`);
+  const scorecard = [
+    {
+      label: "Availability",
+      value: insights?.availability.overall_pct ?? null,
+      display: pctLabel(insights?.availability.overall_pct ?? null, 2),
+      caption: "Time online, last 30 days",
+      tone: scoreTone(insights?.availability.overall_pct ?? null, 99, 95),
+      to: "/devices?filter=offline",
+    },
+    {
+      label: "Average health",
+      value: loading ? null : averageHealth,
+      display: loading || averageHealth == null ? "—" : `${averageHealth} / 100`,
+      caption: `${formatCount(criticalCount)} critical · ${formatCount(fleetOverview?.warnings ?? 0)} warning`,
+      tone: scoreTone(loading ? null : averageHealth, 80, 50),
+      to: "/devices?filter=critical",
+    },
+    {
+      label: "Patch compliance",
+      value: loading ? null : patchCompliance,
+      display: loading ? "—" : pctLabel(patchCompliance),
+      caption: "Devices with no patch waiting",
+      tone: scoreTone(loading ? null : patchCompliance, 90, 70),
+      to: "/devices?filter=needs_updates",
+    },
+    {
+      label: "Agent currency",
+      value: loading ? null : agentCurrency,
+      display: loading ? "—" : pctLabel(agentCurrency),
+      caption: activeAgentVersion ? `On the active agent ${activeAgentVersion}` : "On the active agent",
+      tone: scoreTone(loading ? null : agentCurrency, 90, 70),
+      to: "/devices?filter=needs_agent_update",
+    },
+    {
+      label: "Alert resolution",
+      value: resolution,
+      display: insights ? pctLabel(resolution) : "—",
+      caption: `Resolved / opened · ${alertDays} days`,
+      tone: scoreTone(resolution, 90, 70),
+      to: "/alerts",
+    },
+  ];
 
   return (
     <section className="premium-page space-y-5">
@@ -440,7 +622,7 @@ export default function Dashboard() {
       </div>
 
       {/* Desktop dashboard — shown only at md+ (768px) */}
-      <div className="hidden md:block space-y-4">
+      <div className="th-dash hidden md:block">
         <PageHeader
           title="Dashboard"
           description="Fleet health, open issues and recent activity across all clients."
@@ -505,780 +687,742 @@ export default function Dashboard() {
           }
         />
 
-        {/* KPIs */}
-        <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
-          {[
-            { to: "/devices", label: "All devices", value: total, tone: TONE.neutral, hint: "Managed endpoints" },
-            {
-              to: "/devices?filter=online",
-              label: "Online",
-              value: online,
-              tone: TONE.online,
-              hint: `${availability}% available`,
-            },
-            {
-              to: "/devices?filter=stale",
-              label: "Stale",
-              value: stale,
-              tone: TONE.stale,
-              hint: "Last heartbeat 6–25 min ago",
-            },
-            {
-              to: "/devices?filter=offline",
-              label: "Offline",
-              value: offline,
-              tone: TONE.offline,
-              hint: "Not responding",
-            },
-            {
-              to: "/devices?filter=critical",
-              label: "Critical health",
-              value: criticalCount,
-              tone: TONE.critical,
-              hint: "Health score below 50",
-            },
-            {
-              to: "/devices?filter=needs_updates",
-              label: DASHBOARD_LABELS.needsUpdates,
-              value: patchCount,
-              tone: TONE.warning,
-              hint: "Pending patches",
-            },
-          ].map((kpi) => (
-            <Link
-              key={kpi.label}
-              to={kpi.to}
-              className="th-kpi"
-              style={{ "--kpi-tone": kpi.tone } as React.CSSProperties}
+        {/* Fleet pulse: health, status mix, availability and what to look at first */}
+        <section className="th-dash-hero" aria-labelledby="fleet-health-title">
+          <div className="th-dash-hero-health">
+            <HealthRing value={loading ? null : averageHealth} />
+            <div className="min-w-0 flex-1">
+              <p className="th-dash-greeting">{greeting}</p>
+              <h2 id="fleet-health-title" className="th-dash-hero-title">
+                Fleet health
+                <span className="th-status-chip" style={{ "--chip-tone": health.tone } as React.CSSProperties}>
+                  <i />
+                  {health.label}
+                </span>
+              </h2>
+              <p className="th-dash-hero-note">
+                Average health score of active devices. Archived devices are excluded.
+              </p>
+              <Briefing items={briefing} loading={loading} />
+            </div>
+          </div>
+
+          <div className="th-dash-hero-mix">
+            <p className="th-dash-hero-label">Status mix</p>
+            <div
+              className="th-mix-bar th-dash-mix flex overflow-hidden rounded-full"
+              style={{ background: "var(--th-ring-track)" }}
+              role="img"
+              aria-label={
+                loading
+                  ? "Device status mix, loading"
+                  : `Device status mix: ${Math.round(onlinePct)}% online, ${Math.round(stalePct)}% stale, ${Math.round(offlinePct)}% offline`
+              }
             >
-              <span className="th-kpi-label">
-                <span className="th-kpi-dot" />
-                {kpi.label}
-              </span>
-              <span className="th-kpi-value">
-                {loading ? "—" : <AnimatedNumber value={kpi.value} format={formatCount} />}
-              </span>
-              <span className="th-kpi-hint">{kpi.hint}</span>
-            </Link>
-          ))}
+              <div style={{ width: loading ? "0%" : `${onlinePct}%`, background: TONE.online }} />
+              <div style={{ width: loading ? "0%" : `${stalePct}%`, background: TONE.stale }} />
+              <div style={{ width: loading ? "0%" : `${offlinePct}%`, background: TONE.offline }} />
+            </div>
+            <ul className="th-dash-legend">
+              {(
+                [
+                  ["Online", online, onlinePct, TONE.online, "/devices?filter=online"],
+                  ["Stale", stale, stalePct, TONE.stale, "/devices?filter=stale"],
+                  ["Offline", offline, offlinePct, TONE.offline, "/devices?filter=offline"],
+                ] as const
+              ).map(([label, count, pct, tone, to]) => (
+                <li key={label}>
+                  <Link
+                    to={to}
+                    className="th-dash-legend-item"
+                    style={{ "--legend-tone": tone } as React.CSSProperties}
+                  >
+                    <span className="th-dash-legend-label">
+                      <i aria-hidden="true" />
+                      {label}
+                    </span>
+                    <strong className="tabular-nums">{loading ? "—" : formatCount(count)}</strong>
+                    <small className="tabular-nums">{loading ? "" : `${Math.round(pct)}%`}</small>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="th-dash-hero-trend">
+            <p className="th-dash-hero-label">Availability · last 30 days</p>
+            <p className="th-dash-hero-big tabular-nums">
+              {insights?.availability.overall_pct != null ? `${insights.availability.overall_pct.toFixed(2)}%` : "—"}
+            </p>
+            <DeltaChip delta={availabilityDelta} caption="last 7 days vs the 7 before" />
+            <Sparkline
+              values={availabilityValues}
+              tone={TONE.online}
+              label="Daily availability over the last 30 days"
+              height={52}
+            />
+          </div>
+        </section>
+
+        {/* KPIs */}
+        <div className="th-dash-kpis grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+          {kpis.map((kpi, index) => {
+            const Icon = kpi.icon;
+            return (
+              <Link
+                key={kpi.label}
+                to={kpi.to}
+                className="th-kpi th-dash-kpi"
+                style={{ "--kpi-tone": kpi.tone, "--i": index } as React.CSSProperties}
+              >
+                <span className="th-kpi-label">
+                  <span className="th-kpi-dot" />
+                  {kpi.label}
+                  <Icon className="th-dash-kpi-icon" aria-hidden="true" />
+                </span>
+                <span className="th-kpi-value">
+                  {loading ? "—" : <AnimatedNumber value={kpi.value} format={formatCount} />}
+                </span>
+                <span className="th-kpi-hint">{kpi.hint}</span>
+                <span className="th-dash-kpi-bar" aria-hidden="true">
+                  <span style={{ width: loading ? "0%" : `${kpi.share}%` }} />
+                </span>
+              </Link>
+            );
+          })}
         </div>
 
-        {/* Health · attention · platform */}
-        <div className={`grid gap-4 lg:grid-cols-2 ${isAdmin ? "xl:grid-cols-3" : ""}`}>
-          <section className="premium-card flex h-full flex-col p-0" aria-labelledby="fleet-health-title">
-            <div className="th-panel-head">
-              <h2 id="fleet-health-title">Fleet health</h2>
-              <span className="th-status-chip" style={{ "--chip-tone": health.tone } as React.CSSProperties}>
-                <i />
-                {health.label}
-              </span>
-            </div>
-            <div className="flex items-center gap-6 px-5 pb-4">
-              <HealthRing value={loading ? null : averageHealth} />
-              <div className="min-w-0 flex-1 space-y-3">
-                <div
-                  className="th-mix-bar flex h-2 overflow-hidden rounded-full"
-                  style={{ background: "var(--th-ring-track)" }}
-                  role="img"
-                  aria-label={
-                    loading
-                      ? "Device status mix, loading"
-                      : `Device status mix: ${Math.round(onlinePct)}% online, ${Math.round(stalePct)}% stale, ${Math.round(offlinePct)}% offline`
-                  }
-                >
-                  <div style={{ width: loading ? "0%" : `${onlinePct}%`, background: TONE.online }} />
-                  <div style={{ width: loading ? "0%" : `${stalePct}%`, background: TONE.stale }} />
-                  <div style={{ width: loading ? "0%" : `${offlinePct}%`, background: TONE.offline }} />
-                </div>
-                <ul className="space-y-2 text-[13px]">
-                  {(
-                    [
-                      ["Online", online, onlinePct, TONE.online],
-                      ["Stale", stale, stalePct, TONE.stale],
-                      ["Offline", offline, offlinePct, TONE.offline],
-                    ] as const
-                  ).map(([label, count, pct, tone]) => (
-                    <li key={label} className="flex items-center gap-2">
-                      <span className="h-2 w-2 flex-none rounded-full" style={{ background: tone }} />
-                      <span style={{ color: "var(--th-text-secondary)" }}>{label}</span>
-                      <span className="ml-auto font-semibold tabular-nums" style={{ color: "var(--th-text-primary)" }}>
-                        {loading ? "—" : formatCount(count)}
-                      </span>
-                      <span className="w-10 text-right tabular-nums" style={{ color: "var(--th-text-faint)" }}>
-                        {loading ? "" : `${Math.round(pct)}%`}
-                      </span>
+        {/* Fleet scorecard: how good, next to how many */}
+        <DashSection label="Scorecard" hint="Share of the fleet meeting each measure">
+          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
+            {scorecard.map((score, index) => (
+              <ScoreTile key={score.label} index={index} {...score} />
+            ))}
+          </div>
+        </DashSection>
+
+        {/* What needs a decision now */}
+        <DashSection label="Right now" hint={realtimeStatus === "connected" ? "Live" : "Refreshing every 30 s"}>
+          <div className={`grid gap-4 lg:grid-cols-2 ${isAdmin ? "xl:grid-cols-3" : ""}`}>
+            <section className="premium-card th-dash-card flex h-full flex-col p-0" aria-labelledby="attention-title">
+              <div className="th-panel-head">
+                <h2 id="attention-title">Needs attention</h2>
+                <Link to="/alerts" className="th-link-btn">
+                  View alerts
+                </Link>
+              </div>
+              <ul className="flex-1 px-2 pb-2">
+                {[
+                  {
+                    to: "/alerts",
+                    label: DASHBOARD_LABELS.openAlerts,
+                    count: totalOpenAlerts,
+                    tone: TONE.critical,
+                    icon: BellRing,
+                  },
+                  {
+                    to: "/devices?filter=offline",
+                    label: DASHBOARD_LABELS.offline,
+                    count: offline,
+                    tone: TONE.offline,
+                    icon: WifiOff,
+                  },
+                  {
+                    to: "/devices?filter=stale",
+                    label: DASHBOARD_LABELS.stale,
+                    count: stale,
+                    tone: TONE.stale,
+                    icon: Clock3,
+                  },
+                  {
+                    to: "/devices?filter=critical",
+                    label: DASHBOARD_LABELS.critical,
+                    count: criticalCount,
+                    tone: TONE.critical,
+                    icon: HeartPulse,
+                  },
+                  {
+                    to: "/devices?filter=needs_updates",
+                    label: DASHBOARD_LABELS.needsUpdates,
+                    count: patchCount,
+                    tone: TONE.warning,
+                    icon: Download,
+                  },
+                  {
+                    to: "/devices?filter=needs_agent_update",
+                    label: DASHBOARD_LABELS.agentUpdates,
+                    count: fleetOverview?.agents_outdated ?? 0,
+                    tone: "var(--th-status-agent)",
+                    icon: Cpu,
+                  },
+                  {
+                    to: "/devices?folder=unassigned",
+                    label: "Devices without a client",
+                    count: fleetOverview?.tree_counts.unassigned ?? 0,
+                    tone: TONE.info,
+                    icon: Building2,
+                  },
+                  {
+                    to: "/devices?filter=favorites",
+                    label: "Favorite devices",
+                    count: favoritesCount,
+                    tone: TONE.warning,
+                    icon: Star,
+                  },
+                ]
+                  // Rows with something to do first; empty ones keep their order below.
+                  .sort((a, b) => Number(!loading && b.count > 0) - Number(!loading && a.count > 0))
+                  .map(({ to, label, count, tone, icon: Icon }) => (
+                    <li key={label}>
+                      <Link
+                        to={to}
+                        className="th-attention-row"
+                        data-empty={!loading && count === 0}
+                        style={{ "--row-tone": tone } as React.CSSProperties}
+                      >
+                        <span className="th-attention-icon">
+                          <Icon className="h-3.5 w-3.5" />
+                        </span>
+                        <span className="flex-1 truncate">{label}</span>
+                        <span className="th-attention-count">{loading ? "—" : formatCount(count)}</span>
+                        <ChevronRight className="h-3.5 w-3.5 flex-none" style={{ color: "var(--th-text-faint)" }} />
+                      </Link>
                     </li>
                   ))}
-                </ul>
-              </div>
-            </div>
-            <div
-              className="flex flex-1 flex-col px-5 pb-3 pt-3"
-              style={{ borderTop: "1px solid var(--th-border-subtle)" }}
+              </ul>
+            </section>
+
+            <section
+              className="premium-card th-dash-card th-cp-overview flex h-full flex-col p-0"
+              aria-labelledby="alerts-by-kind-title"
             >
-              <p className="th-menu-label !px-0 !pt-0">Devices by client</p>
-              {clientBreakdown.length === 0 ? (
-                <p className="py-3 text-[13px]" style={{ color: "var(--th-text-muted)" }}>
-                  No devices yet.
-                </p>
+              <div className="th-panel-head">
+                <h2 id="alerts-by-kind-title">Open alerts by type</h2>
+                <Link to="/alerts" className="th-link-btn">
+                  View alerts
+                </Link>
+              </div>
+              {!alertCountReady ? (
+                <div className="flex-1" aria-busy="true" />
+              ) : alertsByKind.length === 0 ? (
+                <EmptyState
+                  className="flex-1"
+                  icon={<BellRing className="h-5 w-5" />}
+                  title="No open alerts"
+                  description="Every alert raised for your devices has been resolved."
+                />
               ) : (
-                <ul className="mt-1 flex flex-1 flex-col justify-between gap-1">
-                  {clientBreakdown.map((row, index) => (
-                    <li key={row.id} className="text-[13px]" style={{ "--i": index } as React.CSSProperties}>
-                      <Link
-                        to={
-                          row.id === "none"
-                            ? "/devices?folder=unassigned"
-                            : row.id === "other"
-                              ? "/clients"
-                              : `/devices?folder=client-${row.id}`
+                <>
+                  <div className="th-cp-hero">
+                    <SegmentRing
+                      segments={severitySegments}
+                      total={totalOpenAlerts}
+                      center={formatCount(totalOpenAlerts)}
+                      caption={totalOpenAlerts === 1 ? "open alert" : "open alerts"}
+                      size={108}
+                    />
+                    <RingLegend
+                      segments={severitySegments}
+                      total={totalOpenAlerts}
+                      onSelect={() => navigate("/alerts")}
+                    />
+                  </div>
+                  <SubHead>By type</SubHead>
+                  <ul className="th-cp-meters" data-dense="true">
+                    {alertsByKind.map(([kind, count], index) => (
+                      <MeterRow
+                        key={kind}
+                        index={index}
+                        mark={
+                          <span className="th-cp-mark-sm" aria-hidden="true">
+                            <AlertKindIcon kind={kind as AlertKind} className="h-3.5 w-3.5" />
+                          </span>
                         }
-                        className="-mx-2 block rounded-md px-2 py-1 transition-colors hover:bg-[var(--th-sidebar-nav-hover)]"
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <span
-                            className="truncate"
-                            style={{ color: row.id === "none" ? "var(--th-text-muted)" : "var(--th-text-secondary)" }}
-                          >
-                            {row.name}
-                          </span>
-                          <span className="font-semibold tabular-nums" style={{ color: "var(--th-text-primary)" }}>
-                            {formatCount(row.count)}
-                          </span>
-                        </div>
-                        <div
-                          className="mt-1 h-1 overflow-hidden rounded-full"
-                          style={{ background: "var(--th-ring-track)" }}
+                        label={ALERT_KIND_LABELS[kind as AlertKind] ?? humanize(kind)}
+                        count={count}
+                        total={totalOpenAlerts}
+                        tone={TONE.warning}
+                        to="/alerts"
+                      />
+                    ))}
+                  </ul>
+                </>
+              )}
+              <p className="th-panel-foot mt-auto">
+                {alertCountReady ? (
+                  <>
+                    {formatCount(totalOpenAlerts)} open
+                    {alertCount.devices_affected ? ` on ${formatCount(alertCount.devices_affected)} devices` : ""}.
+                  </>
+                ) : (
+                  "Loading alerts…"
+                )}
+              </p>
+            </section>
+
+            {isAdmin && (
+              <div className="grid lg:col-span-2 xl:col-span-1">
+                <SystemStatusCard compact />
+              </div>
+            )}
+          </div>
+        </DashSection>
+
+        {/* Where the fleet is and who is on it */}
+        <DashSection label="Fleet composition">
+          <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+            <section
+              className="premium-card th-dash-card flex h-full flex-col p-0"
+              aria-labelledby="devices-by-client-title"
+            >
+              <div className="th-panel-head">
+                <h2 id="devices-by-client-title">Devices by client</h2>
+                <Link to="/clients" className="th-link-btn">
+                  View clients
+                </Link>
+              </div>
+              {loading ? (
+                <SkeletonRows rows={4} />
+              ) : clientBreakdown.length === 0 ? (
+                <EmptyState
+                  className="flex-1"
+                  icon={<Building2 className="h-5 w-5" />}
+                  title="No clients to show"
+                  description="Devices are grouped here by client once they enroll."
+                />
+              ) : (
+                <div className="flex-1 px-5 pb-3">
+                  <ClientStatusList rows={clientBreakdown} total={total} />
+                </div>
+              )}
+              <p className="th-panel-foot mt-auto">
+                {formatCount(clientCount)} {clientCount === 1 ? "client" : "clients"} · bar length is the share of the
+                fleet, colours its status.
+              </p>
+            </section>
+
+            <section
+              className="premium-card th-dash-card th-cp-overview flex h-full flex-col p-0"
+              aria-labelledby="devices-by-category-title"
+            >
+              <div className="th-panel-head">
+                <h2 id="devices-by-category-title">Devices by category</h2>
+                <Link to="/devices" className="th-link-btn">
+                  View all devices
+                </Link>
+              </div>
+              {loading ? (
+                <SkeletonRows rows={4} />
+              ) : devicesByCategory.length === 0 ? (
+                <EmptyState className="flex-1" icon={<Monitor className="h-5 w-5" />} title="No devices to group" />
+              ) : (
+                <>
+                  <div className="th-cp-hero">
+                    <SegmentRing
+                      segments={categorySegments}
+                      total={total}
+                      center={formatCount(total)}
+                      caption="devices"
+                      size={108}
+                    />
+                    <RingLegend
+                      segments={categorySegments}
+                      total={total}
+                      onSelect={(key) => navigate(CATEGORY_FILTERS[key] ?? "/devices")}
+                    />
+                  </div>
+                  <SubHead>Online by category</SubHead>
+                  <ul className="th-cp-meters" data-dense="true">
+                    {devicesByCategory.map(([category, counts], index) => {
+                      const Icon = CATEGORY_ICONS[category] ?? Monitor;
+                      return (
+                        <MeterRow
+                          key={category}
+                          index={index}
+                          mark={
+                            <span className="th-cp-mark-sm" aria-hidden="true">
+                              <Icon className="h-3.5 w-3.5" />
+                            </span>
+                          }
+                          label={CATEGORY_LABELS[category] ?? humanize(category)}
+                          count={counts.online}
+                          total={counts.total}
+                          share={percent(counts.online, counts.total)}
+                          segments={[
+                            { key: "online", label: "online", value: counts.online, tone: TONE.online },
+                            { key: "stale", label: "stale", value: counts.stale, tone: TONE.stale },
+                            { key: "offline", label: "offline", value: counts.offline, tone: TONE.offline },
+                          ]}
+                          title={`${formatCount(counts.online)} online · ${formatCount(counts.stale)} stale · ${formatCount(counts.offline)} offline of ${formatCount(counts.total)}`}
+                          to={CATEGORY_FILTERS[category] ?? "/devices"}
+                        />
+                      );
+                    })}
+                  </ul>
+                </>
+              )}
+              <p className="th-panel-foot mt-auto">
+                {formatCount(total)} active devices by current status. Archived devices are excluded.
+              </p>
+            </section>
+
+            <OperatorsPanel
+              operators={operators}
+              loading={operators.length === 0 && !activityReady}
+              failed={failed.operators}
+              onRetry={retryActivity}
+              currentUserId={user?.id}
+              canManage={canManageOperators}
+            />
+          </div>
+        </DashSection>
+
+        {/* Trends */}
+        <DashSection label="Trends" hint="Recomputed every 30 minutes">
+          <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+            <section
+              className="premium-card th-dash-card flex h-full flex-col p-0"
+              aria-labelledby="availability-title"
+            >
+              <div className="th-panel-head">
+                <h2 id="availability-title">Availability</h2>
+                <span className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                  Last 30 days
+                </span>
+              </div>
+              <div className="flex flex-1 flex-col px-5 pb-4">
+                <p className="th-metric-big">
+                  {insights?.availability.overall_pct != null
+                    ? `${insights.availability.overall_pct.toFixed(2)}%`
+                    : "—"}
+                </p>
+                <p className="mb-3 mt-1 text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                  Share of time managed devices were online
+                </p>
+                <div className="min-h-0 flex-1">
+                  {insights ? (
+                    <AvailabilityChart series={insights.availability.series} />
+                  ) : insightsFailed ? (
+                    <SectionError what="availability" onRetry={loadInsights} />
+                  ) : (
+                    <div
+                      className="h-full min-h-[120px] animate-pulse rounded-lg"
+                      style={{ background: "var(--th-chip-bg)" }}
+                    />
+                  )}
+                </div>
+              </div>
+              <p className="th-panel-foot">
+                {insights?.availability.coverage_pct != null && insights.availability.coverage_pct < 99
+                  ? `Based on ${insights.availability.coverage_pct}% of device time with a known status.`
+                  : "Measured from recorded online/offline transitions."}
+              </p>
+            </section>
+
+            <section className="premium-card th-dash-card flex h-full flex-col p-0" aria-labelledby="alert-trend-title">
+              <div className="th-panel-head">
+                <h2 id="alert-trend-title">Alerts this week</h2>
+                <span className="flex items-center gap-3 text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                  <span className="flex items-center gap-1.5">
+                    <i className="th-legend-swatch" data-series="1" />
+                    Opened
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <i className="th-legend-swatch" data-series="2" />
+                    Resolved
+                  </span>
+                </span>
+              </div>
+              <div className="flex flex-1 flex-col px-5 pb-4">
+                <div className="mb-3 grid grid-cols-3 gap-3">
+                  {(
+                    [
+                      ["Opened", insights ? formatCount(insights.alerts.opened_total) : undefined],
+                      ["Resolved", insights ? formatCount(insights.alerts.resolved_total) : undefined],
+                      [
+                        "Avg. time to resolve",
+                        insights?.alerts.mean_time_to_resolve_hours != null
+                          ? `${insights.alerts.mean_time_to_resolve_hours} h`
+                          : undefined,
+                      ],
+                    ] as const
+                  ).map(([label, value]) => (
+                    <div key={label}>
+                      <p className="th-metric-big">{value ?? "—"}</p>
+                      <p className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                        {label}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+                <div className="min-h-0 flex-1">
+                  {insights ? (
+                    <AlertFlowChart series={insights.alerts.series} />
+                  ) : insightsFailed ? (
+                    <SectionError what="alert trends" onRetry={loadInsights} />
+                  ) : (
+                    <div
+                      className="h-full min-h-[120px] animate-pulse rounded-lg"
+                      style={{ background: "var(--th-chip-bg)" }}
+                    />
+                  )}
+                </div>
+              </div>
+              <p className="th-panel-foot">
+                {insights
+                  ? `${formatCount(insights.alerts.open_now)} still open right now.`
+                  : insightsFailed
+                    ? "Trends unavailable."
+                    : "Loading…"}
+              </p>
+            </section>
+
+            <section
+              className="premium-card th-dash-card flex h-full flex-col p-0 lg:col-span-2 xl:col-span-1"
+              aria-labelledby="problem-devices-title"
+            >
+              <div className="th-panel-head">
+                <h2 id="problem-devices-title">Problem devices</h2>
+                <span className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                  Last 7 days
+                </span>
+              </div>
+              {!insights && insightsFailed ? (
+                <SectionError what="problem devices" onRetry={loadInsights} />
+              ) : !insights ? (
+                <SkeletonRows rows={4} />
+              ) : insights.problem_devices.length === 0 ? (
+                <EmptyState
+                  className="flex-1"
+                  icon={<HeartPulse className="h-5 w-5" />}
+                  title="No repeat offenders"
+                  description="No device went offline or raised an alert this week."
+                />
+              ) : (
+                <ul className="flex-1 px-2 pb-2">
+                  {insights.problem_devices.map((d, i) => (
+                    <li key={d.device_id}>
+                      <Link to={`/devices?device=${d.device_id}`} className="th-list-row">
+                        <span
+                          className="flex h-8 w-8 flex-none items-center justify-center rounded-lg text-[12px] font-semibold tabular-nums"
+                          style={{ background: "var(--th-chip-bg)", color: "var(--th-text-muted)" }}
                         >
-                          <div
-                            className="th-share-fill h-full rounded-full"
-                            style={{
-                              width: `${total ? (row.count / total) * 100 : 0}%`,
-                              background: row.id === "none" ? TONE.neutral : "var(--th-accent)",
-                            }}
-                          />
-                        </div>
+                          {i + 1}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span
+                            className="block truncate text-[13px] font-medium"
+                            style={{ color: "var(--th-text-primary)" }}
+                          >
+                            {d.name}
+                          </span>
+                          <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                            {d.client_name ?? TERMS.noClient}
+                          </span>
+                        </span>
+                        <span
+                          className="text-right text-[12px] leading-5 tabular-nums"
+                          style={{ color: "var(--th-text-secondary)" }}
+                        >
+                          <span className="block">
+                            <strong className="font-semibold" style={{ color: "var(--th-text-primary)" }}>
+                              {formatCount(d.offline_events)}
+                            </strong>{" "}
+                            offline
+                          </span>
+                          <span className="block">
+                            <strong className="font-semibold" style={{ color: "var(--th-text-primary)" }}>
+                              {formatCount(d.alerts)}
+                            </strong>{" "}
+                            alerts
+                          </span>
+                        </span>
                       </Link>
                     </li>
                   ))}
                 </ul>
               )}
-            </div>
-            <p className="th-panel-foot">Average health score of active devices. Archived devices are excluded.</p>
-          </section>
+              <p className="th-panel-foot">Ranked by offline events plus alerts raised.</p>
+            </section>
+          </div>
+        </DashSection>
 
-          <section className="premium-card flex h-full flex-col p-0" aria-labelledby="attention-title">
-            <div className="th-panel-head">
-              <h2 id="attention-title">Needs attention</h2>
-              <Link to="/alerts" className="th-link-btn">
-                View alerts
-              </Link>
-            </div>
-            <ul className="flex-1 px-2 pb-2">
-              {[
-                {
-                  to: "/alerts",
-                  label: DASHBOARD_LABELS.openAlerts,
-                  count: totalOpenAlerts,
-                  tone: TONE.critical,
-                  icon: BellRing,
-                },
-                {
-                  to: "/devices?filter=offline",
-                  label: DASHBOARD_LABELS.offline,
-                  count: offline,
-                  tone: TONE.offline,
-                  icon: WifiOff,
-                },
-                {
-                  to: "/devices?filter=stale",
-                  label: DASHBOARD_LABELS.stale,
-                  count: stale,
-                  tone: TONE.stale,
-                  icon: Clock3,
-                },
-                {
-                  to: "/devices?filter=critical",
-                  label: DASHBOARD_LABELS.critical,
-                  count: criticalCount,
-                  tone: TONE.critical,
-                  icon: HeartPulse,
-                },
-                {
-                  to: "/devices?filter=needs_updates",
-                  label: DASHBOARD_LABELS.needsUpdates,
-                  count: patchCount,
-                  tone: TONE.warning,
-                  icon: Download,
-                },
-                {
-                  to: "/devices?filter=needs_agent_update",
-                  label: DASHBOARD_LABELS.agentUpdates,
-                  count: fleetOverview?.agents_outdated ?? 0,
-                  tone: "var(--th-status-agent)",
-                  icon: Cpu,
-                },
-                {
-                  to: "/devices?folder=unassigned",
-                  label: "Devices without a client",
-                  count: fleetOverview?.tree_counts.unassigned ?? 0,
-                  tone: TONE.info,
-                  icon: Building2,
-                },
-                {
-                  to: "/devices?filter=favorites",
-                  label: "Favorite devices",
-                  count: favoritesCount,
-                  tone: TONE.warning,
-                  icon: Star,
-                },
-              ].map(({ to, label, count, tone, icon: Icon }) => (
-                <li key={label}>
-                  <Link
-                    to={to}
-                    className="th-attention-row"
-                    data-empty={!loading && count === 0}
-                    style={{ "--row-tone": tone } as React.CSSProperties}
-                  >
-                    <span className="th-attention-icon">
-                      <Icon className="h-3.5 w-3.5" />
-                    </span>
-                    <span className="flex-1 truncate">{label}</span>
-                    <span className="th-attention-count">{loading ? "—" : formatCount(count)}</span>
-                    <ChevronRight className="h-3.5 w-3.5 flex-none" style={{ color: "var(--th-text-faint)" }} />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </section>
-
-          {isAdmin && (
-            <div className="grid lg:col-span-2 xl:col-span-1">
-              <SystemStatusCard compact />
-            </div>
-          )}
-        </div>
-
-        {/* Operators · alerts by type · devices by category */}
-        <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-          <OperatorsPanel
-            operators={operators}
-            loading={operators.length === 0 && !activityReady}
-            failed={failed.operators}
-            onRetry={retryActivity}
-            currentUserId={user?.id}
-            canManage={canManageOperators}
-          />
-
-          <section
-            className="premium-card th-cp-overview flex h-full flex-col p-0"
-            aria-labelledby="alerts-by-kind-title"
+        {/* Enrollments · activity */}
+        <DashSection label="Activity">
+          <div
+            className={`grid gap-4 lg:grid-cols-2 ${enrollmentPageSize > 10 || actionPageSize > 10 ? "lg:items-start" : ""}`}
           >
-            <div className="th-panel-head">
-              <h2 id="alerts-by-kind-title">Open alerts by type</h2>
-              <Link to="/alerts" className="th-link-btn">
-                View alerts
-              </Link>
-            </div>
-            {!alertCountReady ? (
-              <div className="flex-1" aria-busy="true" />
-            ) : alertsByKind.length === 0 ? (
-              <EmptyState
-                className="flex-1"
-                icon={<BellRing className="h-5 w-5" />}
-                title="No open alerts"
-                description="Every alert raised for your devices has been resolved."
-              />
-            ) : (
-              <>
-                <div className="th-cp-hero">
-                  <SegmentRing
-                    segments={severitySegments}
-                    total={totalOpenAlerts}
-                    center={formatCount(totalOpenAlerts)}
-                    caption={totalOpenAlerts === 1 ? "open alert" : "open alerts"}
-                    size={108}
-                  />
-                  <RingLegend
-                    segments={severitySegments}
-                    total={totalOpenAlerts}
-                    onSelect={() => navigate("/alerts")}
-                  />
-                </div>
-                <SubHead>By type</SubHead>
-                <ul className="th-cp-meters" data-dense="true">
-                  {alertsByKind.map(([kind, count], index) => (
-                    <MeterRow
-                      key={kind}
-                      index={index}
-                      mark={
-                        <span className="th-cp-mark-sm" aria-hidden="true">
-                          <AlertKindIcon kind={kind as AlertKind} className="h-3.5 w-3.5" />
-                        </span>
-                      }
-                      label={ALERT_KIND_LABELS[kind as AlertKind] ?? humanize(kind)}
-                      count={count}
-                      total={totalOpenAlerts}
-                      tone={TONE.warning}
-                      to="/alerts"
-                    />
-                  ))}
-                </ul>
-              </>
-            )}
-            <p className="th-panel-foot mt-auto">
-              {alertCountReady ? (
-                <>
-                  {formatCount(totalOpenAlerts)} open
-                  {alertCount.devices_affected ? ` on ${formatCount(alertCount.devices_affected)} devices` : ""}.
-                </>
-              ) : (
-                "Loading alerts…"
-              )}
-            </p>
-          </section>
-
-          <section
-            className="premium-card th-cp-overview flex h-full flex-col p-0 lg:col-span-2 xl:col-span-1"
-            aria-labelledby="devices-by-category-title"
-          >
-            <div className="th-panel-head">
-              <h2 id="devices-by-category-title">Devices by category</h2>
-              <Link to="/devices" className="th-link-btn">
-                View all devices
-              </Link>
-            </div>
-            {loading ? (
-              <SkeletonRows rows={4} />
-            ) : devicesByCategory.length === 0 ? (
-              <EmptyState className="flex-1" icon={<Monitor className="h-5 w-5" />} title="No devices to group" />
-            ) : (
-              <>
-                <div className="th-cp-hero">
-                  <SegmentRing
-                    segments={categorySegments}
-                    total={total}
-                    center={formatCount(total)}
-                    caption="devices"
-                    size={108}
-                  />
-                  <RingLegend
-                    segments={categorySegments}
-                    total={total}
-                    onSelect={(key) => navigate(CATEGORY_FILTERS[key] ?? "/devices")}
-                  />
-                </div>
-                <SubHead>Online by category</SubHead>
-                <ul className="th-cp-meters" data-dense="true">
-                  {devicesByCategory.map(([category, counts], index) => {
-                    const Icon = CATEGORY_ICONS[category] ?? Monitor;
-                    return (
-                      <MeterRow
-                        key={category}
-                        index={index}
-                        mark={
-                          <span className="th-cp-mark-sm" aria-hidden="true">
-                            <Icon className="h-3.5 w-3.5" />
-                          </span>
-                        }
-                        label={CATEGORY_LABELS[category] ?? humanize(category)}
-                        count={counts.online}
-                        total={counts.total}
-                        share={percent(counts.online, counts.total)}
-                        segments={[
-                          { key: "online", label: "online", value: counts.online, tone: TONE.online },
-                          { key: "stale", label: "stale", value: counts.stale, tone: TONE.stale },
-                          { key: "offline", label: "offline", value: counts.offline, tone: TONE.offline },
-                        ]}
-                        title={`${formatCount(counts.online)} online · ${formatCount(counts.stale)} stale · ${formatCount(counts.offline)} offline of ${formatCount(counts.total)}`}
-                        to={CATEGORY_FILTERS[category] ?? "/devices"}
-                      />
-                    );
-                  })}
-                </ul>
-              </>
-            )}
-            <p className="th-panel-foot mt-auto">
-              {formatCount(total)} active devices by current status. Archived devices are excluded.
-            </p>
-          </section>
-        </div>
-
-        {/* Trends */}
-        <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-          <section className="premium-card flex h-full flex-col p-0" aria-labelledby="availability-title">
-            <div className="th-panel-head">
-              <h2 id="availability-title">Availability</h2>
-              <span className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-                Last 30 days
-              </span>
-            </div>
-            <div className="flex flex-1 flex-col px-5 pb-4">
-              <p className="th-metric-big">
-                {insights?.availability.overall_pct != null ? `${insights.availability.overall_pct.toFixed(2)}%` : "—"}
-              </p>
-              <p className="mb-3 mt-1 text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-                Share of time managed devices were online
-              </p>
-              <div className="min-h-0 flex-1">
-                {insights ? (
-                  <AvailabilityChart series={insights.availability.series} />
-                ) : insightsFailed ? (
-                  <SectionError what="availability" onRetry={loadInsights} />
-                ) : (
-                  <div
-                    className="h-full min-h-[120px] animate-pulse rounded-lg"
-                    style={{ background: "var(--th-chip-bg)" }}
-                  />
-                )}
-              </div>
-            </div>
-            <p className="th-panel-foot">
-              {insights?.availability.coverage_pct != null && insights.availability.coverage_pct < 99
-                ? `Based on ${insights.availability.coverage_pct}% of device time with a known status.`
-                : "Measured from recorded online/offline transitions."}
-            </p>
-          </section>
-
-          <section className="premium-card flex h-full flex-col p-0" aria-labelledby="alert-trend-title">
-            <div className="th-panel-head">
-              <h2 id="alert-trend-title">Alerts this week</h2>
-              <span className="flex items-center gap-3 text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-                <span className="flex items-center gap-1.5">
-                  <i className="th-legend-swatch" data-series="1" />
-                  Opened
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <i className="th-legend-swatch" data-series="2" />
-                  Resolved
-                </span>
-              </span>
-            </div>
-            <div className="flex flex-1 flex-col px-5 pb-4">
-              <div className="mb-3 grid grid-cols-3 gap-3">
-                {(
-                  [
-                    ["Opened", insights ? formatCount(insights.alerts.opened_total) : undefined],
-                    ["Resolved", insights ? formatCount(insights.alerts.resolved_total) : undefined],
-                    [
-                      "Avg. time to resolve",
-                      insights?.alerts.mean_time_to_resolve_hours != null
-                        ? `${insights.alerts.mean_time_to_resolve_hours} h`
-                        : undefined,
-                    ],
-                  ] as const
-                ).map(([label, value]) => (
-                  <div key={label}>
-                    <p className="th-metric-big">{value ?? "—"}</p>
-                    <p className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-                      {label}
-                    </p>
-                  </div>
-                ))}
-              </div>
-              <div className="min-h-0 flex-1">
-                {insights ? (
-                  <AlertFlowChart series={insights.alerts.series} />
-                ) : insightsFailed ? (
-                  <SectionError what="alert trends" onRetry={loadInsights} />
-                ) : (
-                  <div
-                    className="h-full min-h-[120px] animate-pulse rounded-lg"
-                    style={{ background: "var(--th-chip-bg)" }}
-                  />
-                )}
-              </div>
-            </div>
-            <p className="th-panel-foot">
-              {insights
-                ? `${formatCount(insights.alerts.open_now)} still open right now.`
-                : insightsFailed
-                  ? "Trends unavailable."
-                  : "Loading…"}
-            </p>
-          </section>
-
-          <section
-            className="premium-card flex h-full flex-col p-0 lg:col-span-2 xl:col-span-1"
-            aria-labelledby="problem-devices-title"
-          >
-            <div className="th-panel-head">
-              <h2 id="problem-devices-title">Problem devices</h2>
-              <span className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-                Last 7 days
-              </span>
-            </div>
-            {!insights && insightsFailed ? (
-              <SectionError what="problem devices" onRetry={loadInsights} />
-            ) : !insights ? (
-              <SkeletonRows rows={4} />
-            ) : insights.problem_devices.length === 0 ? (
-              <EmptyState
-                className="flex-1"
-                icon={<HeartPulse className="h-5 w-5" />}
-                title="No repeat offenders"
-                description="No device went offline or raised an alert this week."
-              />
-            ) : (
-              <ul className="flex-1 px-2 pb-2">
-                {insights.problem_devices.map((d, i) => (
-                  <li key={d.device_id}>
-                    <Link to={`/devices?device=${d.device_id}`} className="th-list-row">
-                      <span
-                        className="flex h-8 w-8 flex-none items-center justify-center rounded-lg text-[12px] font-semibold tabular-nums"
-                        style={{ background: "var(--th-chip-bg)", color: "var(--th-text-muted)" }}
-                      >
-                        {i + 1}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span
-                          className="block truncate text-[13px] font-medium"
-                          style={{ color: "var(--th-text-primary)" }}
-                        >
-                          {d.name}
-                        </span>
-                        <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-                          {d.client_name ?? TERMS.noClient}
-                        </span>
-                      </span>
-                      <span
-                        className="text-right text-[12px] leading-5 tabular-nums"
-                        style={{ color: "var(--th-text-secondary)" }}
-                      >
-                        <span className="block">
-                          <strong className="font-semibold" style={{ color: "var(--th-text-primary)" }}>
-                            {formatCount(d.offline_events)}
-                          </strong>{" "}
-                          offline
-                        </span>
-                        <span className="block">
-                          <strong className="font-semibold" style={{ color: "var(--th-text-primary)" }}>
-                            {formatCount(d.alerts)}
-                          </strong>{" "}
-                          alerts
-                        </span>
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <p className="th-panel-foot">Ranked by offline events plus alerts raised.</p>
-          </section>
-        </div>
-
-        {/* Enrollments · activity. Beyond ten rows a page the two cards keep
-            their own heights, so the shorter one is not stretched empty. */}
-        <div
-          className={`grid gap-4 lg:grid-cols-2 ${enrollmentPageSize > 10 || actionPageSize > 10 ? "lg:items-start" : ""}`}
-        >
-          <section className="premium-card flex h-full flex-col p-0" aria-labelledby="enrollments-title">
-            <div className="th-panel-head">
-              <h2 id="enrollments-title">Latest enrollments</h2>
-              <Link to="/devices" className="th-link-btn">
-                View all devices
-              </Link>
-            </div>
-            {recentDevices.length === 0 && !activityReady ? (
-              <p className="flex-1 px-5 py-8 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>
-                Loading devices…
-              </p>
-            ) : recentDevices.length === 0 && failed.devices ? (
-              <SectionError what="devices" onRetry={retryActivity} />
-            ) : recentDevices.length === 0 ? (
-              <EmptyState
-                className="flex-1"
-                icon={<Monitor className="h-5 w-5" />}
-                title="No devices yet"
-                description="Enrolled devices appear here as soon as their agent checks in."
-              />
-            ) : (
-              <ul className="flex-1 px-2 pb-2" key={`${enrollmentPage}:${enrollmentPageSize}`}>
-                {recentDevices
-                  .slice((enrollmentPage - 1) * enrollmentPageSize, enrollmentPage * enrollmentPageSize)
-                  .map((device, index) => {
-                    const tone = freshnessTone(deviceFreshness(device));
-                    return (
-                      <li
-                        key={device.id}
-                        className="th-share-row"
-                        style={{ "--i": Math.min(index, 12) } as React.CSSProperties}
-                      >
-                        <Link to={`/devices?device=${device.id}`} className="th-list-row">
-                          <span className="th-palette-icon !h-8 !w-8">
-                            <Monitor className="h-4 w-4" />
-                            <i style={{ background: tone }} />
-                          </span>
-                          <span className="min-w-0 flex-1">
-                            <span
-                              className="block truncate text-[13px] font-medium"
-                              style={{ color: "var(--th-text-primary)" }}
-                            >
-                              {device.hostname || "Unknown"}
-                            </span>
-                            <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-                              {[device.client_name || TERMS.noClient, device.current_user, device.public_ip]
-                                .filter(Boolean)
-                                .join(" · ")}
-                            </span>
-                          </span>
-                          <span className="text-right">
-                            <DeviceStatusChip device={device} />
-                            <span
-                              className="mt-0.5 block text-[11px] tabular-nums"
-                              style={{ color: "var(--th-text-faint)" }}
-                            >
-                              {formatLocalDateTime(device.registered_at)}
-                            </span>
-                          </span>
-                        </Link>
-                      </li>
-                    );
-                  })}
-              </ul>
-            )}
-            {recentDevices.length > ENROLLMENT_PAGE_SIZES[0] && (
-              <TablePagination
-                page={enrollmentPage}
-                pageSize={enrollmentPageSize}
-                total={recentDevices.length}
-                onPageChange={setEnrollmentPage}
-                onPageSizeChange={(size) => {
-                  setEnrollmentPageSize(size);
-                  setEnrollmentPage(1);
-                }}
-                pageSizeOptions={ENROLLMENT_PAGE_SIZES}
-                itemLabel="latest enrollments"
-              />
-            )}
-          </section>
-
-          <section className="premium-card flex h-full flex-col p-0" aria-labelledby="activity-title">
-            <div className="th-panel-head">
-              <h2 id="activity-title">{DASHBOARD_LABELS.recentActions}</h2>
-              {hasPermission("audit_log") && (
-                <Link to="/audit" className="th-link-btn">
-                  Audit log
+            <section className="premium-card th-dash-card flex h-full flex-col p-0" aria-labelledby="enrollments-title">
+              <div className="th-panel-head">
+                <h2 id="enrollments-title">Latest enrollments</h2>
+                <Link to="/devices" className="th-link-btn">
+                  View all devices
                 </Link>
-              )}
-            </div>
-            {recentActions.length === 0 && !activityReady ? (
-              <p className="flex-1 px-5 py-8 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>
-                Loading actions…
-              </p>
-            ) : recentActions.length === 0 && failed.actions ? (
-              <SectionError what="remote actions" onRetry={retryActivity} />
-            ) : recentActions.length === 0 ? (
-              <EmptyState
-                className="flex-1 justify-center"
-                icon={<Terminal className="h-5 w-5" />}
-                title="No remote actions yet"
-                description="Restarts, syncs and scripts sent to devices show up here with their result."
-              />
-            ) : (
-              <ul className="flex-1 px-2 pb-2" key={`${actionPage}:${actionPageSize}`}>
-                {recentActions
-                  .slice((actionPage - 1) * actionPageSize, actionPage * actionPageSize)
-                  .map((action, index) => {
-                    const isRunning = action.status === "running";
-                    return (
-                      <li
-                        key={action.id}
-                        className="th-share-row"
-                        style={{ "--i": Math.min(index, 12) } as React.CSSProperties}
-                      >
-                        <div className="th-list-row">
-                          <span className="th-palette-icon !h-8 !w-8">
-                            {isRunning ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Terminal className="h-4 w-4" />
-                            )}
-                          </span>
-                          <span className="min-w-0 flex-1">
-                            <span
-                              className="block truncate text-[13px] font-medium"
-                              style={{ color: "var(--th-text-primary)" }}
-                            >
-                              {actionTypeLabel(action.action_type)}
-                              <span style={{ color: "var(--th-text-muted)" }}>
-                                {" "}
-                                · {action.device_hostname ?? `Device #${action.device_id}`}
+              </div>
+              {recentDevices.length === 0 && !activityReady ? (
+                <p className="flex-1 px-5 py-8 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>
+                  Loading devices…
+                </p>
+              ) : recentDevices.length === 0 && failed.devices ? (
+                <SectionError what="devices" onRetry={retryActivity} />
+              ) : recentDevices.length === 0 ? (
+                <EmptyState
+                  className="flex-1"
+                  icon={<Monitor className="h-5 w-5" />}
+                  title="No devices yet"
+                  description="Enrolled devices appear here as soon as their agent checks in."
+                />
+              ) : (
+                <ul className="flex-1 px-2 pb-2" key={`${enrollmentPage}:${enrollmentPageSize}`}>
+                  {recentDevices
+                    .slice((enrollmentPage - 1) * enrollmentPageSize, enrollmentPage * enrollmentPageSize)
+                    .map((device, index) => {
+                      const tone = freshnessTone(deviceFreshness(device));
+                      return (
+                        <li
+                          key={device.id}
+                          className="th-share-row"
+                          style={{ "--i": Math.min(index, 12) } as React.CSSProperties}
+                        >
+                          <Link to={`/devices?device=${device.id}`} className="th-list-row">
+                            <span className="th-palette-icon !h-8 !w-8">
+                              <Monitor className="h-4 w-4" />
+                              <i style={{ background: tone }} />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span
+                                className="block truncate text-[13px] font-medium"
+                                style={{ color: "var(--th-text-primary)" }}
+                              >
+                                {device.hostname || "Unknown"}
+                              </span>
+                              <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                                {[device.client_name || TERMS.noClient, device.current_user, device.public_ip]
+                                  .filter(Boolean)
+                                  .join(" · ")}
                               </span>
                             </span>
-                            <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-                              {action.created_by ? `by ${action.created_by} · ` : ""}
-                              {timeAgo(actionRelevantTime(action))}
+                            <span className="text-right">
+                              <DeviceStatusChip device={device} />
+                              <span
+                                className="mt-0.5 block text-[11px] tabular-nums"
+                                style={{ color: "var(--th-text-faint)" }}
+                              >
+                                {formatLocalDateTime(device.registered_at)}
+                              </span>
                             </span>
-                          </span>
-                          <span
-                            className={`inline-flex items-center gap-1.5 text-[12px] font-medium ${statusColor(action.status)}`}
-                          >
-                            <span className={`h-1.5 w-1.5 rounded-full ${statusDotColor(action.status)}`} />
-                            {ACTION_STATUS_LABELS[action.status] ?? action.status}
-                          </span>
-                        </div>
-                      </li>
-                    );
-                  })}
-              </ul>
-            )}
-            {recentActions.length > ACTION_PAGE_SIZES[0] && (
-              <TablePagination
-                page={actionPage}
-                pageSize={actionPageSize}
-                total={recentActions.length}
-                onPageChange={setActionPage}
-                onPageSizeChange={(size) => {
-                  setActionPageSize(size);
-                  setActionPage(1);
-                }}
-                pageSizeOptions={ACTION_PAGE_SIZES}
-                itemLabel="recent actions"
-              />
-            )}
-          </section>
-        </div>
+                          </Link>
+                        </li>
+                      );
+                    })}
+                </ul>
+              )}
+              {recentDevices.length > ENROLLMENT_PAGE_SIZES[0] && (
+                <TablePagination
+                  page={enrollmentPage}
+                  pageSize={enrollmentPageSize}
+                  total={recentDevices.length}
+                  onPageChange={setEnrollmentPage}
+                  onPageSizeChange={(size) => {
+                    setEnrollmentPageSize(size);
+                    setEnrollmentPage(1);
+                  }}
+                  pageSizeOptions={ENROLLMENT_PAGE_SIZES}
+                  itemLabel="latest enrollments"
+                />
+              )}
+            </section>
+
+            <section className="premium-card th-dash-card flex h-full flex-col p-0" aria-labelledby="activity-title">
+              <div className="th-panel-head">
+                <h2 id="activity-title">{DASHBOARD_LABELS.recentActions}</h2>
+                {hasPermission("audit_log") && (
+                  <Link to="/audit" className="th-link-btn">
+                    Audit log
+                  </Link>
+                )}
+              </div>
+              {recentActions.length === 0 && !activityReady ? (
+                <p className="flex-1 px-5 py-8 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>
+                  Loading actions…
+                </p>
+              ) : recentActions.length === 0 && failed.actions ? (
+                <SectionError what="remote actions" onRetry={retryActivity} />
+              ) : recentActions.length === 0 ? (
+                <EmptyState
+                  className="flex-1 justify-center"
+                  icon={<Terminal className="h-5 w-5" />}
+                  title="No remote actions yet"
+                  description="Restarts, syncs and scripts sent to devices show up here with their result."
+                />
+              ) : (
+                <ul className="flex-1 px-2 pb-2" key={`${actionPage}:${actionPageSize}`}>
+                  {recentActions
+                    .slice((actionPage - 1) * actionPageSize, actionPage * actionPageSize)
+                    .map((action, index) => {
+                      const isRunning = action.status === "running";
+                      return (
+                        <li
+                          key={action.id}
+                          className="th-share-row"
+                          style={{ "--i": Math.min(index, 12) } as React.CSSProperties}
+                        >
+                          <div className="th-list-row">
+                            <span className="th-palette-icon !h-8 !w-8">
+                              {isRunning ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Terminal className="h-4 w-4" />
+                              )}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span
+                                className="block truncate text-[13px] font-medium"
+                                style={{ color: "var(--th-text-primary)" }}
+                              >
+                                {actionTypeLabel(action.action_type)}
+                                <span style={{ color: "var(--th-text-muted)" }}>
+                                  {" "}
+                                  · {action.device_hostname ?? `Device #${action.device_id}`}
+                                </span>
+                              </span>
+                              <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                                {action.created_by ? `by ${action.created_by} · ` : ""}
+                                {timeAgo(actionRelevantTime(action))}
+                              </span>
+                            </span>
+                            <span
+                              className={`inline-flex items-center gap-1.5 text-[12px] font-medium ${statusColor(action.status)}`}
+                            >
+                              <span className={`h-1.5 w-1.5 rounded-full ${statusDotColor(action.status)}`} />
+                              {ACTION_STATUS_LABELS[action.status] ?? action.status}
+                            </span>
+                          </div>
+                        </li>
+                      );
+                    })}
+                </ul>
+              )}
+              {recentActions.length > ACTION_PAGE_SIZES[0] && (
+                <TablePagination
+                  page={actionPage}
+                  pageSize={actionPageSize}
+                  total={recentActions.length}
+                  onPageChange={setActionPage}
+                  onPageSizeChange={(size) => {
+                    setActionPageSize(size);
+                    setActionPage(1);
+                  }}
+                  pageSizeOptions={ACTION_PAGE_SIZES}
+                  itemLabel="recent actions"
+                />
+              )}
+            </section>
+          </div>
+        </DashSection>
       </div>
       {/* end hidden md:block */}
     </section>
-  );
-}
-
-function HealthRing({ value }: { value: number | null }) {
-  const r = 34;
-  const c = 2 * Math.PI * r;
-  const pct = value == null ? 0 : Math.max(0, Math.min(100, value));
-  const tone = value == null ? TONE.neutral : value < 50 ? TONE.critical : value < 80 ? TONE.warning : TONE.online;
-  return (
-    <div
-      className="relative h-[88px] w-[88px] flex-none"
-      role="img"
-      aria-label={value == null ? "No health score" : `Average health ${value} of 100`}
-    >
-      <svg viewBox="0 0 88 88" className="h-full w-full -rotate-90">
-        <circle cx="44" cy="44" r={r} fill="none" strokeWidth="8" style={{ stroke: "var(--th-ring-track)" }} />
-        <circle
-          cx="44"
-          cy="44"
-          r={r}
-          fill="none"
-          strokeWidth="8"
-          strokeLinecap="round"
-          strokeDasharray={`${(pct / 100) * c} ${c}`}
-          className="th-ring-value"
-          style={{ stroke: tone }}
-        />
-      </svg>
-      <span className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="th-metric-big" style={{ lineHeight: 1 }}>
-          {value ?? "—"}
-        </span>
-        <span className="mt-1 text-[11px]" style={{ color: "var(--th-text-faint)" }}>
-          of 100
-        </span>
-      </span>
-    </div>
   );
 }
 
