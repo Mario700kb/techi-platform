@@ -5,6 +5,20 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-11-06] GPU-PANEL-2026-11-06 — frontend `32a6063`: the GPU panel says why a device shows no GPU
+
+**Owner: "nuk me shfaqet gpu ne monitor", "PO", then "deploy".** The panel hid
+silently without data. On Windows and Linux devices it now stays, with the reason:
+an agent to update, or no reading yet (uploads about every 15 minutes; empty where
+the system publishes no GPU counters). Vitest 498; Playwright monitoring, policies
+and accessibility on desktop 31 passed, not the whole suite.
+- By 21:41, 50 Windows devices were on 2.1.48, none of the pilot set and not from a
+  batch of Claude's; 20 had sent GPU and the API returned it for Arch-01. Values near
+  0%, not yet compared with Task Manager under load.
+- Deploy 21:51: frontend only, no dump; rollback image `pre-gpu-panel-1d968a3`; built
+  under `nice`; `nginx -t` in the new image; healthy in 5 s; guard + smoke passed; 0
+  5xx. Disk 2.2 GB free (91%).
+
 ## [2026-11-06] GPU-LINUX-2026-11-06 — `944a710`: GPU monitoring, Linux reports what Windows reports, agent 2.1.48 active
 
 **Owner: "ktu nuk monitorojme gpu", "ok ne rregull beji", "agjenti duhet te jete
