@@ -396,7 +396,7 @@ export default function AgentConfigPage() {
                               : `Heartbeat ${floorFor(id)}–${ceiling}s`}
                           </span>
                         </td>
-                        <td>
+                        <td data-label="Heartbeat">
                           <label className="th-policy-input" data-invalid={hbBad || undefined}>
                             <input
                               type="number"
@@ -409,7 +409,7 @@ export default function AgentConfigPage() {
                             <span>s</span>
                           </label>
                         </td>
-                        <td>
+                        <td data-label="Inventory">
                           <label className="th-policy-input" data-invalid={invBad || undefined}>
                             <input
                               type="number"
@@ -490,45 +490,47 @@ export default function AgentConfigPage() {
               subtitle="The device page's lists, and the actions that work from them"
             />
             <div className="th-onb-body flex-1">
-              <table className="w-full text-[13px]">
-                <thead>
-                  <tr style={{ color: "var(--th-text-muted)" }}>
-                    <th className="pb-2 text-left text-[12px] font-medium">Platform</th>
-                    {COLLECT_PARTS.map(([part, label]) => (
-                      <th key={part} className="pb-2 text-center text-[12px] font-medium">
-                        {label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {SOFTWARE_ROWS.map(([id, label]) => (
-                    <tr key={id}>
-                      <td className="py-1.5 font-medium" style={{ color: "var(--th-text-primary)" }}>
-                        {label}
-                      </td>
-                      {COLLECT_PARTS.map(([part, partLabel]) => {
-                        const key = collectKey(part, id);
-                        return (
-                          <td key={part} className="py-1.5 text-center">
-                            <button
-                              type="button"
-                              role="switch"
-                              aria-checked={softwareInputs[key] ?? true}
-                              aria-label={`Collect ${partLabel.toLowerCase()} on ${label}`}
-                              className="th-onb-switch"
-                              disabled={loading}
-                              onClick={() => setSoftwareInputs((prev) => ({ ...prev, [key]: !(prev[key] ?? true) }))}
-                            >
-                              <i />
-                            </button>
-                          </td>
-                        );
-                      })}
+              <div className="overflow-x-auto">
+                <table className="w-full text-[13px]">
+                  <thead>
+                    <tr style={{ color: "var(--th-text-muted)" }}>
+                      <th className="pb-2 text-left text-[12px] font-medium">Platform</th>
+                      {COLLECT_PARTS.map(([part, label]) => (
+                        <th key={part} className="pb-2 text-center text-[12px] font-medium">
+                          {label}
+                        </th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {SOFTWARE_ROWS.map(([id, label]) => (
+                      <tr key={id}>
+                        <td className="py-1.5 font-medium" style={{ color: "var(--th-text-primary)" }}>
+                          {label}
+                        </td>
+                        {COLLECT_PARTS.map(([part, partLabel]) => {
+                          const key = collectKey(part, id);
+                          return (
+                            <td key={part} className="py-1.5 text-center">
+                              <button
+                                type="button"
+                                role="switch"
+                                aria-checked={softwareInputs[key] ?? true}
+                                aria-label={`Collect ${partLabel.toLowerCase()} on ${label}`}
+                                className="th-onb-switch"
+                                disabled={loading}
+                                onClick={() => setSoftwareInputs((prev) => ({ ...prev, [key]: !(prev[key] ?? true) }))}
+                              >
+                                <i />
+                              </button>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
               <p className="th-onb-hint mt-2">
                 Software and services are read once an hour, processes every 15 minutes. Agents before 2.1.45 keep their
                 own setting for services and processes (before 2.1.42, for software too).

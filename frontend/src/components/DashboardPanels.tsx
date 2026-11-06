@@ -53,6 +53,31 @@ export function slaRows(alerts: Alert[], limit = 6): Alert[] {
     .slice(0, limit);
 }
 
+/** One open alert and its deadline; the desktop card and the mobile dashboard share it. */
+export function SlaRow({ alert, index }: { alert: Alert; index: number }) {
+  const deadline = alertDeadline(alert);
+  return (
+    <li className="th-share-row" style={{ "--i": index } as CSSProperties}>
+      <Link to="/alerts" className="th-sla-row">
+        <PriorityChip priority={alert.priority} />
+        <span className="min-w-0 flex-1">
+          <span className="th-sla-title">{alert.title || ALERT_KIND_LABELS[alert.kind] || humanize(alert.kind)}</span>
+          <span className="th-sla-meta">
+            {[alert.device_name, alert.client_name ?? TERMS.noClient, alert.assigned_to_name ?? "Unassigned"]
+              .filter(Boolean)
+              .join(" · ")}
+          </span>
+        </span>
+        {deadline && (
+          <span className="th-sla-due" style={{ "--due-tone": deadline.tone } as CSSProperties} title={deadline.title}>
+            {deadline.label}
+          </span>
+        )}
+      </Link>
+    </li>
+  );
+}
+
 export function SlaAtRiskCard({
   alerts,
   overdue,
@@ -98,35 +123,9 @@ export function SlaAtRiskCard({
         />
       ) : (
         <ul className="flex-1 px-2 pb-2">
-          {rows.map((alert, index) => {
-            const deadline = alertDeadline(alert);
-            return (
-              <li key={alert.id} className="th-share-row" style={{ "--i": index } as CSSProperties}>
-                <Link to="/alerts" className="th-sla-row">
-                  <PriorityChip priority={alert.priority} />
-                  <span className="min-w-0 flex-1">
-                    <span className="th-sla-title">
-                      {alert.title || ALERT_KIND_LABELS[alert.kind] || humanize(alert.kind)}
-                    </span>
-                    <span className="th-sla-meta">
-                      {[alert.device_name, alert.client_name ?? TERMS.noClient, alert.assigned_to_name ?? "Unassigned"]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </span>
-                  </span>
-                  {deadline && (
-                    <span
-                      className="th-sla-due"
-                      style={{ "--due-tone": deadline.tone } as CSSProperties}
-                      title={deadline.title}
-                    >
-                      {deadline.label}
-                    </span>
-                  )}
-                </Link>
-              </li>
-            );
-          })}
+          {rows.map((alert, index) => (
+            <SlaRow key={alert.id} alert={alert} index={index} />
+          ))}
         </ul>
       )}
       <p className="th-panel-foot mt-auto">Nearest deadline first: to take an alert, then to fix it.</p>

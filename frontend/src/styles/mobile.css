@@ -1,0 +1,490 @@
+/* ── Mobile UI (below 768px) ───────────────────────────────────────────────
+   One look for every screen on a phone: a floating dock, rounder cards, tap
+   targets a finger can hit, figures that scroll sideways instead of pushing
+   the data down. Screens built only for the phone have their own classes in
+   index.css; this file wins over them because it loads later. Colours come
+   only from the theme tokens. Nothing here reaches the desktop layout. */
+
+/* Outside the media query: harmless on desktop, where the toggle is hidden
+   and the wrapper leaves the layout untouched. */
+.th-mcollapse {
+  display: contents;
+}
+.th-mcollapse-toggle {
+  display: none;
+}
+
+/* More screen (also opens at tablet width) */
+.th-mmore {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: 100%;
+  max-width: 28rem;
+  margin-inline: auto;
+}
+.th-mmore-hero {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 14px;
+  overflow: hidden;
+  padding: 18px 16px;
+  border: 1px solid var(--th-border-card);
+  border-radius: 20px;
+  text-align: left;
+  background:
+    radial-gradient(120% 120% at 0% 0%, color-mix(in srgb, var(--th-accent) 20%, transparent) 0%, transparent 60%),
+    var(--th-bg-card);
+}
+.th-mmore-hero:active {
+  border-color: var(--th-border-strong);
+}
+.th-mmore .th-mmore-section > h2 {
+  margin: 0 2px 10px;
+  font-size: 11px !important;
+  font-weight: 650;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--th-text-muted);
+}
+.th-mmore-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.th-mmore-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 92px;
+  padding: 12px;
+  border: 1px solid var(--th-border-card);
+  border-radius: 16px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  color: var(--th-text-primary);
+  background: var(--th-bg-card);
+  transition:
+    transform 150ms ease,
+    border-color 150ms ease;
+}
+.th-mmore-tile:active {
+  transform: scale(0.97);
+  border-color: var(--th-border-strong);
+}
+.th-mmore-list {
+  overflow: hidden;
+  border: 1px solid var(--th-border-card);
+  border-radius: 16px;
+  background: var(--th-bg-card);
+}
+.th-mmore-chevron {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--th-text-faint);
+  transition: transform 200ms var(--th-ease-out);
+}
+.th-mmore-chevron[data-open] {
+  transform: rotate(180deg);
+}
+
+@media (max-width: 767px) {
+  /* ── Shell ── */
+  .th-main-mnav {
+    padding-bottom: calc(100px + env(safe-area-inset-bottom));
+  }
+  .th-mtop {
+    min-height: 58px;
+    background: color-mix(in srgb, var(--th-bg-main) 82%, transparent);
+  }
+  .th-mtop-title {
+    font-size: 18px;
+    font-weight: 650;
+  }
+  /* The bar now sits on the page colour: the pill takes the card's, which keeps
+     its text above 4.5:1. */
+  .th-mtop .th-status-chip {
+    background: var(--th-bg-card);
+    color: var(--th-text-secondary) !important;
+  }
+  .th-mtop-back {
+    width: 44px;
+    height: 44px;
+    margin-left: -10px;
+    border-radius: 14px;
+  }
+  .th-mnav,
+  .th-mactionbar {
+    inset: auto 10px calc(10px + env(safe-area-inset-bottom)) 10px;
+    border: 1px solid var(--th-border-strong);
+    border-radius: 24px;
+    background: color-mix(in srgb, var(--th-bg-card) 80%, transparent);
+    box-shadow:
+      0 14px 34px -12px rgba(0, 0, 0, 0.7),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+  html.light .th-mnav,
+  html.light .th-mactionbar {
+    box-shadow: 0 12px 30px -12px rgba(19, 19, 22, 0.28);
+  }
+  .th-mnav {
+    padding: 5px 6px;
+  }
+  .th-mnav-btn {
+    gap: 2px;
+    min-height: 54px;
+  }
+  .th-mactionbar {
+    padding: 8px;
+  }
+  .th-mactionbar-btn {
+    min-height: 46px;
+    border-radius: 16px;
+  }
+
+  /* ── Cards and controls, on every screen ── */
+  main .th-onb-card,
+  main .premium-card {
+    border-radius: 16px;
+  }
+  main .grid > * {
+    min-width: 0;
+  }
+  main .th-btn {
+    min-height: 40px;
+    border-radius: 12px;
+  }
+  main .th-select {
+    height: 44px;
+    border-radius: 12px;
+  }
+  /* 16px keeps iOS from zooming the page when a field takes focus. */
+  main input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  main textarea {
+    font-size: 16px;
+  }
+  main .th-input {
+    min-height: 44px;
+    border-radius: 12px;
+  }
+  main .th-onb-action {
+    min-width: 40px;
+    min-height: 40px;
+    border-radius: 12px;
+  }
+  main .th-onb-note .th-onb-action {
+    min-width: 0;
+    min-height: 0;
+  }
+  main .th-onb-note {
+    border-radius: 14px;
+  }
+
+  /* Page actions stay on one line and scroll if they must. */
+  .th-page-header > .ml-auto {
+    flex-wrap: nowrap;
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .th-page-header > .ml-auto::-webkit-scrollbar {
+    display: none;
+  }
+  .th-page-header > .ml-auto > * {
+    flex: none;
+  }
+
+  /* Summary figures: two to a row and compact, every number in view, the mark
+     in the corner so the figure reads first. */
+  main .th-onb .grid:has(> .th-onb-stat) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  main .th-onb .th-onb-card.th-onb-stat {
+    position: relative;
+    display: block;
+    padding: 12px;
+  }
+  main .th-onb .grid:has(> .th-onb-stat) > .th-onb-stat:last-child:nth-child(odd) {
+    display: block;
+  }
+  main .th-onb .th-onb-stat .th-onb-icon {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+  }
+  main .th-onb .th-onb-stat [class*="truncate"] {
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  /* Tables turned into cards */
+  main .th-alerts-table[data-mobile="cards"] .th-sticky-end {
+    position: static;
+  }
+  main .th-alerts-table[data-mobile="cards"] tbody td[data-label]::before {
+    content: attr(data-label) " ";
+    color: var(--th-text-muted);
+  }
+  /* Interval policy: a platform per row, its two fields side by side. */
+  main .th-policy-table thead,
+  main .th-policy-table colgroup {
+    display: none;
+  }
+  main .th-policy-table,
+  main .th-policy-table tbody {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+  main .th-policy-table tbody tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 10px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--th-border-subtle);
+  }
+  main .th-policy-table tbody td {
+    display: block;
+    min-width: 0;
+    padding: 0 !important;
+    border: 0;
+  }
+  main .th-policy-table tbody td:first-child {
+    grid-column: 1 / -1;
+  }
+  main .th-policy-table tbody td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 4px;
+    font-size: 12px;
+    color: var(--th-text-muted);
+  }
+  main .th-policy-table .th-policy-input {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+  }
+  main .th-policy-table .th-policy-input input {
+    width: 100%;
+    min-width: 0;
+  }
+
+  main .th-alerts-table.th-policy-table tbody tr > td {
+    padding: 0 !important;
+    border: 0 !important;
+  }
+  /* A card head with a search or filter beside it: the title keeps its line. */
+  main .th-onb-card-head {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+  main .th-onb-card-head > .th-onb-card-title {
+    flex: 1 1 auto;
+    min-width: min(200px, 100%);
+  }
+  main .th-onb-card-head > :not(.th-onb-card-title):has(input) {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  main .th-onb-card-head > :not(.th-onb-card-title):has(input) input {
+    width: 100%;
+  }
+  main .th-alerts-table[data-mobile="cards"] tbody td[data-label] {
+    display: inline-flex;
+    gap: 5px;
+    text-align: left;
+  }
+
+  main .th-alerts-table.th-policy-table tbody tr > td:first-child {
+    padding-left: 0 !important;
+  }
+  main .th-policy-table .th-alerts-primary,
+  main .th-policy-table .th-alerts-secondary {
+    margin-left: 0;
+    padding-left: 0;
+  }
+  main .th-alerts-table[data-mobile="cards"] tbody tr {
+    box-shadow: none;
+  }
+
+  /* Long forms behind one row */
+  .th-mcollapse {
+    display: block;
+    margin-bottom: 12px;
+  }
+  .th-mcollapse-toggle {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 10px;
+    min-height: 50px;
+    padding: 0 14px 0 16px;
+    border: 1px solid var(--th-border-card);
+    border-radius: 16px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--th-text-primary);
+    background: var(--th-bg-card);
+  }
+  .th-mcollapse-toggle:active {
+    border-color: var(--th-border-strong);
+  }
+  .th-mcollapse-toggle small {
+    flex: none;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--th-accent);
+  }
+  .th-mcollapse-chevron {
+    flex: none;
+    width: 18px;
+    height: 18px;
+    color: var(--th-text-faint);
+    transition: transform 200ms var(--th-ease-out);
+  }
+  .th-mcollapse[data-open] .th-mcollapse-chevron {
+    transform: rotate(180deg);
+  }
+  .th-mcollapse-body {
+    display: none;
+    margin-top: 10px;
+  }
+  .th-mcollapse[data-open] .th-mcollapse-body {
+    display: block;
+    animation: th-rise 220ms var(--th-ease-out) backwards;
+  }
+
+  /* Dialogs rise from the bottom edge */
+  .th-modal-scrim {
+    padding: 0;
+  }
+  .th-modal {
+    width: 100%;
+    max-height: 92dvh;
+    border-radius: 24px 24px 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* ── Sign-in ── */
+  .th-auth {
+    background:
+      radial-gradient(110% 60% at 0% 0%, color-mix(in srgb, var(--th-accent) 18%, transparent) 0%, transparent 62%),
+      radial-gradient(
+        100% 50% at 100% 100%,
+        color-mix(in srgb, var(--th-status-online) 9%, transparent) 0%,
+        transparent 60%
+      ),
+      var(--th-bg-main);
+  }
+
+  /* ── Devices ── */
+  .th-mdev-chip {
+    height: 36px;
+    padding: 0 13px;
+  }
+  .th-mdev-list {
+    gap: 10px;
+  }
+  .th-onb-card.th-mdev-card {
+    padding: 14px;
+  }
+  .th-mdev-card .th-mdev-foot {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--th-border-subtle);
+  }
+  .th-mdev-card .th-mdev-foot .th-mdev-meta {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .th-mdev-card .th-mdev-foot .th-mdev-meta {
+    background: transparent;
+  }
+  /* User and OS over IP and agent: two tidy pairs, no dots to fall out of line. */
+  .th-mdev-card .th-mdev-foot .th-mdev-meta > span {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, auto));
+    justify-content: start;
+    gap: 3px 14px;
+    overflow: visible;
+  }
+  .th-mdev-card .th-mdev-foot .th-mdev-meta [aria-hidden="true"] {
+    display: none;
+  }
+  .th-mdev-card .th-mdev-foot > .relative .th-btn,
+  .th-mdev-card .th-mdev-foot > .relative button {
+    min-height: 44px;
+    border-radius: 14px;
+  }
+
+  /* ── Device details ── */
+  .th-onb-card.th-mdetail-hero {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    padding: 12px 14px 16px 10px;
+    border-radius: 20px;
+    background:
+      radial-gradient(120% 110% at 0% 0%, color-mix(in srgb, var(--th-accent) 17%, transparent) 0%, transparent 58%),
+      var(--th-bg-card);
+  }
+  .th-macc-head {
+    min-height: 62px;
+  }
+  .th-onb-card.th-mvital {
+    border-radius: 16px;
+  }
+
+  /* ── Alerts: colour fills the head instead of a line down its side ── */
+  .th-malert-head {
+    box-shadow: none;
+    background: linear-gradient(115deg, color-mix(in srgb, var(--row-tone) 11%, transparent), transparent 62%);
+  }
+  .th-onb-card.th-malert-stat {
+    background:
+      linear-gradient(135deg, color-mix(in srgb, var(--stat-tone, transparent) 12%, transparent), transparent 62%),
+      var(--th-bg-card);
+  }
+  .th-malert-dismiss {
+    height: 42px;
+    padding: 0 16px;
+    border-radius: 12px;
+    font-size: 13px;
+  }
+  .th-mdev-tool {
+    min-width: 36px;
+    min-height: 36px;
+  }
+
+  /* ── Settings: three themes on one line ── */
+  main .th-choice-grid[aria-label="Theme"] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+  main .th-choice-grid[aria-label="Theme"] .th-choice {
+    gap: 8px;
+    padding: 12px 10px;
+  }
+}
+
+@media (max-width: 767px) and (prefers-reduced-motion: reduce) {
+  .th-mcollapse[data-open] .th-mcollapse-body {
+    animation: none;
+  }
+}

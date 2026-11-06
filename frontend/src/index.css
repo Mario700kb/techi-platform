@@ -1169,48 +1169,6 @@ html.light .drawer-table-head {
   background: var(--th-critical-fill);
   box-shadow: 0 0 0 2px var(--th-bg-sidebar);
 }
-.th-onb-card.th-mhero {
-  flex-direction: row;
-  align-items: center;
-  gap: 18px;
-  padding: 16px;
-}
-.th-mlegend {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 26px;
-  font-size: 13px;
-  color: var(--th-text-secondary);
-}
-.th-mlegend i {
-  width: 8px;
-  height: 8px;
-  flex: none;
-  border-radius: 999px;
-}
-.th-mlegend b {
-  font-weight: 600;
-  color: var(--th-text-primary);
-}
-.th-onb-card.th-mstat {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  grid-template-rows: auto auto;
-  column-gap: 12px;
-  align-items: center;
-  padding: 14px;
-  transition:
-    border-color 150ms ease,
-    transform 150ms ease;
-}
-.th-mstat > .th-onb-icon {
-  grid-row: span 2;
-}
-.th-mstat:active {
-  transform: scale(0.98);
-  border-color: var(--th-border-strong);
-}
 .th-mdev-toolbar {
   position: sticky;
   top: -12px;

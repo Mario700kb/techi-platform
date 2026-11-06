@@ -278,7 +278,7 @@ export default function AlertsMobile() {
             type="button"
             onClick={() => label !== "Devices" && setActiveFilter(label === "Critical" ? "critical" : "warning")}
             className="th-onb-card th-malert-stat th-onb-enter"
-            style={{ "--i": index } as CSSProperties}
+            style={{ "--i": index, "--stat-tone": tone } as CSSProperties}
             aria-label={`${value} ${label.toLowerCase()}`}
           >
             <span

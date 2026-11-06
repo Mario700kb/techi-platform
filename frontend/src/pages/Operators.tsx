@@ -662,7 +662,7 @@ export default function Operators() {
           />
         ) : (
           <div className="th-alerts-scroll th-table-scroll">
-            <table className="th-alerts-table">
+            <table className="th-alerts-table" data-mobile="cards">
               <colgroup>
                 <col />
                 <col className="w-[120px]" />

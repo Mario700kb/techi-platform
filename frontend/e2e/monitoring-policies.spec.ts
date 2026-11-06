@@ -123,6 +123,7 @@ for (const theme of ["dark", "light"] as const) {
       await page.getByRole("navigation").getByRole("link", { name: "Monitoring" }).click();
     } else {
       await page.goto("/more");
+      await page.getByRole("button", { name: /Admin pages/ }).click();
       await page
         .getByRole("button", { name: /Monitoring/ })
         .first()

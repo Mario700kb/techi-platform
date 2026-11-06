@@ -545,7 +545,7 @@ export default function Teams() {
           )
         ) : (
           <div className="th-alerts-scroll th-table-scroll">
-            <table className="th-alerts-table">
+            <table className="th-alerts-table" data-mobile="cards">
               <colgroup>
                 <col />
                 <col className="w-[110px]" />
@@ -588,16 +588,16 @@ export default function Teams() {
                         </span>
                       </span>
                     </td>
-                    <td className="text-right">
+                    <td className="text-right" data-label="Members">
                       <Count value={team.member_count} />
                     </td>
-                    <td className="text-right">
+                    <td className="text-right" data-label="Clients">
                       <Count value={team.client_count} />
                     </td>
-                    <td className="text-right">
+                    <td className="text-right" data-label="Groups">
                       <Count value={team.group_count} />
                     </td>
-                    <td className="text-right">
+                    <td className="text-right" data-label="Devices">
                       <Count value={team.effective_device_count} />
                       {team.explicit_device_count > 0 && (
                         <span className="th-alerts-secondary">

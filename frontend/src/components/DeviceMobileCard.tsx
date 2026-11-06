@@ -170,7 +170,7 @@ export function DeviceMobileCard({
             <button
               type="button"
               onClick={onSelect}
-              className="th-stretched-button min-w-0 truncate text-left text-[15px] font-semibold leading-5"
+              className="th-stretched-button min-w-0 truncate text-left text-[16px] font-semibold leading-5"
               style={{ color: "var(--th-text-primary)" }}
               title={displayName}
             >
@@ -210,12 +210,6 @@ export function DeviceMobileCard({
               <Star className={`h-4 w-4 ${isFavorite ? "fill-current" : ""}`} />
             </button>
           )}
-          <ConnectButton
-            size="md"
-            disabled={!canConnect}
-            onClick={onConnect}
-            title={connectTitle ?? (canConnect ? "Open TECHI Remote Support" : "Remote Support ID not resolved yet")}
-          />
         </div>
       </div>
 
@@ -247,19 +241,32 @@ export function DeviceMobileCard({
         {rsIssue && !offlineBadge && <ToneBadge view={rsIssue}>{TERMS.remoteSupport}</ToneBadge>}
       </div>
 
-      <div className="th-mdev-meta">
-        <span className="flex min-w-0 flex-1 items-center gap-x-2.5 overflow-hidden whitespace-nowrap">
-          {meta.map((m, i) => (
-            <span key={m.key} className={`flex items-center gap-x-2.5 ${m.key === "agent" ? "flex-none" : "min-w-0"}`}>
-              {i > 0 && (
-                <span aria-hidden="true" style={{ color: "var(--th-text-faint)" }}>
-                  ·
-                </span>
-              )}
-              {m.node}
-            </span>
-          ))}
-        </span>
+      <div className="th-mdev-foot">
+        <div className="th-mdev-meta">
+          <span className="flex min-w-0 flex-1 items-center gap-x-2.5 overflow-hidden whitespace-nowrap">
+            {meta.map((m, i) => (
+              <span
+                key={m.key}
+                className={`flex items-center gap-x-2.5 ${m.key === "agent" ? "flex-none" : "min-w-0"}`}
+              >
+                {i > 0 && (
+                  <span aria-hidden="true" style={{ color: "var(--th-text-faint)" }}>
+                    ·
+                  </span>
+                )}
+                {m.node}
+              </span>
+            ))}
+          </span>
+        </div>
+        <div className="relative z-[1] flex-none">
+          <ConnectButton
+            size="md"
+            disabled={!canConnect}
+            onClick={onConnect}
+            title={connectTitle ?? (canConnect ? "Open TECHI Remote Support" : "Remote Support ID not resolved yet")}
+          />
+        </div>
       </div>
     </div>
   );

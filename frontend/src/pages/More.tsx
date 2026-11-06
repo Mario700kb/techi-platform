@@ -1,6 +1,7 @@
+import { useState } from "react";
 import type { CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronRight, Info, LogOut, Monitor, Settings as SettingsIcon, Shield } from "lucide-react";
+import { ChevronDown, ChevronRight, Info, LogOut, Monitor, Settings as SettingsIcon, Shield } from "lucide-react";
 import { ALL_NAV_ITEMS, NavItem } from "../components/navigation";
 import { useVisibleNav } from "../hooks/useNavigation";
 import { useAuth } from "../auth/AuthContext";
@@ -10,8 +11,8 @@ import pkg from "../../package.json";
 
 /**
  * More screen (MOBILE-DESIGN-SPEC.md — More). Replaces the mobile slide-in
- * sidebar: the signed-in user, Workspace, Desktop console (dimmed, still
- * navigable) and App. Inventory is intentionally absent (placeholder page).
+ * sidebar: the signed-in user, Workspace tiles, the admin pages behind one row,
+ * and App. Inventory is intentionally absent (placeholder page).
  */
 
 const ROLE_TONE: Record<string, string> = {
@@ -21,43 +22,17 @@ const ROLE_TONE: Record<string, string> = {
   readonly: TONE.neutral,
 };
 
-function Group({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="th-mgroup th-onb-enter">
-      <h2 className="th-mgroup-title">{title}</h2>
-      <div className="th-onb-card overflow-hidden">{children}</div>
-    </section>
-  );
-}
-
-function NavRow({
-  item,
-  desktop = false,
-  onNavigate,
-}: {
-  item: NavItem;
-  desktop?: boolean;
-  onNavigate: (to: string) => void;
-}) {
+function NavRow({ item, onNavigate }: { item: NavItem; onNavigate: (to: string) => void }) {
   const Icon = item.icon;
   return (
-    <button type="button" onClick={() => onNavigate(item.to)} className="th-mrow" data-dim={desktop || undefined}>
-      <span
-        className="th-onb-icon !h-8 !w-8"
-        style={{ "--onb-tone": desktop ? "var(--th-text-muted)" : "var(--th-accent)" } as CSSProperties}
-      >
+    <button type="button" onClick={() => onNavigate(item.to)} className="th-mrow">
+      <span className="th-onb-icon !h-8 !w-8" style={{ "--onb-tone": "var(--th-text-muted)" } as CSSProperties}>
         <Icon className="h-4 w-4" />
       </span>
       <span className="th-mrow-label">
         <strong>{item.label}</strong>
       </span>
       <span className="th-mrow-end">
-        {desktop && (
-          <span className="th-status-chip !h-6 !px-2 !text-[11px]">
-            <Monitor className="h-3 w-3" />
-            Desktop only
-          </span>
-        )}
         <ChevronRight className="h-4 w-4" />
       </span>
     </button>
@@ -69,6 +44,7 @@ export default function More() {
   const { user, logout } = useAuth();
   const { fleetOverview } = useAppData();
   const { canSee } = useVisibleNav();
+  const [adminOpen, setAdminOpen] = useState(false);
 
   const workspace = ALL_NAV_ITEMS.filter((i) => i.mobile === "workspace" && canSee(i));
   const desktopConsole = ALL_NAV_ITEMS.filter((i) => i.mobile === "desktop" && canSee(i));
@@ -77,12 +53,12 @@ export default function More() {
   const agentVersion = fleetOverview?.active_agent_version;
 
   return (
-    <div className="premium-page th-onb mx-auto flex w-full max-w-md flex-col gap-5 md:max-w-2xl">
+    <div className="premium-page th-onb th-mmore">
       {user && (
         <button
           type="button"
           onClick={() => navigate("/settings")}
-          className="th-onb-card th-mprofile th-onb-enter"
+          className="th-mmore-hero th-onb-enter"
           aria-label={`${displayName}, open settings`}
         >
           <span className="th-settings-avatar !h-12 !w-12" aria-hidden="true">
@@ -104,59 +80,85 @@ export default function More() {
       )}
 
       {workspace.length > 0 && (
-        <Group title="Workspace">
-          {workspace.map((item) => (
-            <NavRow key={item.to} item={item} onNavigate={navigate} />
-          ))}
-        </Group>
+        <section className="th-mmore-section th-onb-enter">
+          <h2>Workspace</h2>
+          <div className="th-mmore-tiles">
+            {workspace.map((item) => {
+              const Icon = item.icon;
+              return (
+                <button key={item.to} type="button" onClick={() => navigate(item.to)} className="th-mmore-tile">
+                  <span className="th-onb-icon !h-8 !w-8" style={{ "--onb-tone": "var(--th-accent)" } as CSSProperties}>
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+        </section>
       )}
 
       {desktopConsole.length > 0 && (
-        <Group title="Desktop console">
-          {desktopConsole.map((item) => (
-            <NavRow key={item.to} item={item} desktop onNavigate={navigate} />
-          ))}
-        </Group>
+        <section className="th-mmore-section th-onb-enter">
+          <h2>Administration</h2>
+          <div className="th-mmore-list">
+            <button
+              type="button"
+              className="th-mrow"
+              aria-expanded={adminOpen}
+              onClick={() => setAdminOpen((open) => !open)}
+            >
+              <span className="th-onb-icon !h-8 !w-8" style={{ "--onb-tone": TONE.neutral } as CSSProperties}>
+                <Monitor className="h-4 w-4" />
+              </span>
+              <span className="th-mrow-label">
+                <strong>Admin pages</strong>
+                <small>{desktopConsole.length} pages · easiest on a desktop</small>
+              </span>
+              <ChevronDown className="th-mmore-chevron" data-open={adminOpen || undefined} aria-hidden="true" />
+            </button>
+            {adminOpen && desktopConsole.map((item) => <NavRow key={item.to} item={item} onNavigate={navigate} />)}
+          </div>
+        </section>
       )}
 
-      <Group title="App">
-        <button type="button" onClick={() => navigate("/settings")} className="th-mrow">
-          <span className="th-onb-icon !h-8 !w-8" style={{ "--onb-tone": TONE.info } as CSSProperties}>
-            <SettingsIcon className="h-4 w-4" />
-          </span>
-          <span className="th-mrow-label">
-            <strong>Settings</strong>
-            <small>Theme, account, diagnostics</small>
-          </span>
-          <span className="th-mrow-end">
-            <ChevronRight className="h-4 w-4" />
-          </span>
-        </button>
-        <div className="th-mrow" data-static="true">
-          <span className="th-onb-icon !h-8 !w-8" style={{ "--onb-tone": TONE.neutral } as CSSProperties}>
-            <Info className="h-4 w-4" />
-          </span>
-          <span className="th-mrow-label">
-            <strong>Version</strong>
-          </span>
-          <span className="th-mrow-end font-mono text-[12px]">
-            v{pkg.version}
-            {agentVersion ? ` · agent ${agentVersion}` : ""}
-          </span>
+      <section className="th-mmore-section th-onb-enter">
+        <h2>App</h2>
+        <div className="th-mmore-list">
+          <button type="button" onClick={() => navigate("/settings")} className="th-mrow">
+            <span className="th-onb-icon !h-8 !w-8" style={{ "--onb-tone": TONE.info } as CSSProperties}>
+              <SettingsIcon className="h-4 w-4" />
+            </span>
+            <span className="th-mrow-label">
+              <strong>Settings</strong>
+              <small>Theme, account, diagnostics</small>
+            </span>
+            <span className="th-mrow-end">
+              <ChevronRight className="h-4 w-4" />
+            </span>
+          </button>
+          <div className="th-mrow" data-static="true">
+            <span className="th-onb-icon !h-8 !w-8" style={{ "--onb-tone": TONE.neutral } as CSSProperties}>
+              <Info className="h-4 w-4" />
+            </span>
+            <span className="th-mrow-label">
+              <strong>Version</strong>
+            </span>
+            <span className="th-mrow-end font-mono text-[12px]">
+              v{pkg.version}
+              {agentVersion ? ` · agent ${agentVersion}` : ""}
+            </span>
+          </div>
+          <button type="button" onClick={logout} className="th-mrow" data-tone="danger">
+            <span className="th-onb-icon !h-8 !w-8" style={{ "--onb-tone": TONE.critical } as CSSProperties}>
+              <LogOut className="h-4 w-4" />
+            </span>
+            <span className="th-mrow-label">
+              <strong>Sign out</strong>
+            </span>
+          </button>
         </div>
-        <button type="button" onClick={logout} className="th-mrow" data-tone="danger">
-          <span className="th-onb-icon !h-8 !w-8" style={{ "--onb-tone": TONE.critical } as CSSProperties}>
-            <LogOut className="h-4 w-4" />
-          </span>
-          <span className="th-mrow-label">
-            <strong>Sign out</strong>
-          </span>
-        </button>
-      </Group>
-
-      <p className="pb-2 text-center font-mono text-[11px]" style={{ color: "var(--th-text-faint)" }}>
-        TECHI Connect
-      </p>
+      </section>
     </div>
   );
 }

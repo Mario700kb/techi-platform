@@ -184,7 +184,7 @@ for (const { width, sidebarOpen } of [
     await page.goto("/");
     await expect(page.locator("section[aria-labelledby='system-status-title'] .th-status-row").first()).toBeVisible();
     await expect(page.locator("section[aria-labelledby='agent-versions-title'] .th-cp-meter").first()).toBeVisible();
-    await expect(page.locator(".th-briefing-item")).toHaveCount(5);
+    await expect(page.locator(".th-dash .th-briefing-item")).toHaveCount(5);
 
     const m = await page.evaluate(() => {
       const box = (el: Element) => el.getBoundingClientRect();
@@ -203,8 +203,9 @@ for (const { width, sidebarOpen } of [
           .filter((el) => el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1)
           .map((el) => el.textContent);
       return {
-        pillLines: new Set([...document.querySelectorAll(".th-briefing-item")].map((el) => Math.round(box(el).top)))
-          .size,
+        pillLines: new Set(
+          [...document.querySelectorAll(".th-dash .th-briefing-item")].map((el) => Math.round(box(el).top)),
+        ).size,
         headHeights: [
           ...new Set([...document.querySelectorAll(".th-dash .th-panel-head")].map((el) => Math.round(box(el).height))),
         ],
@@ -219,15 +220,17 @@ for (const { width, sidebarOpen } of [
           ),
         ],
         kpiHeights: [
-          ...new Set([...document.querySelectorAll(".th-dash-kpi")].map((el) => Math.round(box(el).height))),
+          ...new Set([...document.querySelectorAll(".th-dash .th-dash-kpi")].map((el) => Math.round(box(el).height))),
         ],
         kpiHintHeights: [
           ...new Set(
-            [...document.querySelectorAll(".th-dash-kpi .th-kpi-hint")].map((el) => Math.round(box(el).height)),
+            [...document.querySelectorAll(".th-dash .th-dash-kpi .th-kpi-hint")].map((el) =>
+              Math.round(box(el).height),
+            ),
           ),
         ],
         clippedLabels: clipped(".th-cp-meter-name > .truncate"),
-        clippedCaptions: clipped(".th-dscore-caption"),
+        clippedCaptions: clipped(".th-dash .th-dscore-caption"),
       };
     });
 
@@ -243,7 +246,7 @@ for (const { width, sidebarOpen } of [
     expect(m.clippedCaptions, "no scorecard caption is cut off").toEqual([]);
 
     // The other clients' bar shows their real status, like every client above it.
-    const others = page.locator(".th-client-row", { hasText: "2 more clients" });
+    const others = page.locator(".th-dash .th-client-row", { hasText: "2 more clients" });
     await expect(others).toHaveAttribute("title", /75 online · 0 stale · 25 offline/);
     await expect(others).toContainText("75% online");
   });
@@ -258,7 +261,7 @@ test("between 1024 and 1279px no row is left half empty", async ({ page }) => {
 
   const rightEdges = await page.evaluate(() => {
     const right = (el: Element) => Math.round(el.getBoundingClientRect().right);
-    const scores = [...document.querySelectorAll(".th-dscore")];
+    const scores = [...document.querySelectorAll(".th-dash .th-dscore")];
     return {
       dash: right(document.querySelector(".th-dash-hero")!),
       lastScore: right(scores[scores.length - 1]),

@@ -1,3 +1,4 @@
+import { MobileCollapse } from "../components/mobile/MobileCollapse";
 import { ReactNode, useEffect, useState } from "react";
 import { Mail, Plus, RefreshCcw, Send, Trash2, Webhook as WebhookIcon } from "lucide-react";
 
@@ -251,127 +252,129 @@ export default function NotificationSettings() {
         <p className="premium-kicker mb-3">Channels</p>
 
         {canManage && (
-          <div
-            className="mb-4 rounded-lg border p-4"
-            style={{ borderColor: "var(--th-border-subtle)", background: "var(--th-bg-drawer-section)" }}
-          >
-            <p className="mb-3 text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
-              Add channel
-            </p>
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <Field label="Name">
-                <input
-                  className={INPUT_CLS}
-                  placeholder="e.g. Ops team email"
-                  value={chName}
-                  onChange={(e) => setChName(e.target.value)}
-                />
-              </Field>
-              <Field label="Type">
-                <SelectField
-                  className={INPUT_CLS}
-                  value={chType}
-                  onChange={(e) => setChType(e.target.value as NotificationChannelType)}
-                >
-                  <option value="email">Email (SMTP)</option>
-                  <option value="webhook">Webhook</option>
-                </SelectField>
-              </Field>
-              {chType === "email" ? (
-                <>
-                  <Field label="SMTP server">
-                    <input
-                      className={INPUT_CLS}
-                      placeholder="smtp.example.com"
-                      value={smtpHost}
-                      onChange={(e) => setSmtpHost(e.target.value)}
-                    />
-                  </Field>
-                  <Field label="Port">
-                    <input
-                      className={INPUT_CLS}
-                      type="number"
-                      min={1}
-                      value={smtpPort}
-                      onChange={(e) => setSmtpPort(e.target.value)}
-                    />
-                  </Field>
-                  <Field label="Username">
-                    <input
-                      className={INPUT_CLS}
-                      placeholder="alerts@example.com"
-                      value={smtpUser}
-                      onChange={(e) => setSmtpUser(e.target.value)}
-                    />
-                  </Field>
-                  <Field label="Password (optional)">
-                    <input
-                      className={INPUT_CLS}
-                      type="password"
-                      autoComplete="new-password"
-                      value={chSecret}
-                      onChange={(e) => setChSecret(e.target.value)}
-                    />
-                  </Field>
-                  <Field label="From address">
-                    <input
-                      className={INPUT_CLS}
-                      placeholder="Defaults to the username"
-                      value={smtpFrom}
-                      onChange={(e) => setSmtpFrom(e.target.value)}
-                    />
-                  </Field>
-                  <Field label="Recipients">
-                    <input
-                      className={INPUT_CLS}
-                      placeholder="ops@example.com, noc@example.com"
-                      value={smtpTo}
-                      onChange={(e) => setSmtpTo(e.target.value)}
-                    />
-                  </Field>
-                  <label
-                    className="flex items-center gap-2 text-[13px] xl:col-span-4"
-                    style={{ color: "var(--th-text-secondary)" }}
+          <MobileCollapse label="Add channel">
+            <div
+              className="mb-4 rounded-lg border p-4"
+              style={{ borderColor: "var(--th-border-subtle)", background: "var(--th-bg-drawer-section)" }}
+            >
+              <p className="mb-3 text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
+                Add channel
+              </p>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <Field label="Name">
+                  <input
+                    className={INPUT_CLS}
+                    placeholder="e.g. Ops team email"
+                    value={chName}
+                    onChange={(e) => setChName(e.target.value)}
+                  />
+                </Field>
+                <Field label="Type">
+                  <SelectField
+                    className={INPUT_CLS}
+                    value={chType}
+                    onChange={(e) => setChType(e.target.value as NotificationChannelType)}
                   >
-                    <input
-                      type="checkbox"
-                      checked={smtpTls}
-                      onChange={(e) => setSmtpTls(e.target.checked)}
-                      className="h-4 w-4 accent-orange-500"
-                    />
-                    Use STARTTLS
-                  </label>
-                </>
-              ) : (
-                <>
-                  <Field label="Webhook URL" className="xl:col-span-2">
-                    <input
-                      className={INPUT_CLS}
-                      placeholder="https://hooks.example.com/techi"
-                      value={webhookUrl}
-                      onChange={(e) => setWebhookUrl(e.target.value)}
-                    />
-                  </Field>
-                  <Field label="Shared secret (optional)" className="xl:col-span-2">
-                    <input
-                      className={INPUT_CLS}
-                      type="password"
-                      autoComplete="new-password"
-                      placeholder="Sent as X-TECHI-Signature"
-                      value={chSecret}
-                      onChange={(e) => setChSecret(e.target.value)}
-                    />
-                  </Field>
-                </>
-              )}
+                    <option value="email">Email (SMTP)</option>
+                    <option value="webhook">Webhook</option>
+                  </SelectField>
+                </Field>
+                {chType === "email" ? (
+                  <>
+                    <Field label="SMTP server">
+                      <input
+                        className={INPUT_CLS}
+                        placeholder="smtp.example.com"
+                        value={smtpHost}
+                        onChange={(e) => setSmtpHost(e.target.value)}
+                      />
+                    </Field>
+                    <Field label="Port">
+                      <input
+                        className={INPUT_CLS}
+                        type="number"
+                        min={1}
+                        value={smtpPort}
+                        onChange={(e) => setSmtpPort(e.target.value)}
+                      />
+                    </Field>
+                    <Field label="Username">
+                      <input
+                        className={INPUT_CLS}
+                        placeholder="alerts@example.com"
+                        value={smtpUser}
+                        onChange={(e) => setSmtpUser(e.target.value)}
+                      />
+                    </Field>
+                    <Field label="Password (optional)">
+                      <input
+                        className={INPUT_CLS}
+                        type="password"
+                        autoComplete="new-password"
+                        value={chSecret}
+                        onChange={(e) => setChSecret(e.target.value)}
+                      />
+                    </Field>
+                    <Field label="From address">
+                      <input
+                        className={INPUT_CLS}
+                        placeholder="Defaults to the username"
+                        value={smtpFrom}
+                        onChange={(e) => setSmtpFrom(e.target.value)}
+                      />
+                    </Field>
+                    <Field label="Recipients">
+                      <input
+                        className={INPUT_CLS}
+                        placeholder="ops@example.com, noc@example.com"
+                        value={smtpTo}
+                        onChange={(e) => setSmtpTo(e.target.value)}
+                      />
+                    </Field>
+                    <label
+                      className="flex items-center gap-2 text-[13px] xl:col-span-4"
+                      style={{ color: "var(--th-text-secondary)" }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={smtpTls}
+                        onChange={(e) => setSmtpTls(e.target.checked)}
+                        className="h-4 w-4 accent-orange-500"
+                      />
+                      Use STARTTLS
+                    </label>
+                  </>
+                ) : (
+                  <>
+                    <Field label="Webhook URL" className="xl:col-span-2">
+                      <input
+                        className={INPUT_CLS}
+                        placeholder="https://hooks.example.com/techi"
+                        value={webhookUrl}
+                        onChange={(e) => setWebhookUrl(e.target.value)}
+                      />
+                    </Field>
+                    <Field label="Shared secret (optional)" className="xl:col-span-2">
+                      <input
+                        className={INPUT_CLS}
+                        type="password"
+                        autoComplete="new-password"
+                        placeholder="Sent as X-TECHI-Signature"
+                        value={chSecret}
+                        onChange={(e) => setChSecret(e.target.value)}
+                      />
+                    </Field>
+                  </>
+                )}
+              </div>
+              <div className="mt-4 flex justify-end">
+                <Button size="sm" onClick={() => void handleCreateChannel()} disabled={savingChannel || !channelReady}>
+                  <Plus className="h-4 w-4" />
+                  {savingChannel ? "Saving…" : "Add channel"}
+                </Button>
+              </div>
             </div>
-            <div className="mt-4 flex justify-end">
-              <Button size="sm" onClick={() => void handleCreateChannel()} disabled={savingChannel || !channelReady}>
-                <Plus className="h-4 w-4" />
-                {savingChannel ? "Saving…" : "Add channel"}
-              </Button>
-            </div>
-          </div>
+          </MobileCollapse>
         )}
 
         <div className="overflow-x-auto rounded-lg border border-[color:var(--th-border-subtle)]">
@@ -452,91 +455,97 @@ export default function NotificationSettings() {
         <p className="premium-kicker mb-3">Rules</p>
 
         {canManage && (
-          <div
-            className="mb-4 rounded-lg border p-4"
-            style={{ borderColor: "var(--th-border-subtle)", background: "var(--th-bg-drawer-section)" }}
-          >
-            <p className="mb-3 text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
-              Add rule
-            </p>
-            <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-              <Field label="When this happens">
-                <SelectField className={INPUT_CLS} value={ruleEvent} onChange={(e) => setRuleEvent(e.target.value)}>
-                  {NOTIFICATION_EVENT_TYPES.map((ev) => (
-                    <option key={ev} value={ev}>
-                      {ev.replace(/_/g, " ")}
-                    </option>
-                  ))}
-                </SelectField>
-              </Field>
-              <Field label="Scope">
-                <SelectField
-                  className={INPUT_CLS}
-                  value={ruleScope}
-                  onChange={(e) => setRuleScope(e.target.value as NotificationScopeType)}
-                >
-                  <option value="global">All clients</option>
-                  <option value="client">One client</option>
-                </SelectField>
-              </Field>
-              {ruleScope === "client" && (
-                <Field label="Client ID">
-                  <input className={INPUT_CLS} value={ruleClientId} onChange={(e) => setRuleClientId(e.target.value)} />
+          <MobileCollapse label="Add rule">
+            <div
+              className="mb-4 rounded-lg border p-4"
+              style={{ borderColor: "var(--th-border-subtle)", background: "var(--th-bg-drawer-section)" }}
+            >
+              <p className="mb-3 text-[13px] font-semibold" style={{ color: "var(--th-text-primary)" }}>
+                Add rule
+              </p>
+              <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+                <Field label="When this happens">
+                  <SelectField className={INPUT_CLS} value={ruleEvent} onChange={(e) => setRuleEvent(e.target.value)}>
+                    {NOTIFICATION_EVENT_TYPES.map((ev) => (
+                      <option key={ev} value={ev}>
+                        {ev.replace(/_/g, " ")}
+                      </option>
+                    ))}
+                  </SelectField>
                 </Field>
-              )}
-              <Field label="Notify channel">
-                <SelectField
-                  className={INPUT_CLS}
-                  value={ruleChannelId}
-                  onChange={(e) => setRuleChannelId(e.target.value ? Number(e.target.value) : "")}
-                >
-                  <option value="">{channels.length ? "Choose a channel" : "Add a channel first"}</option>
-                  {channels.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </SelectField>
-              </Field>
-              <Field label="Minimum severity">
-                <SelectField
-                  className={INPUT_CLS}
-                  value={ruleSeverity}
-                  onChange={(e) => setRuleSeverity(e.target.value)}
-                >
-                  <option value="">Any severity</option>
-                  <option value="info">Info and above</option>
-                  <option value="warning">Warning and above</option>
-                  <option value="critical">Critical only</option>
-                </SelectField>
-              </Field>
-              <Field label="Cooldown (seconds)">
-                <input
-                  className={INPUT_CLS}
-                  type="number"
-                  min={0}
-                  value={ruleCooldown}
-                  onChange={(e) => setRuleCooldown(e.target.value)}
-                />
-              </Field>
-              <Field label="Max per hour (optional)">
-                <input
-                  className={INPUT_CLS}
-                  type="number"
-                  min={1}
-                  placeholder="No limit"
-                  value={ruleRateLimit}
-                  onChange={(e) => setRuleRateLimit(e.target.value)}
-                />
-              </Field>
+                <Field label="Scope">
+                  <SelectField
+                    className={INPUT_CLS}
+                    value={ruleScope}
+                    onChange={(e) => setRuleScope(e.target.value as NotificationScopeType)}
+                  >
+                    <option value="global">All clients</option>
+                    <option value="client">One client</option>
+                  </SelectField>
+                </Field>
+                {ruleScope === "client" && (
+                  <Field label="Client ID">
+                    <input
+                      className={INPUT_CLS}
+                      value={ruleClientId}
+                      onChange={(e) => setRuleClientId(e.target.value)}
+                    />
+                  </Field>
+                )}
+                <Field label="Notify channel">
+                  <SelectField
+                    className={INPUT_CLS}
+                    value={ruleChannelId}
+                    onChange={(e) => setRuleChannelId(e.target.value ? Number(e.target.value) : "")}
+                  >
+                    <option value="">{channels.length ? "Choose a channel" : "Add a channel first"}</option>
+                    {channels.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </SelectField>
+                </Field>
+                <Field label="Minimum severity">
+                  <SelectField
+                    className={INPUT_CLS}
+                    value={ruleSeverity}
+                    onChange={(e) => setRuleSeverity(e.target.value)}
+                  >
+                    <option value="">Any severity</option>
+                    <option value="info">Info and above</option>
+                    <option value="warning">Warning and above</option>
+                    <option value="critical">Critical only</option>
+                  </SelectField>
+                </Field>
+                <Field label="Cooldown (seconds)">
+                  <input
+                    className={INPUT_CLS}
+                    type="number"
+                    min={0}
+                    value={ruleCooldown}
+                    onChange={(e) => setRuleCooldown(e.target.value)}
+                  />
+                </Field>
+                <Field label="Max per hour (optional)">
+                  <input
+                    className={INPUT_CLS}
+                    type="number"
+                    min={1}
+                    placeholder="No limit"
+                    value={ruleRateLimit}
+                    onChange={(e) => setRuleRateLimit(e.target.value)}
+                  />
+                </Field>
+              </div>
+              <div className="mt-4 flex justify-end">
+                <Button size="sm" onClick={() => void handleCreateRule()} disabled={savingRule || !ruleChannelId}>
+                  <Plus className="h-4 w-4" />
+                  {savingRule ? "Saving…" : "Add rule"}
+                </Button>
+              </div>
             </div>
-            <div className="mt-4 flex justify-end">
-              <Button size="sm" onClick={() => void handleCreateRule()} disabled={savingRule || !ruleChannelId}>
-                <Plus className="h-4 w-4" />
-                {savingRule ? "Saving…" : "Add rule"}
-              </Button>
-            </div>
-          </div>
+          </MobileCollapse>
         )}
 
         <div className="overflow-x-auto rounded-lg border border-[color:var(--th-border-subtle)]">

@@ -12,6 +12,7 @@ import {
   Loader2,
   Monitor,
   RefreshCcw,
+  ShieldCheck,
   Star,
   Terminal,
   Users,
@@ -72,7 +73,7 @@ import { usePollingRefresh } from "../hooks/usePollingRefresh";
 import { useNow } from "../hooks/useNow";
 import { DeviceRealtimeEvent } from "../services/deviceRealtime";
 import { useAppData } from "../contexts/AppDataContext";
-import { actionRelevantTime, DASHBOARD_LABELS, DashboardMobile } from "./DashboardMobile";
+import { actionRelevantTime, DASHBOARD_LABELS, DashboardMobile, MobilePanel } from "./DashboardMobile";
 import {
   Briefing,
   BriefingItem,
@@ -770,6 +771,384 @@ export default function Dashboard() {
     },
   ];
 
+  const clientPicker = (className: string) => (
+    <Select
+      value={clientId != null ? String(clientId) : "all"}
+      onChange={(value) => selectClient(value === "all" ? null : Number(value))}
+      aria-label="Show the dashboard for"
+      className={className}
+      options={[
+        { value: "all", label: "All clients" },
+        ...[...clients]
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map((c) => ({ value: String(c.id), label: c.name })),
+        ...(clientId != null && !clients.some((c) => c.id === clientId)
+          ? [{ value: String(clientId), label: clientName ?? `Client #${clientId}` }]
+          : []),
+      ]}
+    />
+  );
+
+  // Shared by the desktop cards and the mobile insights.
+  const alertBreakdown = (
+    <>
+      <div className="th-cp-hero">
+        <SegmentRing
+          segments={severitySegments}
+          total={totalOpenAlerts}
+          center={formatCount(totalOpenAlerts)}
+          caption={totalOpenAlerts === 1 ? "open alert" : "open alerts"}
+          size={108}
+        />
+        <RingLegend segments={severitySegments} total={totalOpenAlerts} onSelect={() => navigate("/alerts")} />
+      </div>
+      <SubHead>By type</SubHead>
+      <ul className="th-cp-meters" data-dense="true">
+        {alertsByKind.map(([kind, count], index) => (
+          <MeterRow
+            key={kind}
+            index={index}
+            mark={
+              <span className="th-cp-mark-sm" aria-hidden="true">
+                <AlertKindIcon kind={kind as AlertKind} className="h-3.5 w-3.5" />
+              </span>
+            }
+            label={ALERT_KIND_LABELS[kind as AlertKind] ?? humanize(kind)}
+            count={count}
+            total={totalOpenAlerts}
+            tone={TONE.warning}
+            to="/alerts"
+          />
+        ))}
+      </ul>
+    </>
+  );
+  const categoryBreakdown = (
+    <>
+      <div className="th-cp-hero">
+        <SegmentRing
+          segments={categorySegments}
+          total={total}
+          center={formatCount(total)}
+          caption="devices"
+          size={108}
+        />
+        <RingLegend
+          segments={categorySegments}
+          total={total}
+          onSelect={(key) => navigate(CATEGORY_FILTERS[key] ?? "/devices")}
+        />
+      </div>
+      <SubHead>Online by category</SubHead>
+      <ul className="th-cp-meters" data-dense="true">
+        {devicesByCategory.map(([category, counts], index) => {
+          const Icon = CATEGORY_ICONS[category] ?? Monitor;
+          return (
+            <MeterRow
+              key={category}
+              index={index}
+              mark={
+                <span className="th-cp-mark-sm" aria-hidden="true">
+                  <Icon className="h-3.5 w-3.5" />
+                </span>
+              }
+              label={CATEGORY_LABELS[category] ?? humanize(category)}
+              count={counts.online}
+              total={counts.total}
+              share={percent(counts.online, counts.total)}
+              segments={[
+                { key: "online", label: "online", value: counts.online, tone: TONE.online },
+                { key: "stale", label: "stale", value: counts.stale, tone: TONE.stale },
+                { key: "offline", label: "offline", value: counts.offline, tone: TONE.offline },
+              ]}
+              title={`${formatCount(counts.online)} online · ${formatCount(counts.stale)} stale · ${formatCount(counts.offline)} offline of ${formatCount(counts.total)}`}
+              to={CATEGORY_FILTERS[category] ?? "/devices"}
+            />
+          );
+        })}
+      </ul>
+    </>
+  );
+  const clientBreakdownFoot =
+    clientId != null
+      ? `${formatCount(groupCount)} ${groupCount === 1 ? "group" : "groups"} · bar length is the share of the client's devices.`
+      : `${formatCount(clientCount)} ${clientCount === 1 ? "client" : "clients"} · bar length is the share of the fleet, colours its status.`;
+  const alertTrendFigures = (
+    <div className="mb-3 grid grid-cols-3 gap-3">
+      {(
+        [
+          ["Opened", insights ? formatCount(insights.alerts.opened_total) : undefined],
+          ["Resolved", insights ? formatCount(insights.alerts.resolved_total) : undefined],
+          [
+            "Avg. time to resolve",
+            insights?.alerts.mean_time_to_resolve_hours != null
+              ? `${insights.alerts.mean_time_to_resolve_hours} h`
+              : undefined,
+          ],
+        ] as const
+      ).map(([label, value]) => (
+        <div key={label}>
+          <p className="th-metric-big">{value ?? "—"}</p>
+          <p className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+            {label}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+  const problemDeviceRows = (
+    <ul className="flex-1 px-2 pb-2">
+      {insights?.problem_devices.map((d, i) => (
+        <li key={d.device_id}>
+          <Link to={`/devices?device=${d.device_id}`} className="th-list-row">
+            <span
+              className="flex h-8 w-8 flex-none items-center justify-center rounded-lg text-[12px] font-semibold tabular-nums"
+              style={{ background: "var(--th-chip-bg)", color: "var(--th-text-muted)" }}
+            >
+              {i + 1}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>
+                {d.name}
+              </span>
+              <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+                {d.client_name ?? TERMS.noClient}
+              </span>
+            </span>
+            <span
+              className="text-right text-[12px] leading-5 tabular-nums"
+              style={{ color: "var(--th-text-secondary)" }}
+            >
+              <span className="block">
+                <strong className="font-semibold" style={{ color: "var(--th-text-primary)" }}>
+                  {formatCount(d.offline_events)}
+                </strong>{" "}
+                offline
+              </span>
+              <span className="block">
+                <strong className="font-semibold" style={{ color: "var(--th-text-primary)" }}>
+                  {formatCount(d.alerts)}
+                </strong>{" "}
+                alerts
+              </span>
+            </span>
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+  const enrollmentRow = (device: Device, index: number) => {
+    const tone = freshnessTone(deviceFreshness(device));
+    return (
+      <li key={device.id} className="th-share-row" style={{ "--i": Math.min(index, 12) } as React.CSSProperties}>
+        <Link to={`/devices?device=${device.id}`} className="th-list-row">
+          <span className="th-palette-icon !h-8 !w-8">
+            <Monitor className="h-4 w-4" />
+            <i style={{ background: tone }} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[13px] font-medium" style={{ color: "var(--th-text-primary)" }}>
+              {device.hostname || "Unknown"}
+            </span>
+            <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
+              {[device.client_name || TERMS.noClient, device.current_user, device.public_ip]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
+          </span>
+          <span className="text-right">
+            <DeviceStatusChip device={device} />
+            <span className="mt-0.5 block text-[11px] tabular-nums" style={{ color: "var(--th-text-faint)" }}>
+              {formatLocalDateTime(device.registered_at)}
+            </span>
+          </span>
+        </Link>
+      </li>
+    );
+  };
+
+  // On a phone every other analysis waits behind a tap; each renders only when opened.
+  const flaggedChecks = risk?.checks.filter((check) => check.count > 0).length ?? 0;
+  const newestDevice = recentDevices[0]?.hostname;
+  const quietLine = (text: string) => (
+    <p className="th-mcard-note" style={{ paddingBottom: 8 }}>
+      {text}
+    </p>
+  );
+  const insightOr = (ready: () => React.ReactNode, what: string) =>
+    insights ? (
+      ready()
+    ) : insightsFailed ? (
+      <SectionError what={what} onRetry={retryInsights} />
+    ) : (
+      <SkeletonRows rows={3} />
+    );
+  const mobilePanels: MobilePanel[] = [
+    {
+      key: "alerts",
+      title: "Alerts by type",
+      summary: !alertCountReady
+        ? "Loading…"
+        : totalOpenAlerts === 0
+          ? "No open alerts"
+          : `${formatCount(totalOpenAlerts)} open${alertCount.devices_affected ? ` on ${formatCount(alertCount.devices_affected)} devices` : ""}`,
+      icon: BellRing,
+      tone: totalOpenAlerts > 0 ? TONE.warning : TONE.neutral,
+      render: () => (alertsByKind.length > 0 ? alertBreakdown : quietLine("Every alert has been resolved.")),
+    },
+    {
+      key: "risk",
+      title: "Security & risk",
+      summary: !risk
+        ? riskFailed
+          ? "Couldn't load the checks"
+          : "Loading…"
+        : `${flaggedChecks} of ${risk.checks.length} checks flagged${risk.security.average_score != null ? ` · score ${Math.round(risk.security.average_score)}` : ""}`,
+      icon: ShieldCheck,
+      tone: flaggedChecks > 0 ? TONE.warning : TONE.online,
+      render: () => <SecurityRiskCard risk={risk} failed={riskFailed} onRetry={loadRisk} />,
+    },
+    {
+      key: "agents",
+      title: "Agent versions",
+      summary:
+        agentsOutdated > 0
+          ? `${formatCount(agentsOutdated)} behind${activeAgentVersion ? ` ${activeAgentVersion}` : ""}`
+          : "All on the active agent",
+      icon: Cpu,
+      tone: "var(--th-status-agent)",
+      render: () => (
+        <AgentVersionsCard
+          risk={risk}
+          failed={riskFailed}
+          onRetry={loadRisk}
+          activeWindows={activeAgentVersion}
+          activeLinux={[...new Set(Object.values(fleetOverview?.active_agent_versions ?? {}))]}
+        />
+      ),
+    },
+    {
+      key: "clients",
+      title: clientId != null ? "Groups" : "Clients",
+      summary:
+        clientId != null
+          ? `${formatCount(groupCount)} ${groupCount === 1 ? "group" : "groups"}`
+          : `${formatCount(clientCount)} ${clientCount === 1 ? "client" : "clients"} · status of each`,
+      icon: Building2,
+      tone: TONE.info,
+      render: () =>
+        clientBreakdown.length > 0 ? (
+          <>
+            <div className="th-mpanel-pad">
+              <ClientStatusList rows={clientBreakdown} total={total} />
+            </div>
+            <p className="th-panel-foot">{clientBreakdownFoot}</p>
+          </>
+        ) : (
+          quietLine("Devices are grouped here by client once they enroll.")
+        ),
+    },
+    {
+      key: "categories",
+      title: "Device categories",
+      summary: devicesByCategory
+        .slice(0, 2)
+        .map(([category, counts]) => `${formatCount(counts.total)} ${CATEGORY_LABELS[category] ?? humanize(category)}`)
+        .join(" · "),
+      icon: Monitor,
+      tone: TONE.maintenance,
+      render: () => (devicesByCategory.length > 0 ? categoryBreakdown : quietLine("No devices to group.")),
+    },
+    {
+      key: "availability",
+      title: "Availability trend",
+      summary:
+        insights?.availability.overall_pct != null
+          ? `${insights.availability.overall_pct.toFixed(2)}% over 30 days`
+          : "Last 30 days",
+      icon: Wifi,
+      tone: TONE.online,
+      render: () => (
+        <div className="th-mpanel-pad">
+          {insightOr(() => insights && <AvailabilityChart series={insights.availability.series} />, "availability")}
+        </div>
+      ),
+    },
+    {
+      key: "alert-trend",
+      title: "Alerts this week",
+      summary: insights
+        ? `${formatCount(insights.alerts.opened_total)} opened · ${formatCount(insights.alerts.resolved_total)} resolved`
+        : "Opened against resolved",
+      icon: Clock3,
+      tone: TONE.warning,
+      render: () => (
+        <div className="th-mpanel-pad">
+          {alertTrendFigures}
+          {insightOr(() => insights && <AlertFlowChart series={insights.alerts.series} />, "alert trends")}
+        </div>
+      ),
+    },
+    {
+      key: "problem-devices",
+      title: "Problem devices",
+      summary: insights
+        ? insights.problem_devices.length > 0
+          ? `${formatCount(insights.problem_devices.length)} ${insights.problem_devices.length === 1 ? "device" : "devices"} · last 7 days`
+          : "None this week"
+        : "Last 7 days",
+      icon: HeartPulse,
+      tone: TONE.critical,
+      render: () =>
+        insightOr(
+          () => (insights?.problem_devices.length ? problemDeviceRows : quietLine("No device went offline this week.")),
+          "problem devices",
+        ),
+    },
+    {
+      key: "enrollments",
+      title: "Latest enrollments",
+      summary: newestDevice ? `Latest: ${newestDevice}` : "Latest enrollments",
+      icon: Download,
+      tone: TONE.online,
+      render: () =>
+        recentDevices.length > 0 ? (
+          <ul className="th-menroll px-2">{recentDevices.slice(0, 5).map(enrollmentRow)}</ul>
+        ) : (
+          quietLine(shownFailed.devices ? "Couldn't load devices." : "Enrolled devices appear here.")
+        ),
+    },
+    {
+      key: "team",
+      title: "Who's online",
+      summary: `${formatCount(onlineOperators.length)} online · ${formatCount(operators.length)} in the team`,
+      icon: Users,
+      tone: TONE.info,
+      render: () => (
+        <OperatorsPanel
+          operators={operators}
+          loading={operators.length === 0 && !activityReady}
+          failed={shownFailed.operators}
+          onRetry={retryActivity}
+          currentUserId={user?.id}
+          canManage={canManageOperators}
+        />
+      ),
+    },
+    ...(isAdmin
+      ? [
+          {
+            key: "system",
+            title: "System status",
+            summary: "Services, API and realtime",
+            icon: Terminal,
+            tone: TONE.neutral,
+            render: () => <SystemStatusCard compact />,
+          },
+        ]
+      : []),
+  ];
+
   return (
     <section className="premium-page space-y-5">
       {/* Mobile dashboard — shown only below md (768px) */}
@@ -786,6 +1165,18 @@ export default function Dashboard() {
           actions={recentActions}
           actionsLoading={recentActions.length === 0 && !activityReady}
           loading={loading}
+          greeting={greeting}
+          clientName={clientName}
+          clientPicker={clientPicker("th-mdash-client-picker")}
+          averageHealth={averageHealth}
+          health={health}
+          availabilityPct={insights?.availability.overall_pct ?? null}
+          availabilityValues={availabilityValues}
+          availabilityDelta={availabilityDelta}
+          briefing={briefing}
+          scorecard={scorecard}
+          sla={sla}
+          panels={mobilePanels}
         />
       </div>
 
@@ -800,21 +1191,7 @@ export default function Dashboard() {
           }
           actions={
             <>
-              <Select
-                value={clientId != null ? String(clientId) : "all"}
-                onChange={(value) => selectClient(value === "all" ? null : Number(value))}
-                aria-label="Show the dashboard for"
-                className="th-dash-client-picker"
-                options={[
-                  { value: "all", label: "All clients" },
-                  ...[...clients]
-                    .sort((a, b) => a.name.localeCompare(b.name))
-                    .map((c) => ({ value: String(c.id), label: c.name })),
-                  ...(clientId != null && !clients.some((c) => c.id === clientId)
-                    ? [{ value: String(clientId), label: clientName ?? `Client #${clientId}` }]
-                    : []),
-                ]}
-              />
+              {clientPicker("th-dash-client-picker")}
               {onlineOperators.length > 0 &&
                 (() => {
                   const content = (
@@ -1115,41 +1492,7 @@ export default function Dashboard() {
                   description="Every alert raised for your devices has been resolved."
                 />
               ) : (
-                <>
-                  <div className="th-cp-hero">
-                    <SegmentRing
-                      segments={severitySegments}
-                      total={totalOpenAlerts}
-                      center={formatCount(totalOpenAlerts)}
-                      caption={totalOpenAlerts === 1 ? "open alert" : "open alerts"}
-                      size={108}
-                    />
-                    <RingLegend
-                      segments={severitySegments}
-                      total={totalOpenAlerts}
-                      onSelect={() => navigate("/alerts")}
-                    />
-                  </div>
-                  <SubHead>By type</SubHead>
-                  <ul className="th-cp-meters" data-dense="true">
-                    {alertsByKind.map(([kind, count], index) => (
-                      <MeterRow
-                        key={kind}
-                        index={index}
-                        mark={
-                          <span className="th-cp-mark-sm" aria-hidden="true">
-                            <AlertKindIcon kind={kind as AlertKind} className="h-3.5 w-3.5" />
-                          </span>
-                        }
-                        label={ALERT_KIND_LABELS[kind as AlertKind] ?? humanize(kind)}
-                        count={count}
-                        total={totalOpenAlerts}
-                        tone={TONE.warning}
-                        to="/alerts"
-                      />
-                    ))}
-                  </ul>
-                </>
+                alertBreakdown
               )}
               <p className="th-panel-foot mt-auto">
                 {alertCountReady ? (
@@ -1211,11 +1554,7 @@ export default function Dashboard() {
                   <ClientStatusList rows={clientBreakdown} total={total} />
                 </div>
               )}
-              <p className="th-panel-foot mt-auto">
-                {clientId != null
-                  ? `${formatCount(groupCount)} ${groupCount === 1 ? "group" : "groups"} · bar length is the share of the client's devices.`
-                  : `${formatCount(clientCount)} ${clientCount === 1 ? "client" : "clients"} · bar length is the share of the fleet, colours its status.`}
-              </p>
+              <p className="th-panel-foot mt-auto">{clientBreakdownFoot}</p>
             </section>
 
             <section
@@ -1233,50 +1572,7 @@ export default function Dashboard() {
               ) : devicesByCategory.length === 0 ? (
                 <EmptyState className="flex-1" icon={<Monitor className="h-5 w-5" />} title="No devices to group" />
               ) : (
-                <>
-                  <div className="th-cp-hero">
-                    <SegmentRing
-                      segments={categorySegments}
-                      total={total}
-                      center={formatCount(total)}
-                      caption="devices"
-                      size={108}
-                    />
-                    <RingLegend
-                      segments={categorySegments}
-                      total={total}
-                      onSelect={(key) => navigate(CATEGORY_FILTERS[key] ?? "/devices")}
-                    />
-                  </div>
-                  <SubHead>Online by category</SubHead>
-                  <ul className="th-cp-meters" data-dense="true">
-                    {devicesByCategory.map(([category, counts], index) => {
-                      const Icon = CATEGORY_ICONS[category] ?? Monitor;
-                      return (
-                        <MeterRow
-                          key={category}
-                          index={index}
-                          mark={
-                            <span className="th-cp-mark-sm" aria-hidden="true">
-                              <Icon className="h-3.5 w-3.5" />
-                            </span>
-                          }
-                          label={CATEGORY_LABELS[category] ?? humanize(category)}
-                          count={counts.online}
-                          total={counts.total}
-                          share={percent(counts.online, counts.total)}
-                          segments={[
-                            { key: "online", label: "online", value: counts.online, tone: TONE.online },
-                            { key: "stale", label: "stale", value: counts.stale, tone: TONE.stale },
-                            { key: "offline", label: "offline", value: counts.offline, tone: TONE.offline },
-                          ]}
-                          title={`${formatCount(counts.online)} online · ${formatCount(counts.stale)} stale · ${formatCount(counts.offline)} offline of ${formatCount(counts.total)}`}
-                          to={CATEGORY_FILTERS[category] ?? "/devices"}
-                        />
-                      );
-                    })}
-                  </ul>
-                </>
+                categoryBreakdown
               )}
               <p className="th-panel-foot mt-auto">
                 {formatCount(total)} active devices by current status. Archived devices are excluded.
@@ -1351,27 +1647,7 @@ export default function Dashboard() {
                 </span>
               </div>
               <div className="flex flex-1 flex-col px-5 pb-4">
-                <div className="mb-3 grid grid-cols-3 gap-3">
-                  {(
-                    [
-                      ["Opened", insights ? formatCount(insights.alerts.opened_total) : undefined],
-                      ["Resolved", insights ? formatCount(insights.alerts.resolved_total) : undefined],
-                      [
-                        "Avg. time to resolve",
-                        insights?.alerts.mean_time_to_resolve_hours != null
-                          ? `${insights.alerts.mean_time_to_resolve_hours} h`
-                          : undefined,
-                      ],
-                    ] as const
-                  ).map(([label, value]) => (
-                    <div key={label}>
-                      <p className="th-metric-big">{value ?? "—"}</p>
-                      <p className="text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-                        {label}
-                      </p>
-                    </div>
-                  ))}
-                </div>
+                {alertTrendFigures}
                 <div className="min-h-0 flex-1">
                   {insights ? (
                     <AlertFlowChart series={insights.alerts.series} />
@@ -1416,48 +1692,7 @@ export default function Dashboard() {
                   description="No device went offline or raised an alert this week."
                 />
               ) : (
-                <ul className="flex-1 px-2 pb-2">
-                  {insights.problem_devices.map((d, i) => (
-                    <li key={d.device_id}>
-                      <Link to={`/devices?device=${d.device_id}`} className="th-list-row">
-                        <span
-                          className="flex h-8 w-8 flex-none items-center justify-center rounded-lg text-[12px] font-semibold tabular-nums"
-                          style={{ background: "var(--th-chip-bg)", color: "var(--th-text-muted)" }}
-                        >
-                          {i + 1}
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span
-                            className="block truncate text-[13px] font-medium"
-                            style={{ color: "var(--th-text-primary)" }}
-                          >
-                            {d.name}
-                          </span>
-                          <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-                            {d.client_name ?? TERMS.noClient}
-                          </span>
-                        </span>
-                        <span
-                          className="text-right text-[12px] leading-5 tabular-nums"
-                          style={{ color: "var(--th-text-secondary)" }}
-                        >
-                          <span className="block">
-                            <strong className="font-semibold" style={{ color: "var(--th-text-primary)" }}>
-                              {formatCount(d.offline_events)}
-                            </strong>{" "}
-                            offline
-                          </span>
-                          <span className="block">
-                            <strong className="font-semibold" style={{ color: "var(--th-text-primary)" }}>
-                              {formatCount(d.alerts)}
-                            </strong>{" "}
-                            alerts
-                          </span>
-                        </span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
+                problemDeviceRows
               )}
               <p className="th-panel-foot">Ranked by offline events plus alerts raised.</p>
             </section>
@@ -1493,45 +1728,7 @@ export default function Dashboard() {
                 <ul className="flex-1 px-2 pb-2" key={`${enrollmentPage}:${enrollmentPageSize}`}>
                   {recentDevices
                     .slice((enrollmentPage - 1) * enrollmentPageSize, enrollmentPage * enrollmentPageSize)
-                    .map((device, index) => {
-                      const tone = freshnessTone(deviceFreshness(device));
-                      return (
-                        <li
-                          key={device.id}
-                          className="th-share-row"
-                          style={{ "--i": Math.min(index, 12) } as React.CSSProperties}
-                        >
-                          <Link to={`/devices?device=${device.id}`} className="th-list-row">
-                            <span className="th-palette-icon !h-8 !w-8">
-                              <Monitor className="h-4 w-4" />
-                              <i style={{ background: tone }} />
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <span
-                                className="block truncate text-[13px] font-medium"
-                                style={{ color: "var(--th-text-primary)" }}
-                              >
-                                {device.hostname || "Unknown"}
-                              </span>
-                              <span className="block truncate text-[12px]" style={{ color: "var(--th-text-muted)" }}>
-                                {[device.client_name || TERMS.noClient, device.current_user, device.public_ip]
-                                  .filter(Boolean)
-                                  .join(" · ")}
-                              </span>
-                            </span>
-                            <span className="text-right">
-                              <DeviceStatusChip device={device} />
-                              <span
-                                className="mt-0.5 block text-[11px] tabular-nums"
-                                style={{ color: "var(--th-text-faint)" }}
-                              >
-                                {formatLocalDateTime(device.registered_at)}
-                              </span>
-                            </span>
-                          </Link>
-                        </li>
-                      );
-                    })}
+                    .map(enrollmentRow)}
                 </ul>
               )}
               {recentDevices.length > ENROLLMENT_PAGE_SIZES[0] && (

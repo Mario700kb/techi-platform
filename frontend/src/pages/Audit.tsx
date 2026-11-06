@@ -1,3 +1,4 @@
+import { MobileCollapse } from "../components/mobile/MobileCollapse";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import {
@@ -263,78 +264,80 @@ export default function Audit() {
       </div>
 
       {/* ── filters ─────────────────────────────────────────────────────── */}
-      <div className="th-onb-card th-onb-enter" style={{ "--i": 3 } as CSSProperties}>
-        <CardHead
-          icon={Filter}
-          tone="var(--th-accent)"
-          title="Filters"
-          subtitle="Times are Tirana time"
-          aside={
-            <div className="flex gap-2">
-              {activeFilters > 0 && (
-                <Button size="sm" variant="secondary" onClick={clearFilters}>
-                  <X className="h-3.5 w-3.5" />
-                  Clear
+      <MobileCollapse label="Filters" hint={activeFilters ? `${activeFilters} active` : undefined}>
+        <div className="th-onb-card th-onb-enter" style={{ "--i": 3 } as CSSProperties}>
+          <CardHead
+            icon={Filter}
+            tone="var(--th-accent)"
+            title="Filters"
+            subtitle="Times are Tirana time"
+            aside={
+              <div className="flex gap-2">
+                {activeFilters > 0 && (
+                  <Button size="sm" variant="secondary" onClick={clearFilters}>
+                    <X className="h-3.5 w-3.5" />
+                    Clear
+                  </Button>
+                )}
+                <Button size="sm" onClick={applyFilters} disabled={loading || !draftChanged}>
+                  Apply
                 </Button>
-              )}
-              <Button size="sm" onClick={applyFilters} disabled={loading || !draftChanged}>
-                Apply
-              </Button>
+              </div>
+            }
+          />
+          <div className="th-onb-body">
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+              <div className="th-onb-field">
+                Operator
+                <Select
+                  id="filter-operator"
+                  aria-label="Filter by operator"
+                  value={draft.operator_username ?? ""}
+                  onChange={(value) => setDraft((d) => ({ ...d, operator_username: value || undefined }))}
+                  options={operatorOptions}
+                />
+              </div>
+              <div className="th-onb-field">
+                Action
+                <Select
+                  id="filter-action"
+                  aria-label="Filter by action"
+                  value={draft.action ?? ""}
+                  onChange={(value) => setDraft((d) => ({ ...d, action: value || undefined }))}
+                  options={actionOptions}
+                />
+              </div>
+              <div className="th-onb-field">
+                Entity type
+                <Select
+                  id="filter-entity-type"
+                  aria-label="Filter by entity type"
+                  value={draft.entity_type ?? ""}
+                  onChange={(value) => setDraft((d) => ({ ...d, entity_type: value || undefined }))}
+                  options={entityOptions}
+                />
+              </div>
+              <label className="th-onb-field">
+                From
+                <DatePicker
+                  withTime
+                  value={utcToTiranaInput(draft.from_dt)}
+                  onChange={(v) => setDraft((d) => ({ ...d, from_dt: v ? tiranaInputToUtcIso(v) : undefined }))}
+                />
+              </label>
+              <label className="th-onb-field">
+                To
+                <DatePicker
+                  withTime
+                  defaultTime="23:59"
+                  value={utcToTiranaInput(draft.to_dt)}
+                  onChange={(v) => setDraft((d) => ({ ...d, to_dt: v ? tiranaInputToUtcIso(v) : undefined }))}
+                />
+              </label>
             </div>
-          }
-        />
-        <div className="th-onb-body">
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-            <div className="th-onb-field">
-              Operator
-              <Select
-                id="filter-operator"
-                aria-label="Filter by operator"
-                value={draft.operator_username ?? ""}
-                onChange={(value) => setDraft((d) => ({ ...d, operator_username: value || undefined }))}
-                options={operatorOptions}
-              />
-            </div>
-            <div className="th-onb-field">
-              Action
-              <Select
-                id="filter-action"
-                aria-label="Filter by action"
-                value={draft.action ?? ""}
-                onChange={(value) => setDraft((d) => ({ ...d, action: value || undefined }))}
-                options={actionOptions}
-              />
-            </div>
-            <div className="th-onb-field">
-              Entity type
-              <Select
-                id="filter-entity-type"
-                aria-label="Filter by entity type"
-                value={draft.entity_type ?? ""}
-                onChange={(value) => setDraft((d) => ({ ...d, entity_type: value || undefined }))}
-                options={entityOptions}
-              />
-            </div>
-            <label className="th-onb-field">
-              From
-              <DatePicker
-                withTime
-                value={utcToTiranaInput(draft.from_dt)}
-                onChange={(v) => setDraft((d) => ({ ...d, from_dt: v ? tiranaInputToUtcIso(v) : undefined }))}
-              />
-            </label>
-            <label className="th-onb-field">
-              To
-              <DatePicker
-                withTime
-                defaultTime="23:59"
-                value={utcToTiranaInput(draft.to_dt)}
-                onChange={(v) => setDraft((d) => ({ ...d, to_dt: v ? tiranaInputToUtcIso(v) : undefined }))}
-              />
-            </label>
           </div>
         </div>
-      </div>
+      </MobileCollapse>
 
       {/* ── events ──────────────────────────────────────────────────────── */}
       <div className="th-alerts-card th-onb-tokens th-onb-enter" style={{ "--i": 4 } as CSSProperties}>

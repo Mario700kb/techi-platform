@@ -1,0 +1,546 @@
+/* ── Dashboard (mobile, below 768px) ──────────────────────────────────────
+   One column read top to bottom: fleet pulse → what to look at → counts →
+   scorecard → what needs a decision → the rest, one tap away. Colours come
+   from the theme tokens, so light and dark both work. Tap targets are 44px
+   or more. Everything is scoped to .th-mdash. */
+
+.th-mdash {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 28rem;
+  margin-inline: auto;
+  -webkit-tap-highlight-color: transparent;
+}
+.th-mdash .th-dash-eyebrow {
+  margin: 4px 2px 10px;
+}
+
+/* Greeting and client picker */
+.th-mdash-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+}
+.th-mdash-greeting {
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--th-text-primary);
+}
+.th-mdash .th-mdash-client-picker {
+  flex: 0 1 46%;
+  min-width: 0;
+  height: 44px;
+  margin-left: auto;
+  border-radius: 12px;
+}
+
+/* ── Fleet pulse ── */
+.th-mpulse {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: 16px;
+  border: 1px solid var(--th-border-card);
+  border-radius: 20px;
+  background:
+    radial-gradient(120% 90% at 0% 0%, color-mix(in srgb, var(--th-accent) 18%, transparent) 0%, transparent 55%),
+    radial-gradient(
+      110% 80% at 100% 100%,
+      color-mix(in srgb, var(--th-status-online) 13%, transparent) 0%,
+      transparent 58%
+    ),
+    var(--th-bg-card);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  animation: th-rise 420ms var(--th-ease-out) backwards;
+}
+.th-mpulse::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image: radial-gradient(var(--th-border-strong) 1px, transparent 1px);
+  background-size: 16px 16px;
+  mask-image: linear-gradient(115deg, black 0%, transparent 50%);
+  opacity: 0.5;
+}
+.th-mpulse-main {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.th-mpulse-ring-loading {
+  flex: none;
+  width: 116px;
+  height: 116px;
+  border: 10px solid var(--th-ring-track);
+  border-radius: 50%;
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+.th-mpulse-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--th-text-muted);
+}
+.th-mpulse-count {
+  margin-top: 2px;
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  color: var(--th-text-primary);
+}
+.th-mpulse-count small {
+  margin-left: 2px;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--th-text-faint);
+}
+.th-mpulse-of {
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: var(--th-text-secondary);
+}
+.th-mdash .th-dash-mix {
+  margin: 16px 0 6px;
+}
+.th-mpulse-status {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  margin: 0 -6px;
+}
+.th-mpulse-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 52px;
+  padding: 6px;
+  border-radius: 10px;
+  transition: background-color 150ms ease;
+}
+.th-mpulse-cell:active {
+  background: var(--th-sidebar-nav-hover);
+}
+.th-mpulse-cell-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--th-text-muted);
+}
+.th-mpulse-cell-label > i {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+  background: var(--cell-tone);
+}
+.th-mpulse-cell strong {
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--th-text-primary);
+}
+.th-mpulse-trend {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: end;
+  gap: 14px;
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--th-border-subtle);
+}
+.th-mpulse-trend-value {
+  margin-top: 2px;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  color: var(--th-text-primary);
+}
+.th-mpulse-trend .th-delta {
+  margin-top: 2px;
+  white-space: nowrap;
+}
+.th-mpulse-trend .th-spark {
+  margin-top: 0;
+}
+
+/* ── Sideways lists, running to the screen's edges ── */
+.th-mscroll,
+.th-mdash .th-briefing {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  margin: 0 -12px;
+  padding: 2px 12px;
+  overflow-x: auto;
+  scroll-padding-inline: 12px;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+.th-mscroll::-webkit-scrollbar,
+.th-mdash .th-briefing::-webkit-scrollbar {
+  display: none;
+}
+.th-mdash .th-briefing > li,
+.th-mscroll > * {
+  flex: none;
+  scroll-snap-align: start;
+}
+.th-mdash .th-briefing-item {
+  height: 44px;
+  padding: 0 12px 0 14px;
+  border-radius: 14px;
+  font-size: 13px;
+}
+.th-mscroll > .th-dscore {
+  width: min(66vw, 236px);
+  border-radius: 16px;
+}
+.th-mscroll > .th-dscore:active,
+.th-mdash .th-briefing-item:active,
+.th-mdash .th-dash-kpi:active {
+  transform: scale(0.98);
+}
+
+/* ── KPI tiles ── */
+.th-mdash-kpis {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.th-mdash .th-dash-kpi {
+  border-radius: 16px;
+}
+
+/* ── Cards ── */
+.th-mcard {
+  overflow: hidden;
+  border: 1px solid var(--th-border-card);
+  border-radius: 16px;
+  background: var(--th-bg-card);
+}
+.th-mcard-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 52px;
+  padding: 12px 16px;
+}
+.th-mcard-head h2 {
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--th-text-primary);
+}
+.th-mcard-head small {
+  flex: none;
+  font-size: 12px;
+  color: var(--th-text-muted);
+}
+.th-mcard-note,
+.th-mcard-clear {
+  padding: 0 16px 16px;
+  font-size: 13px;
+  color: var(--th-text-muted);
+}
+.th-mcard-clear {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  color: var(--th-status-online);
+}
+.th-mcard-more {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 46px;
+  padding: 0 16px;
+  border-top: 1px solid var(--th-border-subtle);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--th-text-secondary);
+}
+.th-mcard-more:active {
+  background: var(--th-sidebar-nav-hover);
+}
+.th-mdash-mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  color: var(--mark-tone, var(--th-text-muted));
+  border: 1px solid color-mix(in srgb, var(--mark-tone, var(--th-border-subtle)) 26%, transparent);
+  background: color-mix(in srgb, var(--mark-tone, transparent) 11%, transparent);
+}
+.th-mdash-chevron {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--th-text-faint);
+}
+
+/* Needs attention */
+.th-mattn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 8px 12px 8px 16px;
+  border-top: 1px solid var(--th-border-subtle);
+  transition: background-color 150ms ease;
+}
+.th-mattn:active {
+  background: var(--th-sidebar-nav-hover);
+}
+.th-mattn-label {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--th-text-primary);
+}
+.th-mattn-track {
+  display: block;
+  height: 4px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--th-ring-track);
+}
+.th-mattn-track > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--mark-tone);
+  transition: width 700ms var(--th-ease-out);
+}
+.th-mattn-count {
+  flex: none;
+  min-width: 2.25rem;
+  text-align: right;
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--th-text-primary);
+}
+
+/* Deadlines */
+.th-mcard .th-sla-row {
+  min-height: 56px;
+  padding: 8px;
+}
+.th-mcard .th-sla-row:active {
+  background: var(--th-sidebar-nav-hover);
+}
+
+/* Recent actions */
+.th-mfeed-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 60px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--th-border-subtle);
+}
+.th-mfeed-title,
+.th-mfeed-meta {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.th-mfeed-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--th-text-primary);
+}
+.th-mfeed-meta {
+  font-size: 12px;
+  color: var(--th-text-muted);
+}
+.th-mfeed-end {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--th-text-faint);
+}
+
+/* ── Insights: each analysis opens in place ── */
+.th-mpanels {
+  overflow: hidden;
+  border: 1px solid var(--th-border-card);
+  border-radius: 16px;
+  background: var(--th-bg-card);
+}
+.th-mpanel + .th-mpanel {
+  border-top: 1px solid var(--th-border-subtle);
+}
+.th-mpanel-toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 12px;
+  min-height: 62px;
+  padding: 10px 14px 10px 16px;
+  text-align: left;
+  transition: background-color 150ms ease;
+}
+.th-mpanel-toggle:active {
+  background: var(--th-sidebar-nav-hover);
+}
+.th-mpanel-title,
+.th-mpanel-summary {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.th-mpanel-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--th-text-primary);
+}
+.th-mpanel-summary {
+  margin-top: 1px;
+  font-size: 12px;
+  color: var(--th-text-muted);
+}
+.th-mpanel-chevron {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--th-text-faint);
+  transition: transform 200ms var(--th-ease-out);
+}
+.th-mpanel-chevron[data-open] {
+  transform: rotate(180deg);
+}
+.th-mpanel-body {
+  padding-bottom: 8px;
+  animation: th-rise 240ms var(--th-ease-out) backwards;
+}
+/* A desktop card inside a panel: the toggle already names it and frames it. */
+.th-mpanel-body > .premium-card,
+.th-mpanel-body > * > .premium-card {
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.th-mpanel-body .th-panel-head {
+  justify-content: flex-end;
+  min-height: 0;
+  padding: 0 16px 8px;
+}
+.th-mpanel-body .th-panel-head h2 {
+  display: none;
+}
+.th-mpanel-body .th-panel-head:not(:has(> :not(h2))) {
+  display: none;
+}
+/* The toggle's summary already gives the score. */
+.th-mpanel-body section[aria-labelledby="risk-title"] .th-panel-head {
+  display: none;
+}
+.th-mpanel-body .th-link-btn {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+.th-mpanel-body .th-panel-foot {
+  padding: 10px 16px 4px;
+}
+.th-mpanel-pad {
+  padding: 0 16px 8px;
+}
+/* Rows meant for a mouse on the desktop cards: a finger needs 44px. */
+.th-mpanel-body .th-cp-meters[data-dense] .th-cp-meter,
+.th-mpanel-body .th-cp-legend button,
+.th-mpanel-body .th-risk-row {
+  min-height: 44px;
+}
+.th-mpanel-body .th-risk-row {
+  padding-block: 4px;
+}
+.th-mpanel-body .th-client-row,
+.th-mpanel-body .th-risk-device {
+  min-height: 44px;
+}
+/* A device's status takes its own line, so its name is never squeezed. */
+.th-menroll .th-list-row {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.th-menroll .th-list-row > :nth-child(2) {
+  flex: 1 1 calc(100% - 48px);
+}
+.th-menroll .th-list-row > :last-child {
+  display: flex;
+  flex: 1 0 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-left: 42px;
+  text-align: left;
+}
+/* On the narrowest phones a ring and its legend take a row each. */
+@media (max-width: 379px) {
+  .th-mpanel-body .th-cp-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .th-mpanel-body .th-cp-hero > :first-child {
+    justify-self: center;
+  }
+}
+
+/* 320px phones: the label gets the mark's room, so it fits in two lines. */
+@media (max-width: 339px) {
+  .th-mpanel-body .th-cp-meters[data-dense] .th-cp-meter {
+    grid-template-columns: minmax(0, 1fr) 40px 32px 38px;
+    gap: 8px;
+  }
+  .th-mpanel-body .th-cp-meters[data-dense] .th-cp-mark-sm {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .th-mpulse,
+  .th-mpanel-body {
+    animation: none;
+  }
+  .th-mpanel-chevron,
+  .th-mattn-track > span {
+    transition: none;
+  }
+  .th-mscroll > .th-dscore:active,
+  .th-mdash .th-briefing-item:active,
+  .th-mdash .th-dash-kpi:active {
+    transform: none;
+  }
+}

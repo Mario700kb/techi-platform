@@ -8,6 +8,7 @@ import { AppDataProvider } from "./contexts/AppDataContext";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { installGlobalErrorHandlers } from "./utils/errorReporting";
 import "./index.css";
+import "./styles/mobile.css";
 import Toaster from "./components/Toaster";
 
 installGlobalErrorHandlers();

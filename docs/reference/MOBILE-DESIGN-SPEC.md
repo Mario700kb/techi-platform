@@ -8,6 +8,20 @@
 | **Baza** | Audit vizual në produksion me Playwright (2026-07-05, 54 screenshots, gjetjet B1–B10) + audit kodi |
 | **Scope** | VETËM Mobile (<768px). Desktop, API, Backend, Agent — të paprekura. |
 
+**Amendament 2026-11-06, të gjitha ekranet (owner: "rregulloi te gjitha ekranet te
+versionit mobile"):** ku ndryshon nga më poshtë, vlen ky paragraf.
+- **Baza:** `src/styles/mobile.css`. BottomNav dhe action bar janë dock lundrues;
+  kartat 16px; butonat ≥40px, fushat dhe Select ≥44px; fushat 16px (pa zoom në iOS).
+- **KPI-të e faqeve** janë shirit që rrëshqet anash, jo rrjet që shtyn të dhënat poshtë.
+- **Devices:** emri ka rreshtin e vet; Connect kalon poshtë djathtas, 44px, po 1 tap.
+- **Alerts:** pa vijë anësore (owner: "hiqi vijat anash"); ngjyra mbush kokën e grupit.
+- **More:** Workspace si pllaka; faqet admin pas një rreshti (zëvendëson "Desktop
+  only" në çdo rresht), të hapshme si më parë.
+- **Filtrat dhe formularët e gjatë** (Audit, Notifications) janë pas një rreshti
+  (`MobileCollapse`); në desktop pa ndryshim.
+- **Operators, Teams:** tabela bëhet karta. **Agent Config:** një platformë për rresht.
+- **Testet:** `e2e/mobile-screens.spec.ts`.
+
 Çdo devijim nga ky dokument gjatë implementimit është i ndaluar. Problemet
 teknike dokumentohen te **Implementation Notes** — nuk zgjidhen duke ndryshuar
 dizajnin.
@@ -122,35 +136,45 @@ refresh); kthim në foreground → revalidim automatik; pull-to-refresh manual.
 
 # Dashboard
 
-**Wireframe (mockup ekrani 1):**
+**Amendament 2026-11-06 (kërkesë e owner-it: "versioni mobile duhet te
+ristrukturohet dhe te behet supermoderne"):** zëvendëson wireframe-in e mëparshëm
+të Dashboard-it. Pjesa tjetër e këtij dokumenti nuk ndryshon.
+
+**Wireframe:**
 ```
 [TopBar: Dashboard          ● Live  ⌕]
-        (unaza 57% — 408/720 online)
-[TOTAL 720] [ONLINE 408]
-[CRITICAL 347] [ALERTS 466]
-[NEEDS ATTENTION            ]
-[ Offline devices      309 ›]
-[ Critical health      347 ›]
-[ Pending updates      671 ›]
-[ Agent updates        183 ›]
-[RECENT ACTIVITY            ]
-[ self_update · AC-SRV    2m]
+[Good evening, Ana    [All clients ▾]]
+[FLEET PULSE                          ]
+[ (74% online)  Fleet health 88/100   ]
+[               ● Healthy             ]
+[ ▓▓▓▓▓▓▓▓▓▒░░░  Online Stale Offline ]
+[ Availability 97.20%  +0.6  ╱╲╱╲╱    ]
+[pill][pill][pill →  (rrëshqet anash)  ]
+[ALL DEVICES 920] [CRITICAL 4]
+[ALERTS 193]      [UPDATES 12]
+[SCORECARD: tile][tile →  (anash)      ]
+[RIGHT NOW                            ]
+[ Needs attention: rreshta me shirit  ]
+[ SLA at risk: 3 afatet më të afërta  ]
+[ Recent remote actions: 5 + statusi  ]
+[INSIGHTS: 11 seksione që hapen me prekje]
 [Dashboard][Devices][Alerts 99+][More]
 ```
 
-- **Përshkrimi:** health ring (ngjyra sipas %: ≥90 jeshile, ≥70 amber, tjetër
-  e kuqe), 4 stat tiles klikueshme, Needs Attention (vetëm problemet aktive,
-  stale përfshirë si rresht normal), Recent activity (5 ngjarjet e fundit nga
-  API ekzistuese e desktop Dashboard).
+- **Përshkrimi:** unaza tregon % online (≥90 jeshile, ≥70 amber, tjetër e kuqe),
+  numri i madh është Health score, si në desktop. Pill-at thonë çfarë të shikohet
+  fillimisht. Needs Attention tregon vetëm problemet aktive, stale si rresht normal.
+- **Insights (mbyllur si parazgjedhje, ngarkohen kur hapen):** Alerts by type,
+  Security & risk, Agent versions, Clients, Device categories, Availability trend,
+  Alerts this week, Problem devices, Latest enrollments, Who's online, System status
+  (vetëm owner/admin).
+- **Rregulla:** asnjë analizë e desktop-it nuk mungon në telefon; zona e prekjes
+  ≥44px; vetëm tokens `--th-*`; asnjë kërkesë e re API (të dhënat janë ato të
+  Dashboard-it të përbashkët); filtri `?client=` punon si në desktop.
 - **UX reasoning:** përgjigje 5-sekondëshe "a ka gjë urgjente?"; çdo rresht →
-  Devices e parafiltruar.
-- **Enterprise reasoning:** paritet me pattern-in Intune/NinjaOne "fleet
-  health at a glance"; pa KPI dekorativë.
-- **Komponentë:** HealthRing (SVG, tokens), StatTile, AttentionList,
-  ActivityList, FreshnessPill.
-- **Të reja:** HealthRing theme-aware; ActivityList mobile.
-- **Hiqet:** ngjyrat hardcoded (`#27272a`, `fill=white`, skeleton `#374151`),
-  copy e gabuar "stale (seen <15 min ago)", footnote 11px.
+  Devices e parafiltruar; pjesa tjetër një prekje larg, pa faqe të gjatë.
+- **Testet:** `e2e/dashboard-mobile.spec.ts` (320, 360, 412px; rendi, tejkalimi,
+  zonat e prekjes, aksesueshmëria me të gjitha seksionet hapur).
 
 # Devices
 
