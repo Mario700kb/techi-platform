@@ -90,6 +90,28 @@ describe("DeviceMonitoringPanel with agent 2.1.33", () => {
     expect(screen.queryByText("Peak GPU")).not.toBeInTheDocument();
   });
 
+  it("says why there is no GPU: an agent to update", async () => {
+    render(<DeviceMonitoringPanel deviceId={7} active agentVersion="2.1.47" />);
+    expect(await screen.findByText(/GPU needs agent 2.1.48. This device runs 2.1.47/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "GPU" })).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "GPU use over time" })).not.toBeInTheDocument();
+  });
+
+  it("says why there is no GPU: nothing reported yet on a current agent", async () => {
+    render(<DeviceMonitoringPanel deviceId={7} active agentVersion="2.1.48" />);
+    expect(await screen.findByText(/No GPU reading in this range/)).toBeInTheDocument();
+    expect(screen.queryByText(/GPU needs agent/)).not.toBeInTheDocument();
+  });
+
+  it("drops the explanation once the GPU has data", async () => {
+    const metrics = metrics233Fixture();
+    metrics.points = metrics.points.map((p) => ({ ...p, gpu_avg: 40, gpu_max: 50 }));
+    getMetrics.mockResolvedValue(metrics);
+    render(<DeviceMonitoringPanel deviceId={7} active agentVersion="2.1.48" />);
+    expect(await screen.findByRole("img", { name: "GPU use over time" })).toBeInTheDocument();
+    expect(screen.queryByText(/No GPU reading/)).not.toBeInTheDocument();
+  });
+
   it("lists physical disk health, a pending restart and critical events", async () => {
     render(<DeviceMonitoringPanel deviceId={7} active />);
     const disks = await screen.findByRole("region", { name: "Physical disk health" });

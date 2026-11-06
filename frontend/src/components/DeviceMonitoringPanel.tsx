@@ -12,6 +12,7 @@ import {
   Send,
   Waypoints,
 } from "lucide-react";
+import { compareVersions } from "../utils/version";
 import {
   formatBits,
   formatBitsAxis,
@@ -113,6 +114,9 @@ function clockText(ms: number | null): string {
 }
 
 // Alert kinds drawn over each chart (backend AlertKind values).
+/** The first agent that reports the GPU. */
+const GPU_AGENT = "2.1.48";
+
 const CHART_ALERTS = {
   cpu: ["high_cpu"],
   mem: ["high_ram"],
@@ -345,10 +349,13 @@ function Delivery({ delivery, policyNames }: { delivery: DeliveryState | null; p
 export default function DeviceMonitoringPanel({
   deviceId,
   active,
+  agentVersion,
   onShowAlerts,
 }: {
   deviceId: number;
   active: boolean;
+  /** Given for Windows and Linux agents: says why a device shows no GPU. */
+  agentVersion?: string | null;
   /** Firing monitors link to the device's alerts. */
   onShowAlerts?: () => void;
 }) {
@@ -524,6 +531,16 @@ export default function DeviceMonitoringPanel({
               ]}
             />
           </Panel>
+
+          {!hasGpu && agentVersion && metrics.source === "agent" && (
+            <Panel title="GPU" icon={CircuitBoard}>
+              <Caption>
+                {compareVersions(agentVersion, GPU_AGENT) === "outdated"
+                  ? `GPU needs agent ${GPU_AGENT}. This device runs ${agentVersion}: update its agent to see the GPU here.`
+                  : "No GPU reading in this range. The agent uploads about every 15 minutes, so a recent update takes a while. It stays empty where the system publishes no GPU counters: an older Windows or kernel, or no real GPU."}
+              </Caption>
+            </Panel>
+          )}
 
           {hasGpu && (
             <Panel

@@ -1427,6 +1427,7 @@ export default function DeviceDrawer({
               key={device.id}
               deviceId={device.id}
               active={isOpen && activeTab === "monitoring"}
+              agentVersion={device.agent_version}
               onShowAlerts={() => setActiveTab("overview")}
             />
           </div>
