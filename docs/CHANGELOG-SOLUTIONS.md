@@ -5,6 +5,33 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-11-06] MOBILE-MODERN-2026-11-06 — frontend `bbf54e1`: every phone screen restructured
+
+**Owner: "versioni mobile duhet te ristrukturohet dhe te behet supermoderne",
+then "rregulloi te gjitha ekranet te versionit mobile", then "po" to the deploy.**
+Design spec amended (`reference/MOBILE-DESIGN-SPEC.md`); desktop layout, actions
+and API unchanged.
+- **Dashboard:** every desktop analysis now on the phone: fleet pulse, briefing and
+  scorecard that swipe sideways, Needs attention, SLA at risk, recent actions, then
+  11 panels that render only when opened. No new API request.
+- **Shared look (`styles/mobile.css`):** floating dock and action bar, 16 px cards,
+  buttons ≥ 40 px, fields and selects ≥ 44 px at 16 px (no iOS zoom), compact summary
+  figures, dialogs rising from the bottom.
+- **Devices:** the name has its own line, Connect moves to the card's foot at 44 px.
+  **Alerts:** no side lines. **More:** tiles, admin pages behind one row. **Audit,
+  Notifications:** open on their data (`MobileCollapse`). **Settings:** themes on one
+  line. **Operators, Teams:** cards; the avatar drawn over the role is gone. **Agent
+  Config:** one platform per row; its 30 px sideways overflow is gone.
+- Tests: Vitest 491, Playwright 303 passed, 247 skipped; new
+  `e2e/dashboard-mobile.spec.ts`, `e2e/mobile-screens.spec.ts`. The INP test failed
+  once under full-suite load, then passed in the next full run and alone (88–104 ms).
+- Deploy 20:27: frontend only, no dump; rollback image `pre-mobile-modern-db0a61d`;
+  built under `nice`; `nginx -t` in the new image; healthy in 5 s; guard + smoke
+  passed; 0 5xx. Disk 2.8 GB free (88%).
+- **Open:** Notifications tables still scroll sideways inside their cards; Team
+  Details (with data), Terminal and global search not reviewed on a phone; not tried
+  on a real phone before the deploy.
+
 ## [2026-11-06] DASHBOARD-ALIGN-2026-11-06 — frontend `b9ff159`: dashboard lined up after a measured review
 
 **Owner: "lexo md files dhe analizo dashboard nqs vizualisht eshte ne rregull
