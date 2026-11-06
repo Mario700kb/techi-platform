@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"testing"
 	"time"
@@ -37,6 +38,9 @@ func (f *drmFixture) write(path, text string) {
 }
 
 func (f *drmFixture) client(pid, fd, link, info string) {
+	if runtime.GOOS == "windows" {
+		f.t.Skip("this reader runs on Linux; Windows reads a link's target with backslashes")
+	}
 	dir := filepath.Join(f.root, "proc", pid, "fd")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		f.t.Fatal(err)
