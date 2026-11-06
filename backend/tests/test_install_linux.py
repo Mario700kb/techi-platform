@@ -264,3 +264,15 @@ def test_script_needs_no_awk(monkeypatch):
     """A minimal openSUSE Tumbleweed has no awk: `sha256sum | awk` printed
     nothing there and every download looked like a checksum mismatch."""
     assert "awk" not in _script(monkeypatch)
+
+
+def test_the_disk_health_tool_is_installed_without_ever_failing_the_install(monkeypatch):
+    body = _client(monkeypatch, True).get("/api/v1/install/linux", params={"token": "t"}).text
+    assert "if ! install_disk_health_tool >/dev/null 2>&1; then" in body
+    assert "--no-install-recommends smartmontools" in body
+    for manager in ("dnf install -y smartmontools", "yum install -y smartmontools",
+                    "zypper --non-interactive install smartmontools", "pacman -S --noconfirm --needed smartmontools"):
+        assert manager in body
+    assert "command -v smartctl >/dev/null 2>&1 && return 0" in body
+    # Before the agent starts, so its first health report already has it.
+    assert body.index("install_disk_health_tool >/dev/null") < body.index('"${BIN_PATH}" install --config')

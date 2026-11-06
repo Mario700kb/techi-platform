@@ -214,6 +214,7 @@ def test_the_inventory_api_exposes_the_posture(db, device, api):
     body = api.get(f"/devices/{device.id}/inventory").json()
     posture = body["security_posture"]
     assert set(posture) == {
+        "platform",
         "collected_at", "defender", "third_party_av", "firewall", "bitlocker", "uac_enabled", "secure_boot", "local_admins",
     }
     assert posture["defender"] == {

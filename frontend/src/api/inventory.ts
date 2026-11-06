@@ -42,6 +42,8 @@ export interface DeviceInventory {
 /** Read-only security snapshot from the Windows agent; null = could not be read. */
 export interface SecurityPosture {
   collected_at?: string | null;
+  /** "linux" from a Linux agent; absent on Windows. */
+  platform?: string | null;
   defender: {
     present: boolean;
     antivirus_enabled: boolean | null;

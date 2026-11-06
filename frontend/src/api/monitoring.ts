@@ -95,6 +95,10 @@ export interface MetricPoint {
   gw_loss_avg?: number | null;
   gw_loss_max?: number | null;
   wan_ms_avg?: number | null;
+  gpu_avg?: number | null;
+  gpu_max?: number | null;
+  gpu_mem_avg?: number | null;
+  gpu_mem_max?: number | null;
   /** Busy minutes only: the top processes of the point's busiest minute. */
   top?: TopProcess[] | null;
 }
@@ -104,6 +108,7 @@ export interface TopProcess {
   n: string;
   c?: number | null;
   m?: number | null;
+  g?: number | null;
 }
 
 export interface AlertSpan {
@@ -121,6 +126,7 @@ export interface ProcessPeak {
   cpu_peak: number | null;
   cpu_peak_at: string | null;
   mem_peak_mb: number | null;
+  gpu_peak?: number | null;
 }
 
 export interface DiskTrend {
@@ -168,6 +174,9 @@ export interface MetricSummary {
   gw_ms_peak?: number | null;
   gw_loss_avg?: number | null;
   wan_ms_avg?: number | null;
+  gpu_avg?: number | null;
+  gpu_peak?: number | null;
+  gpu_mem_peak?: number | null;
 }
 
 export interface DeliveryState {
@@ -438,6 +447,33 @@ export function formatBytesRate(bps: number | null | undefined): string {
   if (bps >= 1e6) return `${(bps / 1e6).toFixed(1)} MB/s`;
   if (bps >= 1e3) return `${Math.round(bps / 1e3)} kB/s`;
   return `${Math.round(bps)} B/s`;
+}
+
+/** A chart axis has room for about eight characters: "10 MB/s", never "10.0 MB/s". */
+function axisRate(value: number, unit: string): string {
+  return `${value >= 10 ? Math.round(value) : Number(value.toFixed(1))} ${unit}`;
+}
+
+export function formatBytesRateAxis(bps: number): string {
+  if (bps === 0) return "0";
+  if (bps >= 1e9) return axisRate(bps / 1e9, "GB/s");
+  if (bps >= 1e6) return axisRate(bps / 1e6, "MB/s");
+  if (bps >= 1e3) return axisRate(bps / 1e3, "kB/s");
+  return `${Math.round(bps)} B/s`;
+}
+
+export function formatBitsAxis(bps: number): string {
+  if (bps === 0) return "0";
+  if (bps >= 1e9) return axisRate(bps / 1e9, "Gb/s");
+  if (bps >= 1e6) return axisRate(bps / 1e6, "Mb/s");
+  if (bps >= 1e3) return axisRate(bps / 1e3, "kb/s");
+  return `${Math.round(bps)} b/s`;
+}
+
+/** Megabytes as "512 MB" or "2.4 GB". */
+export function formatMemoryMB(mb: number | null | undefined): string {
+  if (mb == null) return "—";
+  return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${Math.round(mb)} MB`;
 }
 
 export function formatMs(ms: number | null | undefined): string {

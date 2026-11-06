@@ -107,7 +107,8 @@ export interface ChartBand {
   tone: string;
 }
 
-const PAD = { top: 10, right: 6, bottom: 20, left: 48 };
+// left: room for the longest axis label, "100 Mb/s" or "2.5 GB/s", on every chart.
+const PAD = { top: 10, right: 6, bottom: 20, left: 58 };
 
 /** Line (average) + shaded band (highest sample) over time; gaps stay gaps. */
 export function TimeChart({

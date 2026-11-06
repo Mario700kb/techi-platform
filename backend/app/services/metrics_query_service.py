@@ -79,15 +79,18 @@ _EXTRA_POINT = {
     "gw_ms": ("gw_ms_avg", "gw_ms_max"),
     "gw_loss": ("gw_loss_avg", "gw_loss_max"),
     "wan_ms": ("wan_ms_avg", None),
+    "gpu": ("gpu_avg", "gpu_max"),
+    "gpu_mem_mb": ("gpu_mem_avg", "gpu_mem_max"),
 }
 # Point field → rollup column, where the names differ.
 _ROLLUP_COLUMN = {
     "disk_busy_avg": "disk_busy_avg", "disk_busy_max": "disk_busy_max", "disk_queue_avg": "disk_queue_avg",
     "disk_read_avg": "disk_read_avg", "disk_write_avg": "disk_write_avg", "gw_ms_avg": "gw_ms_avg",
     "gw_ms_max": "gw_ms_max", "gw_loss_avg": "gw_loss_avg", "gw_loss_max": "gw_loss_max", "wan_ms_avg": "wan_ms_avg",
+    "gpu_avg": "gpu_avg", "gpu_max": "gpu_max", "gpu_mem_avg": "gpu_mem_avg", "gpu_mem_max": "gpu_mem_max",
 }
-_AVG_FIELDS = ("disk_busy_avg", "disk_queue_avg", "disk_read_avg", "disk_write_avg", "gw_ms_avg", "gw_loss_avg", "wan_ms_avg")
-_MAX_FIELDS = ("disk_busy_max", "gw_ms_max", "gw_loss_max")
+_AVG_FIELDS = ("disk_busy_avg", "disk_queue_avg", "disk_read_avg", "disk_write_avg", "gw_ms_avg", "gw_loss_avg", "wan_ms_avg", "gpu_avg", "gpu_mem_avg")
+_MAX_FIELDS = ("disk_busy_max", "gw_ms_max", "gw_loss_max", "gpu_max", "gpu_mem_max")
 
 
 def _pct(values: Sequence[float], q: float) -> Optional[float]:
@@ -229,15 +232,18 @@ def _process_peaks(points: List[MetricPoint]) -> List[ProcessPeak]:
     seen: Dict[str, dict] = {}
     for point in points:
         for proc in point.top or []:
-            entry = seen.setdefault(proc.n.lower(), {"name": proc.n, "minutes": 0, "cpu": None, "at": None, "mem": None})
+            entry = seen.setdefault(proc.n.lower(), {"name": proc.n, "minutes": 0, "cpu": None, "at": None, "mem": None, "gpu": None})
             entry["minutes"] += max(1, point.samples)
             if proc.c is not None and (entry["cpu"] is None or proc.c > entry["cpu"]):
                 entry["cpu"], entry["at"] = proc.c, point.t
             if proc.m is not None and (entry["mem"] is None or proc.m > entry["mem"]):
                 entry["mem"] = proc.m
+            if proc.g is not None and (entry["gpu"] is None or proc.g > entry["gpu"]):
+                entry["gpu"] = proc.g
     ranked = sorted(seen.values(), key=lambda e: (-(e["cpu"] or 0) * e["minutes"], -(e["mem"] or 0)))
     return [ProcessPeak(name=e["name"], minutes=e["minutes"], cpu_peak=round(e["cpu"], 1) if e["cpu"] is not None else None,
-                        cpu_peak_at=e["at"], mem_peak_mb=round(e["mem"]) if e["mem"] is not None else None)
+                        cpu_peak_at=e["at"], mem_peak_mb=round(e["mem"]) if e["mem"] is not None else None,
+                        gpu_peak=round(e["gpu"], 1) if e["gpu"] is not None else None)
             for e in ranked[:MAX_PROCESSES]]
 
 
@@ -325,6 +331,7 @@ class MetricsQueryService:
             disk_read_peak=peak_of("disk_read_avg"), disk_write_peak=peak_of("disk_write_avg"),
             gw_ms_avg=avg_of("gw_ms_avg"), gw_ms_peak=peak_of("gw_ms_max"),
             gw_loss_avg=avg_of("gw_loss_avg"), wan_ms_avg=avg_of("wan_ms_avg"),
+            gpu_avg=avg_of("gpu_avg"), gpu_peak=peak_of("gpu_max"), gpu_mem_peak=peak_of("gpu_mem_max"),
         )
         return DeviceMetrics(
             range=range_key, resolution=resolution, source=source, start=start, end=now, points=points,

@@ -259,6 +259,7 @@ type telemetryCollector struct {
 
 	// 2.1.33 (telemetry_extra.go)
 	procs      processSampler
+	gpu        gpuSampler
 	diskIO     diskActivity
 	network    networkQuality
 	backendURL string
@@ -325,8 +326,11 @@ func (c *telemetryCollector) collectExtra(s *telemetrySample, at time.Time) {
 	}
 	busyCPU := s.CPU != nil && *s.CPU >= topBusyCPU
 	busyMem := s.Mem != nil && *s.Mem >= topBusyMem
+	gpu := c.gpu.sample()
+	s.GPU, s.GPUMemMB = gpu.busy, gpu.memMB
+	c.procs.gpu = gpu.byPID
 	s.Top = c.procs.sample(at, busyCPU, busyMem)
-	s.DiskBusy, s.DiskQueue, s.DiskReadBps, s.DiskWriteBps = c.diskIO.sample(c.disks)
+	s.DiskBusy, s.DiskQueue, s.DiskReadBps, s.DiskWriteBps = c.diskIO.sample(diskIOTargets(c.disks))
 	s.GwMs, s.GwLoss = c.network.sample(at)
 	if c.backendURL != "" {
 		s.WanMs = platformConnectMs(c.backendURL)

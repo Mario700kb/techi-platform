@@ -60,6 +60,36 @@ describe("DeviceMonitoringPanel with agent 2.1.33", () => {
     expect(within(rows[1]).getByText("1.8 GB")).toBeInTheDocument();
   });
 
+  it("draws the GPU only for a device that reports it, with its peak per process", async () => {
+    const metrics = metrics233Fixture();
+    metrics.points = metrics.points.map((p, i) => ({
+      ...p,
+      gpu_avg: 40,
+      gpu_max: i === 200 ? 91 : 50,
+      gpu_mem_avg: 2048,
+      gpu_mem_max: 2100,
+    }));
+    metrics.summary = { ...metrics.summary, gpu_avg: 40, gpu_peak: 91, gpu_mem_peak: 2100 };
+    metrics.processes = [{ ...metrics.processes![0], gpu_peak: 88.5 }, metrics.processes![1]];
+    getMetrics.mockResolvedValue(metrics);
+    render(<DeviceMonitoringPanel deviceId={7} active />);
+
+    expect(await screen.findByRole("img", { name: "GPU use over time" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "GPU memory in use over time" })).toBeInTheDocument();
+    expect(screen.getByText(/avg 40% · peak 91% · memory peak 2.1 GB/)).toBeInTheDocument();
+    const rows = within(screen.getByTestId("top-processes")).getAllByRole("row");
+    expect(within(rows[0]).getByText("Peak GPU")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("89%")).toBeInTheDocument();
+    expect(within(rows[2]).getByText("—")).toBeInTheDocument();
+  });
+
+  it("shows no GPU panel or column for a device that does not report it", async () => {
+    render(<DeviceMonitoringPanel deviceId={7} active />);
+    await screen.findByRole("img", { name: "Disk busy time over time" });
+    expect(screen.queryByRole("img", { name: "GPU use over time" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Peak GPU")).not.toBeInTheDocument();
+  });
+
   it("lists physical disk health, a pending restart and critical events", async () => {
     render(<DeviceMonitoringPanel deviceId={7} active />);
     const disks = await screen.findByRole("region", { name: "Physical disk health" });
@@ -102,7 +132,7 @@ describe("DeviceMonitoringPanel with agent 2.1.33", () => {
     getMonitoring.mockResolvedValue(monitoringFixture(false));
     render(<DeviceMonitoringPanel deviceId={7} active />);
     const disks = await screen.findByRole("region", { name: "Physical disk health" });
-    expect(within(disks).getByText(/Agent 2.1.33 reads disk health/)).toBeInTheDocument();
+    expect(within(disks).getByText(/Agent 2.1.33 \(Linux 2.1.48\) reads disk health/)).toBeInTheDocument();
     expect(screen.queryByRole("img", { name: "Disk busy time over time" })).not.toBeInTheDocument();
     expect(screen.queryByTestId("top-processes")).not.toBeInTheDocument();
   });

@@ -148,6 +148,9 @@ EVENT_GROUPS: dict[str, EventGroupRule] = {
     # Retries and paging errors are common on USB drives and busy VMs.
     "disk_retry": EventGroupRule("disk_retry", "Disk I/O retried", 24, 3, None),
     "filesystem": EventGroupRule("filesystem", "File system needs repair", 24, 1, None),
+    # Linux.
+    "panic": EventGroupRule("panic", "Kernel panic", 24, 1, None, critical_from=2),
+    "oom": EventGroupRule("oom", "Out of memory", 24, 1, None),
 }
 
 # (provider, event id) → group. Providers lower-case, as EVENT_CATALOG.
@@ -167,6 +170,12 @@ EVENT_GROUP_OF: dict[tuple[str, int], str] = {
     ("microsoft-windows-ntfs", 98): "filesystem",
     ("ntfs", 137): "filesystem",
     ("microsoft-windows-ntfs", 137): "filesystem",
+    ("linux-kernel", 1): "panic",
+    ("linux-kernel", 2): "hardware",
+    ("linux-kernel", 3): "disk_bad",
+    ("linux-kernel", 4): "filesystem",
+    ("linux-kernel", 5): "oom",
+    ("linux-boot", 1): "shutdown",
 }
 # Kernel-Power 41 and EventLog 6008 written at the same boot are one shutdown.
 SAME_INCIDENT_SECONDS = 600

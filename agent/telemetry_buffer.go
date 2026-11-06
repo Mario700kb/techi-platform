@@ -64,6 +64,10 @@ type telemetrySample struct {
 	GwLoss       *float64     `json:"gw_loss,omitempty"`
 	WanMs        *float64     `json:"wan_ms,omitempty"`
 	Top          []topProcess `json:"top,omitempty"`
+
+	// 2.1.48: the busiest GPU engine % and GPU memory in use (telemetry_gpu.go).
+	GPU      *float64 `json:"gpu,omitempty"`
+	GPUMemMB *float64 `json:"gpu_mem_mb,omitempty"`
 }
 
 type bufferState struct {

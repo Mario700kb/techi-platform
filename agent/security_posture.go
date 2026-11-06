@@ -33,6 +33,7 @@ const (
 // heartbeat carries as security_posture.
 type SecurityPosture struct {
 	CollectedAt  string            `json:"collected_at"`
+	Platform     string            `json:"platform,omitempty"` // "linux"; absent on Windows
 	Defender     DefenderPosture   `json:"defender"`
 	ThirdPartyAV postureStringList `json:"third_party_av"`
 	Firewall     FirewallPosture   `json:"firewall"`
@@ -154,7 +155,9 @@ func (p *SecurityPosture) normalise(now time.Time) {
 	p.LocalAdmins = normalisePostureNames(p.LocalAdmins, maxLocalAdmins, maxLocalAdminNameLen, nil)
 
 	drive := strings.ToUpper(strings.TrimSpace(p.BitLocker.SystemDrive))
-	if len(drive) != 2 || drive[1] != ':' || drive[0] < 'A' || drive[0] > 'Z' {
+	if p.Platform == "linux" {
+		drive = "/"
+	} else if len(drive) != 2 || drive[1] != ':' || drive[0] < 'A' || drive[0] > 'Z' {
 		drive = "C:"
 	}
 	p.BitLocker.SystemDrive = drive

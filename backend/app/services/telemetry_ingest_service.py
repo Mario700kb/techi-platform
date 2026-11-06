@@ -79,6 +79,8 @@ _EXTRA = {
     "gw_ms": ("gw_ms_avg", "gw_ms_max"),
     "gw_loss": ("gw_loss_avg", "gw_loss_max"),
     "wan_ms": ("wan_ms_avg", "wan_ms_max"),
+    "gpu": ("gpu_avg", "gpu_max"),
+    "gpu_mem_mb": ("gpu_mem_avg", "gpu_mem_max"),
 }
 
 
@@ -139,6 +141,7 @@ class TelemetryIngestService:
                 "disk_read_bps": sample.disk_read_bps, "disk_write_bps": sample.disk_write_bps,
                 "gw_ms": sample.gw_ms, "gw_loss": sample.gw_loss, "wan_ms": sample.wan_ms,
                 "top": [t.model_dump(exclude_none=True) for t in sample.top] or None,
+                "gpu": sample.gpu, "gpu_mem_mb": sample.gpu_mem_mb,
             })
 
         stored = self._insert(rows)

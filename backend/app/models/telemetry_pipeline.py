@@ -47,6 +47,9 @@ class TelemetrySample(Base):
     gw_loss = Column(REAL, nullable=True)
     wan_ms = Column(REAL, nullable=True)
     top = Column(JSON, nullable=True)
+    # Agent 2.1.48: the busiest GPU engine % and GPU memory in use.
+    gpu = Column(REAL, nullable=True)
+    gpu_mem_mb = Column(REAL, nullable=True)
 
 
 class _Rollup:
@@ -80,6 +83,10 @@ class _Rollup:
     gw_loss_max = Column(REAL, nullable=True)
     wan_ms_avg = Column(REAL, nullable=True)
     wan_ms_max = Column(REAL, nullable=True)
+    gpu_avg = Column(REAL, nullable=True)
+    gpu_max = Column(REAL, nullable=True)
+    gpu_mem_avg = Column(REAL, nullable=True)
+    gpu_mem_max = Column(REAL, nullable=True)
     top = Column(JSON, nullable=True)  # the top processes of the bucket's busiest minute
 
 

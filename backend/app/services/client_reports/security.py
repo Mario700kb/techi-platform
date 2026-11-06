@@ -30,8 +30,9 @@ KEY = "security_posture"
 WEIGHTS = {"antivirus": 30, "realtime": 15, "signatures": 10, "firewall": 15, "bitlocker": 15,
            "uac": 5, "secure_boot": 5, "admins": 5}
 SIGNATURE_MAX_DAYS = 7
+SECURITY_AGENT_VERSION_LINUX = "2.1.48"
 PROFILES = ("domain", "private", "public")
-_BUILTIN_ADMINS = {"administrator", "domain admins"}
+_BUILTIN_ADMINS = {"administrator", "domain admins", "root"}
 SEVERITY_LABEL = {CRIT: "Critical", WARN: "Warning", INFO: "Info"}
 
 
@@ -55,38 +56,42 @@ def evaluate(security: dict) -> Tuple[int, List[Tuple[int, str, str]], dict]:
     bitlocker = security.get("bitlocker") if isinstance(security.get("bitlocker"), dict) else {}
     score = 0
     issues: List[Tuple[int, str, str]] = []
+    # A Linux agent: an antivirus is named when it runs, its absence costs nothing
+    # (see services/security_posture.py); one firewall state; LUKS for BitLocker.
+    linux = security.get("platform") == "linux"
+    profiles = ("public",) if linux else PROFILES
 
     defender_on = bool(defender.get("present")) and defender.get("antivirus_enabled") is True
     defender_unknown = bool(defender.get("present")) and defender.get("antivirus_enabled") is None
     antivirus = ", ".join(third) if third else ("Defender" if defender_on else "Defender (unknown)" if defender_unknown else None)
-    av_on = bool(third) or defender_on or defender_unknown
+    av_on = linux or bool(third) or defender_on or defender_unknown
     if av_on:
         score += WEIGHTS["antivirus"]
     else:
         issues.append((CRIT, "antivirus", "No antivirus enabled"))
 
     realtime = defender.get("realtime_enabled")
-    if av_on and (third or realtime is not False):
+    if av_on and (linux or third or realtime is not False):
         score += WEIGHTS["realtime"]
     elif av_on:
         issues.append((CRIT, "realtime", "Real-time protection off"))
 
     age = defender.get("signature_age_days")
-    if av_on and (third or not isinstance(age, (int, float)) or age <= SIGNATURE_MAX_DAYS):
+    if av_on and (linux or third or not isinstance(age, (int, float)) or age <= SIGNATURE_MAX_DAYS):
         score += WEIGHTS["signatures"]
     elif av_on:
         issues.append((WARN, "signatures", f"Antivirus signatures {int(age)} days old"))
 
-    off = [p for p in PROFILES if firewall.get(p) is False]
-    score += WEIGHTS["firewall"] - len(off) * WEIGHTS["firewall"] // len(PROFILES)
+    off = [p for p in profiles if firewall.get(p) is False]
+    score += WEIGHTS["firewall"] - len(off) * WEIGHTS["firewall"] // len(profiles)
     if off:
-        issues.append((CRIT if len(off) == len(PROFILES) else WARN, "firewall",
-                       f"Firewall off: {', '.join(p.title() for p in off)}"))
+        issues.append((CRIT if len(off) == len(profiles) else WARN, "firewall",
+                       "Firewall off" if linux else f"Firewall off: {', '.join(p.title() for p in off)}"))
 
     protection = (bitlocker.get("protection") or "unknown").lower()
     drive = bitlocker.get("system_drive") or "C:"
     if protection == "off":
-        issues.append((WARN, "bitlocker", f"BitLocker off on {drive}"))
+        issues.append((WARN, "bitlocker", "Disk encryption off" if linux else f"BitLocker off on {drive}"))
     else:
         score += WEIGHTS["bitlocker"]
 
@@ -108,8 +113,8 @@ def evaluate(security: dict) -> Tuple[int, List[Tuple[int, str, str]], dict]:
     protected = av_on and not any(check in ("antivirus", "realtime") for _, check, _ in issues)
     values = {
         "antivirus": antivirus or "None",
-        "firewall": "On" if not off and any(firewall.get(p) for p in PROFILES) else
-                    ("Off: " + ", ".join(p.title() for p in off)) if off else "Unknown",
+        "firewall": "On" if not off and any(firewall.get(p) for p in profiles) else
+                    "Off" if off and linux else ("Off: " + ", ".join(p.title() for p in off)) if off else "Unknown",
         "bitlocker": {"on": "On", "off": "Off"}.get(protection, "Unknown"),
         "protected": protected,
     }
@@ -129,7 +134,11 @@ def build(ctx: ReportContext) -> Built:
     for device in ctx.devices:
         security = _security_of(inventories.get(device.id))
         if security is None:
-            if not is_windows(device):
+            if "linux" in (device.platform or "").lower():
+                # Linux reports it from a later agent than Windows.
+                reason = (f"Agent {device.agent_version or 'unknown'}: needs {SECURITY_AGENT_VERSION_LINUX}"
+                          if not agent_at_least(device, SECURITY_AGENT_VERSION_LINUX) else "Not reported yet")
+            elif not is_windows(device):
                 reason = "Not collected on this platform"
             elif not agent_at_least(device, SECURITY_AGENT_VERSION):
                 reason = f"Agent {device.agent_version or 'unknown'}: needs {SECURITY_AGENT_VERSION}"

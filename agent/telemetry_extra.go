@@ -45,6 +45,7 @@ type topProcess struct {
 	Name  string  `json:"n"`
 	CPU   float64 `json:"c"`
 	MemMB float64 `json:"m"`
+	GPU   float64 `json:"g,omitempty"` // 2.1.48: busiest GPU engine %, when it used the GPU
 }
 
 // ── processes ───────────────────────────────────────────────────────────────
@@ -60,12 +61,14 @@ type processSampler struct {
 	last   map[int32]procTimes
 	lastAt time.Time
 	cpus   int
+	gpu    map[int32]float64 // this minute's GPU use by process, set before sample
 }
 
 type procReading struct {
 	proc  *gopsprocess.Process
 	cpu   float64
 	memMB float64
+	gpu   float64
 }
 
 // sample updates the CPU baseline and, when busy, returns the top processes.
@@ -81,6 +84,7 @@ func (p *processSampler) sample(at time.Time, busyCPU, busyMem bool) []topProces
 	elapsed := at.Sub(p.lastAt).Seconds()
 	current := make(map[int32]procTimes, len(procs))
 	readings := make([]procReading, 0, len(procs))
+	busyGPU := false
 	for _, proc := range procs {
 		if proc.Pid == 0 {
 			continue // System Idle Process
@@ -92,7 +96,10 @@ func (p *processSampler) sample(at time.Time, busyCPU, busyMem bool) []topProces
 		created, _ := proc.CreateTime()
 		total := times.User + times.System
 		current[proc.Pid] = procTimes{cpu: total, created: created}
-		reading := procReading{proc: proc}
+		reading := procReading{proc: proc, gpu: p.gpu[proc.Pid]}
+		if reading.gpu >= topBusyGPU {
+			busyGPU = true
+		}
 		if prev, ok := p.last[proc.Pid]; ok && prev.created == created && elapsed > 0 && total >= prev.cpu {
 			reading.cpu = clampPercent((total - prev.cpu) / elapsed / float64(cpus) * 100)
 		}
@@ -105,7 +112,7 @@ func (p *processSampler) sample(at time.Time, busyCPU, busyMem bool) []topProces
 	}
 	first := p.last == nil
 	p.last, p.lastAt = current, at
-	if first || (!busyCPU && !busyMem) {
+	if first || (!busyCPU && !busyMem && !busyGPU) {
 		return nil
 	}
 	return pickTopProcesses(readings, busyCPU, busyMem, func(r procReading) (string, float64) {
@@ -157,6 +164,18 @@ func pickTopProcesses(readings []procReading, busyCPU, busyMem bool, describe fu
 			}
 		}
 	}
+	// Whoever worked the GPU in a GPU-busy minute, whatever the CPU was doing.
+	byGPU := append([]procReading(nil), readings...)
+	sort.SliceStable(byGPU, func(i, j int) bool { return byGPU[i].gpu > byGPU[j].gpu })
+	for i, r := range byGPU {
+		if i >= topProcessCount || len(picked) >= topProcessMaxCount || r.gpu < topBusyGPU {
+			break
+		}
+		if !seen[pidOf(r)] {
+			picked = append(picked, r)
+			seen[pidOf(r)] = true
+		}
+	}
 	out := make([]topProcess, 0, len(picked))
 	for _, r := range picked {
 		path, mem := describe(r)
@@ -164,7 +183,7 @@ func pickTopProcesses(readings []procReading, busyCPU, busyMem bool, describe fu
 		if name == "" {
 			continue
 		}
-		out = append(out, topProcess{Name: name, CPU: round1(r.cpu), MemMB: float64(int64(mem + 0.5))})
+		out = append(out, topProcess{Name: name, CPU: round1(r.cpu), MemMB: float64(int64(mem + 0.5)), GPU: round1(r.gpu)})
 	}
 	return out
 }
@@ -218,7 +237,7 @@ func (d *diskActivity) sample(mounts []string) (busy, queue, readBps, writeBps *
 			continue
 		}
 		if c, ok := read(mount); ok {
-			current[strings.ToUpper(mount[:2])] = c
+			current[diskVolumeKey(mount)] = c
 		}
 	}
 	prev := d.last
@@ -251,6 +270,15 @@ func (d *diskActivity) sample(mounts []string) (busy, queue, readBps, writeBps *
 	b, q := round1(maxBusy), round1(maxQueue)
 	r, w := float64(int64(reads+0.5)), float64(int64(writes+0.5))
 	return &b, &q, &r, &w
+}
+
+// diskVolumeKey: a Windows drive letter ("C:\\" and "c:" are one volume), a Linux
+// disk's own name otherwise.
+func diskVolumeKey(mount string) string {
+	if mount[1] == ':' {
+		return strings.ToUpper(mount[:2])
+	}
+	return mount
 }
 
 // ── network quality ─────────────────────────────────────────────────────────

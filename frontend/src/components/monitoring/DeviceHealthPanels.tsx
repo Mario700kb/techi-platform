@@ -10,6 +10,7 @@ import {
   type MetricsRange,
   type PhysicalDisk,
   type ProcessPeak,
+  formatMemoryMB,
 } from "../../api/monitoring";
 import { formatLocalDateTime, parseUTC, timeAgo } from "../../utils/time";
 import { AVAILABILITY_KINDS, AvailabilityStrip, availabilityKind } from "../MetricCharts";
@@ -147,16 +148,17 @@ export function AvailabilityPanel({
 
 // ── Top processes ───────────────────────────────────────────────────────────
 
-function formatMB(mb: number | null): string {
-  if (mb == null) return "—";
-  return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${Math.round(mb)} MB`;
-}
-
 export function TopProcessesPanel({ processes, range }: { processes: ProcessPeak[]; range: MetricsRange }) {
   const short = range === "1h" || range === "24h";
   const timeOpts: Intl.DateTimeFormatOptions | undefined = short ? { hour: "2-digit", minute: "2-digit" } : undefined;
+  // Only devices that report the GPU get its column.
+  const hasGpu = processes.some((p) => p.gpu_peak != null);
   return (
-    <MonitoringPanel title="Busiest processes" icon={ListOrdered} aside="when CPU ≥ 15% or memory ≥ 80%">
+    <MonitoringPanel
+      title="Busiest processes"
+      icon={ListOrdered}
+      aside={hasGpu ? "when CPU or GPU ≥ 15% or memory ≥ 80%" : "when CPU ≥ 15% or memory ≥ 80%"}
+    >
       {processes.length === 0 ? (
         <Muted>No busy minute in this range — nothing to blame.</Muted>
       ) : (
@@ -166,6 +168,7 @@ export function TopProcessesPanel({ processes, range }: { processes: ProcessPeak
               <th className="pb-1.5 font-medium">Process</th>
               <th className="w-[132px] pb-1.5 text-right font-medium">Peak CPU</th>
               <th className="w-[92px] pb-1.5 text-right font-medium">Peak memory</th>
+              {hasGpu && <th className="w-[76px] pb-1.5 text-right font-medium">Peak GPU</th>}
               <th className="w-[84px] pb-1.5 text-right font-medium">{short ? "Minutes" : "Points"}</th>
             </tr>
           </thead>
@@ -184,8 +187,13 @@ export function TopProcessesPanel({ processes, range }: { processes: ProcessPeak
                   )}
                 </td>
                 <td className="py-2 text-right" style={{ color: "var(--th-text-secondary)" }}>
-                  {formatMB(p.mem_peak_mb)}
+                  {formatMemoryMB(p.mem_peak_mb)}
                 </td>
+                {hasGpu && (
+                  <td className="py-2 text-right" style={{ color: "var(--th-text-secondary)" }}>
+                    {p.gpu_peak != null ? `${Math.round(p.gpu_peak)}%` : "—"}
+                  </td>
+                )}
                 <td className="py-2 text-right" style={{ color: "var(--th-text-secondary)" }}>
                   {p.minutes}
                 </td>
@@ -254,7 +262,7 @@ function DiskHealthRow({ disk }: { disk: PhysicalDisk }) {
   );
 }
 
-const NEEDS_AGENT = "Agent 2.1.33 reads disk health, pending restarts and critical events every hour.";
+const NEEDS_AGENT = "Agent 2.1.33 (Linux 2.1.48) reads disk health, pending restarts and critical events every hour.";
 
 export function DiskHealthPanel({ health }: { health: DeviceHealth | null | undefined }) {
   const disks = health?.disks ?? [];

@@ -397,6 +397,26 @@ elif [ -z "${{RS_PKG}}" ]; then
 elif ! install_remote_support; then
   echo "TECHI Remote Support could not be installed; the agent is installed and works without it." >&2
 fi
+# --- Disk health -----------------------------------------------------------
+# The agent reads SMART with smartctl; without it a disk's health stays unknown.
+# Never a reason to fail the install. No "recommends" on Debian: there they pull
+# in a mail system nobody asked for.
+install_disk_health_tool() {{
+  command -v smartctl >/dev/null 2>&1 && return 0
+  case "${{RS_FORMAT}}" in
+    deb)
+      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends smartmontools \\
+        || {{ apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends smartmontools; }} ;;
+    rpm) if command -v dnf >/dev/null 2>&1; then dnf install -y smartmontools; else yum install -y smartmontools; fi ;;
+    suse) zypper --non-interactive install smartmontools ;;
+    arch) pacman -S --noconfirm --needed smartmontools ;;
+    *) return 1 ;;
+  esac
+}}
+if ! install_disk_health_tool >/dev/null 2>&1; then
+  echo "Note: smartmontools could not be installed; disk health will show as unknown." >&2
+fi
+
 # The token is only passed when this host still has to enrol. Passing it
 # otherwise would bake it into the systemd unit for no reason.
 if [ "${{ENROLLED}}" = "1" ]; then

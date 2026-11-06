@@ -1,11 +1,13 @@
-//go:build !windows
+//go:build !windows && !linux
 
 package main
 
 import "time"
 
-// Disk counters and pings are read on Windows only; elsewhere the sample
+// Disk counters and pings are read on Windows and Linux; elsewhere the sample
 // carries none of them.
+
+func diskIOTargets(mounts []string) []string { return mounts }
 
 func readDiskCounters(string) (diskCounters, bool) { return diskCounters{}, false }
 

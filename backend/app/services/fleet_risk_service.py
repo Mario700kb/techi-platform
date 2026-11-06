@@ -49,7 +49,7 @@ CHECKS = [
     ("no_antivirus", "No antivirus enabled", "security", "critical"),
     ("realtime_off", "Real-time protection off", "security", "critical"),
     ("firewall_off", "Firewall off", "security", "warning"),
-    ("bitlocker_off", "BitLocker off on the system drive", "security", "warning"),
+    ("bitlocker_off", "Disk encryption off (BitLocker, LUKS)", "security", "warning"),
     ("signatures_old", "Antivirus signatures over 7 days old", "security", "warning"),
     ("disk_failing", "Disk reporting health problems", "health", "critical"),
     ("disk_full", f"Disk over {int(DISK_FULL_PCT)}% full", "health", "warning"),

@@ -23,13 +23,15 @@ class UploadDisk(BaseModel):
 
 class TopProcess(BaseModel):
     """One of the busiest processes in a minute (agent 2.1.33): name, CPU %
-    of the whole machine over the minute, memory in MB."""
+    of the whole machine over the minute, memory in MB and, from 2.1.48, its
+    busiest GPU engine %."""
 
     model_config = ConfigDict(extra="ignore")
 
     n: str = Field(min_length=1, max_length=64)
     c: Optional[float] = Field(default=None, ge=0, le=100)
     m: Optional[float] = Field(default=None, ge=0)
+    g: Optional[float] = Field(default=None, ge=0, le=100)
 
 
 class UploadSample(BaseModel):
@@ -53,6 +55,9 @@ class UploadSample(BaseModel):
     gw_loss: Optional[float] = Field(default=None, ge=0, le=100)
     wan_ms: Optional[float] = Field(default=None, ge=0, le=60000)
     top: List[TopProcess] = Field(default_factory=list, max_length=5)
+    # Agent 2.1.48.
+    gpu: Optional[float] = Field(default=None, ge=0, le=100)
+    gpu_mem_mb: Optional[float] = Field(default=None, ge=0)
 
 
 class MonitorEvent(BaseModel):
@@ -213,6 +218,11 @@ class MetricPoint(BaseModel):
     gw_loss_avg: Optional[float] = None
     gw_loss_max: Optional[float] = None
     wan_ms_avg: Optional[float] = None
+    # Agent 2.1.48 (null before).
+    gpu_avg: Optional[float] = None
+    gpu_max: Optional[float] = None
+    gpu_mem_avg: Optional[float] = None
+    gpu_mem_max: Optional[float] = None
     # Busy minutes only: the top processes of the point's busiest minute.
     top: Optional[List[TopProcess]] = None
 
@@ -263,6 +273,9 @@ class MetricSummary(BaseModel):
     gw_ms_peak: Optional[float] = None
     gw_loss_avg: Optional[float] = None
     wan_ms_avg: Optional[float] = None
+    gpu_avg: Optional[float] = None
+    gpu_peak: Optional[float] = None
+    gpu_mem_peak: Optional[float] = None
 
 
 class AlertSpan(BaseModel):
@@ -284,6 +297,7 @@ class ProcessPeak(BaseModel):
     cpu_peak: Optional[float] = None
     cpu_peak_at: Optional[datetime] = None
     mem_peak_mb: Optional[float] = None
+    gpu_peak: Optional[float] = None
 
 
 class DeliveryState(BaseModel):

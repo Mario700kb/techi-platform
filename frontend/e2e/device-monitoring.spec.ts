@@ -182,3 +182,30 @@ test("an agent 2.1.33 device shows availability, disk activity, network quality,
   await page.setViewportSize({ width: 1440, height: 4200 });
   await panel.screenshot({ path: testInfo.outputPath("monitoring-233.png") });
 });
+
+test("chart axis labels stay whole, even the longest", async ({ page }) => {
+  test.skip(test.info().project.name !== "desktop", "the monitoring tab is in the desktop drawer");
+  await mockDevice(page);
+  await page.route("**/api/v1/devices/1/metrics?**", (route) => {
+    const metrics = metricsFixture({ range: "24h" });
+    metrics.points = metrics.points.map((p) => ({
+      ...p,
+      rx_avg: 80_000_000,
+      rx_max: 95_000_000,
+      disk_busy_avg: 4,
+      disk_read_avg: 18_000_000,
+      gpu_avg: 40,
+      gpu_mem_avg: 2048,
+    }));
+    return route.fulfill({ json: metrics });
+  });
+  await page.goto("/devices?device=1");
+  await page.getByRole("tab", { name: /Monitoring/ }).click();
+  await expect(page.getByRole("img", { name: "GPU use over time" })).toBeVisible();
+  const cut = await page
+    .locator("svg .th-chart-axis")
+    .evaluateAll((labels) =>
+      labels.filter((label) => (label as SVGTextElement).getBBox().x < 0).map((label) => label.textContent),
+    );
+  expect(cut).toEqual([]);
+});

@@ -5,6 +5,7 @@ import {
   Cpu,
   Gauge,
   HardDrive,
+  CircuitBoard,
   MemoryStick,
   Network,
   RotateCcw,
@@ -13,6 +14,9 @@ import {
 } from "lucide-react";
 import {
   formatBits,
+  formatBitsAxis,
+  formatBytesRateAxis,
+  formatMemoryMB,
   formatBytesRate,
   formatDuration,
   formatMs,
@@ -176,6 +180,7 @@ function topTip(p: MetricPoint) {
             {proc.m != null
               ? ` · ${proc.m >= 1024 ? `${(proc.m / 1024).toFixed(1)} GB` : `${Math.round(proc.m)} MB`}`
               : ""}
+            {proc.g ? ` · GPU ${Math.round(proc.g)}%` : ""}
           </span>
         </span>
       ))}
@@ -369,6 +374,7 @@ export default function DeviceMonitoringPanel({
     t,
     label: `Restarted ${formatLocalDateTime(t, { hour: "2-digit", minute: "2-digit" })}`,
   }));
+  const hasGpu = metrics?.points.some((p) => p.gpu_avg != null) ?? false;
   const hasDiskIO = metrics?.points.some((p) => p.disk_busy_avg != null) ?? false;
   const hasQuality = metrics?.points.some((p) => p.gw_ms_avg != null || p.wan_ms_avg != null) ?? false;
   const hasLoss = metrics?.points.some((p) => (p.gw_loss_max ?? 0) > 0) ?? false;
@@ -519,6 +525,69 @@ export default function DeviceMonitoringPanel({
             />
           </Panel>
 
+          {hasGpu && (
+            <Panel
+              title="GPU"
+              icon={CircuitBoard}
+              aside={
+                s && (
+                  <>
+                    avg {pct(s.gpu_avg)} · peak {pct(s.gpu_peak)} · memory peak {formatMemoryMB(s.gpu_mem_peak)}
+                  </>
+                )
+              }
+            >
+              <TimeChart
+                label="GPU use over time"
+                points={metrics.points}
+                start={metrics.start}
+                end={metrics.end}
+                range={range}
+                resolution={metrics.resolution}
+                domainMax={100}
+                format={(v) => `${Math.round(v)}%`}
+                off={off}
+                markers={restarts}
+                height={108}
+                series={[
+                  {
+                    key: "gpu",
+                    label: "GPU",
+                    tone: "var(--th-series-2)",
+                    avg: (p) => p.gpu_avg ?? null,
+                    max: (p) => p.gpu_max ?? null,
+                  },
+                ]}
+              />
+              <SubChart title="GPU memory in use">
+                <TimeChart
+                  label="GPU memory in use over time"
+                  points={metrics.points}
+                  start={metrics.start}
+                  end={metrics.end}
+                  range={range}
+                  resolution={metrics.resolution}
+                  format={formatMemoryMB}
+                  axisFormat={(v) => (v === 0 ? "0" : formatMemoryMB(v))}
+                  off={off}
+                  height={92}
+                  series={[
+                    {
+                      key: "gpu-memory",
+                      label: "GPU memory",
+                      tone: "var(--th-series-1)",
+                      avg: (p) => p.gpu_mem_avg ?? null,
+                    },
+                  ]}
+                />
+              </SubChart>
+              <Caption>
+                Load of the busiest GPU engine (3D, video decode, ...), on Windows and Linux alike. Memory is what the
+                GPU has in use.
+              </Caption>
+            </Panel>
+          )}
+
           {hasDiskIO && (
             <Panel
               title="Disk activity"
@@ -575,7 +644,7 @@ export default function DeviceMonitoringPanel({
                   range={range}
                   resolution={metrics.resolution}
                   format={formatBytesRate}
-                  axisFormat={(v) => (v === 0 ? "0" : formatBytesRate(v))}
+                  axisFormat={formatBytesRateAxis}
                   off={off}
                   height={92}
                   series={[
@@ -618,7 +687,7 @@ export default function DeviceMonitoringPanel({
                 range={range}
                 resolution={metrics.resolution}
                 format={formatBits}
-                axisFormat={(v) => (v === 0 ? "0" : formatBits(v))}
+                axisFormat={formatBitsAxis}
                 off={off}
                 markers={restarts}
                 bands={bandsFor(metrics, CHART_ALERTS.net)}

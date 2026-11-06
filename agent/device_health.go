@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// Device health (2.1.33) is an hourly, read-only report of what makes a
+// Device health (2.1.33; Linux from 2.1.48) is an hourly, read-only report of what makes a
 // machine fail rather than slow down: each physical disk's health and SMART
 // prediction with its reliability counters, whether a restart is pending and
 // why, and the critical System events of the last 25 hours (unexpected
@@ -45,9 +45,13 @@ var healthEventKinds = []struct {
 	{"ntfs", []int{55, 98, 137}},
 	{"microsoft-windows-ntfs", []int{55, 98, 137}},
 	{"service control manager", []int{7031, 7034}},
+	// Linux (linux_monitoring.go).
+	{linuxKernelSource, []int{linuxEventPanic, linuxEventHardware, linuxEventDiskIO, linuxEventFilesystem, linuxEventOutOfMemory}},
+	{linuxBootSource, []int{linuxEventUncleanBoot}},
+	{linuxSystemd, []int{linuxEventUnitFailed}},
 }
 
-var healthRebootReasons = map[string]bool{"windows_update": true, "cbs": true, "file_rename": true, "rename": true}
+var healthRebootReasons = map[string]bool{"windows_update": true, "cbs": true, "file_rename": true, "rename": true, "package_update": true}
 
 type DeviceHealth struct {
 	CollectedAt   string            `json:"collected_at"`

@@ -87,7 +87,8 @@ class BitLockerPosture(_Lenient):
     @classmethod
     def _drive(cls, value: Any) -> str:
         drive = value.strip().upper() if isinstance(value, str) else ""
-        return drive if _DRIVE.match(drive) else "C:"
+        # "/" is a Linux agent's system disk.
+        return drive if drive == "/" or _DRIVE.match(drive) else "C:"
 
     @field_validator("protection", mode="before")
     @classmethod
@@ -109,6 +110,10 @@ class BitLockerPosture(_Lenient):
 
 class SecurityPosture(_Lenient):
     collected_at: Optional[datetime] = None
+    # "linux" from a Linux agent (2.1.48+); absent on Windows. It has no Defender
+    # or UAC, reports one firewall state (public) and disk encryption (LUKS) in
+    # bitlocker, and an antivirus only when one is running.
+    platform: Optional[str] = None
     defender: DefenderPosture = DefenderPosture()
     third_party_av: List[str] = []
     firewall: FirewallPosture = FirewallPosture()

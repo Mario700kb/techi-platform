@@ -38,6 +38,9 @@ type diskPerformance struct {
 	alignmentPadding    uint32 // keeps the size right on 32-bit builds
 }
 
+// diskIOTargets: on Windows the counters belong to the volumes themselves.
+func diskIOTargets(mounts []string) []string { return mounts }
+
 // readDiskCounters reads a fixed volume's cumulative counters ("C:\" or "C:").
 func readDiskCounters(mount string) (diskCounters, bool) {
 	if len(mount) < 2 {

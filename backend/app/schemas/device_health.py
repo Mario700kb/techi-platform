@@ -1,6 +1,6 @@
-"""Device health reported by the Windows agent (>= 2.1.33).
+"""Device health reported by the agent (Windows >= 2.1.33, Linux >= 2.1.48).
 
-The agent reads it hourly with one PowerShell script and sends it in the
+The agent reads it hourly (on Windows with one PowerShell script) and sends it in the
 heartbeat as ``device_health`` when it changed, or every six hours:
 
 - every physical disk Windows sees, with its health, SMART failure prediction
@@ -54,6 +54,14 @@ EVENT_CATALOG: dict[Tuple[str, int], Tuple[EventCategory, str, str]] = {
     ("microsoft-windows-ntfs", 137): ("disk", "error", "File system transaction error"),
     ("service control manager", 7031): ("service", "error", "Service stopped unexpectedly"),
     ("service control manager", 7034): ("service", "error", "Service stopped unexpectedly"),
+    # Linux, from the journal (agent linux_monitoring.go).
+    ("linux-kernel", 1): ("crash", "critical", "Kernel panic or oops"),
+    ("linux-kernel", 2): ("hardware", "critical", "Fatal hardware error"),
+    ("linux-kernel", 3): ("disk", "error", "Disk I/O error"),
+    ("linux-kernel", 4): ("disk", "error", "File system error"),
+    ("linux-kernel", 5): ("crash", "error", "Out of memory: a process was killed"),
+    ("linux-boot", 1): ("crash", "error", "Restarted without a clean shutdown"),
+    ("systemd", 1): ("service", "error", "Service stopped unexpectedly"),
 }
 
 # Categories the "critical events" monitor counts. A crashed service is shown
@@ -65,10 +73,11 @@ REBOOT_REASONS = {
     "cbs": "Component servicing",
     "file_rename": "Pending file operations",
     "rename": "Computer rename",
+    "package_update": "Package updates",
 }
 # Reasons the pending-restart monitor counts: an installer leaving a file
 # rename behind is routine, an update waiting for a restart is not.
-ALERTING_REBOOT_REASONS = ("windows_update", "cbs", "rename")
+ALERTING_REBOOT_REASONS = ("windows_update", "cbs", "rename", "package_update")
 
 
 class _Lenient(BaseModel):

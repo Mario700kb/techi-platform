@@ -8,6 +8,7 @@ import { Button, SectionHeader } from "./ui";
 
 /** The first agent that reports the security posture. */
 const SECURITY_POSTURE_AGENT = "2.1.31";
+const SECURITY_POSTURE_AGENT_LINUX = "2.1.48";
 
 const SIGNATURES_STALE_DAYS = 7;
 
@@ -97,7 +98,48 @@ function bitlockerFact(p: SecurityPosture): Fact {
   return { label: `BitLocker ${drive}`, value: "Unknown", tone: TONE.neutral, sub: "Not available or not readable" };
 }
 
+/** Linux has no Defender or UAC, one firewall state, and LUKS for disk encryption. */
+function linuxFacts(p: SecurityPosture): Fact[] {
+  const admins = p.local_admins;
+  const firewall = p.firewall.public;
+  const encryption = p.bitlocker.protection;
+  return [
+    p.third_party_av.length > 0
+      ? {
+          label: "Antivirus",
+          value: p.third_party_av.join(", "),
+          tone: TONE.online,
+          title: p.third_party_av.join("\n"),
+        }
+      : { label: "Antivirus", value: "None running", tone: TONE.neutral, sub: "Not counted on Linux" },
+    {
+      label: "Firewall",
+      ...onOff(firewall, TONE.critical),
+      sub: firewall == null ? "No firewall tool answered" : undefined,
+    },
+    {
+      label: "Disk encryption",
+      value: encryption === "on" ? "On" : encryption === "off" ? "Off" : "Unknown",
+      tone: encryption === "on" ? TONE.online : encryption === "off" ? TONE.warning : TONE.neutral,
+      sub: encryption === "on" ? "LUKS" : encryption === "off" ? "Not encrypted" : undefined,
+    },
+    {
+      label: "Administrators",
+      value: String(admins.length),
+      tone: TONE.info,
+      sub: admins.length ? admins.join(", ") : "None reported",
+      title: admins.length ? admins.join("\n") : undefined,
+    },
+    {
+      label: "Secure Boot",
+      ...onOff(p.secure_boot),
+      sub: p.secure_boot == null ? "BIOS or not supported" : undefined,
+    },
+  ];
+}
+
 function securityFacts(p: SecurityPosture): Fact[] {
+  if (p.platform === "linux") return linuxFacts(p);
   const admins = p.local_admins;
   return [
     antivirusFact(p),
@@ -121,6 +163,8 @@ function securityFacts(p: SecurityPosture): Fact[] {
 
 interface DeviceSecurityCardProps {
   agentVersion?: string | null;
+  /** The device runs Linux: its agent reports the posture from 2.1.48. */
+  linux?: boolean;
   /** The device inventory, when it has been loaded this session. */
   inventory: DeviceInventory | null;
   loading: boolean;
@@ -129,20 +173,22 @@ interface DeviceSecurityCardProps {
 }
 
 /**
- * Overview card for a Windows device: antivirus, firewall, BitLocker on the
- * system drive, UAC, Secure Boot and local administrators, as the agent read
+ * Overview card for a device: antivirus, firewall, disk encryption of the system
+ * drive, UAC on Windows, Secure Boot and local administrators, as the agent read
  * them (every six hours). It comes with the inventory, which the drawer loads
  * only on request, so until then the card offers to load it.
  */
 export default function DeviceSecurityCard({
   agentVersion,
+  linux = false,
   inventory,
   loading,
   error,
   onLoad,
 }: DeviceSecurityCardProps) {
   const posture = inventory?.security_posture ?? null;
-  const agentTooOld = compareVersions(agentVersion, SECURITY_POSTURE_AGENT) === "outdated";
+  const agentTooOld =
+    compareVersions(agentVersion, linux ? SECURITY_POSTURE_AGENT_LINUX : SECURITY_POSTURE_AGENT) === "outdated";
   const collectedAt = inventory?.security_collected_at ?? posture?.collected_at ?? null;
 
   let body: ReactNode;

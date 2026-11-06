@@ -10,6 +10,10 @@ The score starts at 100 and loses, once each:
     UAC off                                                           −5
     Secure Boot off                                                   −5
 
+On Linux an antivirus is reported when one runs but its absence costs nothing:
+it is not expected there, and counting it would alarm every server and Raspberry
+Pi from day one. Disk encryption means LUKS on the system disk.
+
 A probe the agent could not read (null / "unknown") never costs points: the
 score reflects what is known to be wrong. The real-time and signature checks
 apply only while Defender is the active antivirus — with a third-party product
@@ -66,7 +70,10 @@ def posture_findings(posture: PostureInput) -> list[tuple[str, str]]:
     """(code, message) for each problem, in POSTURE_WEIGHTS order."""
     p = _coerce(posture)
     findings: list[tuple[str, str]] = []
-    if not has_antivirus(p):
+    linux = p.platform == "linux"
+    if linux:
+        pass
+    elif not has_antivirus(p):
         findings.append(("no_antivirus", "No active antivirus"))
     elif defender_active(p) and not p.third_party_av:
         if p.defender.realtime_enabled is False:
@@ -76,9 +83,9 @@ def posture_findings(posture: PostureInput) -> list[tuple[str, str]]:
             findings.append(("signatures_stale", f"Antivirus signatures are {age} days old"))
     off = [name for name in ("domain", "private", "public") if getattr(p.firewall, name) is False]
     if off:
-        findings.append(("firewall_off", f"Firewall off: {', '.join(off)}"))
+        findings.append(("firewall_off", "Firewall off" if linux else f"Firewall off: {', '.join(off)}"))
     if p.bitlocker.protection == "off":
-        findings.append(("bitlocker_off", f"BitLocker is off on {p.bitlocker.system_drive}"))
+        findings.append(("bitlocker_off", "Disk encryption is off" if linux else f"BitLocker is off on {p.bitlocker.system_drive}"))
     if p.uac_enabled is False:
         findings.append(("uac_off", "UAC is off"))
     if p.secure_boot is False:

@@ -1221,9 +1221,10 @@ export default function DeviceDrawer({
               </div>
             </section>
 
-            {isWindows && (
+            {(isWindows || /^linux/i.test(device.platform ?? "")) && (
               <DeviceSecurityCard
                 agentVersion={device.agent_version}
+                linux={!isWindows}
                 inventory={inventory ?? null}
                 loading={inventoryQuery.refreshing}
                 error={inventoryQuery.error}
