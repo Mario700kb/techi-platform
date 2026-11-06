@@ -5,6 +5,15 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-11-06] SLA-LINES-2026-11-06 — frontend `2f91c95`: SLA at risk rows without the side line
+
+**Owner: "hiqi vijat anash", then "deploy".** The red line on overdue rows is
+gone; the "Take overdue" chip still marks them.
+- Deploy 01:02: frontend only, no dump; rollback image `pre-sla-lines-5f2ccc0`;
+  built under `nice`; `nginx -t` in the new image; healthy in 10 s; guard + smoke
+  passed; 0 5xx. Build cache not pruned (owner asked for the deploy only). Disk
+  1.6 GB free (94%).
+
 ## [2026-11-06] UPDATE-PROGRESS-2026-11-06 — `5a82cb5`: agent update no longer looks stuck; risk counts follow the alert rules
 
 **Owner: screenshot of "Confirming the new version" at 1:02:34 on an update
