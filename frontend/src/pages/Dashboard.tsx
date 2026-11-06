@@ -594,11 +594,21 @@ export default function Dashboard() {
       }))
       .sort((a, b) => b.count - a.count);
     const top = rows.slice(0, 6);
-    const rest = rows.slice(6).reduce((sum, r) => sum + r.count, 0);
+    const others = rows.slice(6);
+    const sumOthers = (pick: (row: ClientRow) => number) => others.reduce((sum, row) => sum + pick(row), 0);
+    const rest = sumOthers((row) => row.count);
+    // The other clients' bar tells their status too, as long as every one of them reports it.
+    const othersStatus = others.every((row) => row.online != null)
+      ? {
+          online: sumOthers((row) => row.online ?? 0),
+          stale: sumOthers((row) => row.stale ?? 0),
+          offline: sumOthers((row) => row.offline ?? 0),
+        }
+      : {};
     const unassigned = fleetOverview?.tree_counts.unassigned ?? 0;
     return [
       ...top,
-      ...(rest > 0 ? [{ id: "other", name: `${rows.length - 6} more clients`, count: rest }] : []),
+      ...(rest > 0 ? [{ id: "other", name: `${rows.length - 6} more clients`, count: rest, ...othersStatus }] : []),
       ...(unassigned > 0 ? [{ id: "none", name: TERMS.noClient, count: unassigned }] : []),
     ];
   })();
@@ -676,7 +686,7 @@ export default function Dashboard() {
       label: "Stale",
       value: stale,
       tone: TONE.stale,
-      hint: "Last heartbeat 6–25 min ago",
+      hint: "Heartbeat 6–25 min ago",
       icon: Clock3,
       share: stalePct,
     },
@@ -722,7 +732,7 @@ export default function Dashboard() {
       label: "Availability",
       value: insights?.availability.overall_pct ?? null,
       display: pctLabel(insights?.availability.overall_pct ?? null, 2),
-      caption: "Time online, last 30 days",
+      caption: "Online, last 30 days",
       tone: scoreTone(insights?.availability.overall_pct ?? null, 99, 95),
       to: "/devices?filter=offline",
     },
@@ -738,7 +748,7 @@ export default function Dashboard() {
       label: "Patch compliance",
       value: loading ? null : patchCompliance,
       display: loading ? "—" : pctLabel(patchCompliance),
-      caption: "Devices with no patch waiting",
+      caption: "No patch waiting",
       tone: scoreTone(loading ? null : patchCompliance, 90, 70),
       to: "/devices?filter=needs_updates",
     },
@@ -746,7 +756,7 @@ export default function Dashboard() {
       label: "Agent currency",
       value: loading ? null : agentCurrency,
       display: loading ? "—" : pctLabel(agentCurrency),
-      caption: activeAgentVersion ? `On the active agent ${activeAgentVersion}` : "On the active agent",
+      caption: activeAgentVersion ? `On active agent ${activeAgentVersion}` : "On the active agent",
       tone: scoreTone(loading ? null : agentCurrency, 90, 70),
       to: "/devices?filter=needs_agent_update",
     },
@@ -754,7 +764,7 @@ export default function Dashboard() {
       label: "Alert resolution",
       value: resolution,
       display: insights ? pctLabel(resolution) : "—",
-      caption: `Resolved / opened · ${alertDays} days`,
+      caption: `Resolved / opened · ${alertDays} d`,
       tone: scoreTone(resolution, 90, 70),
       to: "/alerts",
     },
@@ -884,7 +894,6 @@ export default function Dashboard() {
                 {clientName ? `${clientName} · ` : ""}Average health score of active devices. Archived devices are
                 excluded.
               </p>
-              <Briefing items={briefing} loading={loading} />
             </div>
           </div>
 
@@ -943,6 +952,10 @@ export default function Dashboard() {
               height={52}
             />
           </div>
+
+          <div className="th-dash-hero-brief">
+            <Briefing items={briefing} loading={loading} />
+          </div>
         </section>
 
         {/* KPIs */}
@@ -975,7 +988,7 @@ export default function Dashboard() {
 
         {/* Fleet scorecard: how good, next to how many */}
         <DashSection label="Scorecard" hint="Share of the fleet meeting each measure">
-          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
+          <div className="th-dash-scores grid gap-3">
             {scorecard.map((score, index) => (
               <ScoreTile key={score.label} index={index} {...score} />
             ))}
@@ -1647,7 +1660,10 @@ function OperatorsPanel({
 }) {
   const onlineCount = operators.filter((op) => op.is_online).length;
   return (
-    <section className="premium-card flex h-full flex-col p-0" aria-labelledby="operators-title">
+    <section
+      className="premium-card th-dash-card flex h-full flex-col p-0 lg:col-span-2 xl:col-span-1"
+      aria-labelledby="operators-title"
+    >
       <div className="th-panel-head">
         <h2 id="operators-title">Operators</h2>
         <span className="flex items-center gap-3">
@@ -1668,7 +1684,7 @@ function OperatorsPanel({
       ) : operators.length === 0 ? (
         <EmptyState className="flex-1" icon={<Users className="h-5 w-5" />} title="No operators yet" />
       ) : (
-        <ul className="grid flex-1 grid-cols-2 content-start gap-x-1 px-2 pb-2">
+        <ul className="grid flex-1 grid-cols-2 content-start gap-x-1 px-2 pb-2 lg:grid-cols-3 xl:grid-cols-2">
           {[...operators]
             .sort(
               (a, b) =>

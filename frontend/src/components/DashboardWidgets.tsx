@@ -307,7 +307,8 @@ export function ClientStatusList({ rows, total }: { rows: ClientRow[]; total: nu
                   ) : (
                     <span
                       className="h-full w-full rounded-full"
-                      style={{ background: row.id === "none" ? TONE.neutral : "var(--th-accent)" }}
+                      // Without status counts the bar shows only size, so never a status colour.
+                      style={{ background: row.id === "none" ? TONE.neutral : TONE.info }}
                     />
                   )}
                 </span>

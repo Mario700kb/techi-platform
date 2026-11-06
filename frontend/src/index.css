@@ -8822,9 +8822,17 @@ button.th-client-group:hover {
 
 /* Dashboard cards sit three to a row: tighter meters keep the row short. */
 .th-cp-meters[data-dense] .th-cp-meter {
-  grid-template-columns: minmax(0, 10rem) minmax(40px, 1fr) 40px 44px;
+  grid-template-columns: minmax(0, min(15rem, 46%)) minmax(40px, 1fr) 40px 44px;
   gap: 12px;
   height: 34px;
+}
+/* A long label takes a second line where the card is narrow, never an ellipsis. */
+.th-cp-meters[data-dense] .th-cp-meter-name > .truncate {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-height: 1.2;
+  white-space: normal;
 }
 .th-cp-meters[data-dense] .th-cp-mark-sm {
   width: 24px;

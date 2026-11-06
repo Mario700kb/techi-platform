@@ -107,8 +107,7 @@ for (const width of [1280, 1440, 1920]) {
       .evaluateAll((items) => new Set(items.map((item) => Math.round(item.getBoundingClientRect().top))).size);
     expect(tops).toBe(6);
 
-    // Two rows since the dashboard redesign (5 Nov 2026): "Right now" (needs
-    // attention, alerts by type, system status) and "Fleet composition" (by
+    // "Right now" (needs attention, alerts by type) and "Fleet composition" (by
     // client, by category, operators). Cards in a row share one height and top.
     const attention = page.locator("section[aria-labelledby='attention-title']");
     const clients = page.locator("section[aria-labelledby='devices-by-client-title']");
@@ -132,3 +131,140 @@ for (const width of [1280, 1440, 1920]) {
     await page.screenshot({ path: test.info().outputPath(`dashboard-row-${width}.png`) });
   });
 }
+
+// Eight clients, so "2 more clients" appears the way it does in production.
+async function manyClients(page: Page) {
+  const counts = [212, 180, 140, 118, 96, 74, 60, 40];
+  const status = (count: number) => {
+    const offline = Math.round(count * 0.25);
+    return { total: count, online: count - offline, stale: 0, offline };
+  };
+  await page.route("**/api/v1/devices/overview", (route) =>
+    route.fulfill({
+      json: {
+        stats: { total: 920, online: 683, stale: 20, offline: 217 },
+        tree_counts: {
+          total: 920,
+          unassigned: 0,
+          by_client: Object.fromEntries(counts.map((count, i) => [i + 1, count])),
+          by_client_status: Object.fromEntries(counts.map((count, i) => [i + 1, status(count)])),
+          by_category: {
+            servers: { total: 134, online: 120, stale: 2, offline: 12 },
+            clientpc: { total: 783, online: 560, stale: 18, offline: 205 },
+            network: { total: 3, online: 3, stale: 0, offline: 0 },
+          },
+        },
+        critical: 4,
+        warnings: 10,
+        average_health: 88,
+        needs_updates: 12,
+        agents_outdated: 30,
+        active_agent_version: "2.1.47",
+        active_agent_sha256: null,
+        loaded_at: new Date().toISOString(),
+      },
+    }),
+  );
+}
+
+// The widths where these drifted: laptop screens, with the sidebar closed and open.
+for (const { width, sidebarOpen } of [
+  { width: 1280, sidebarOpen: false },
+  { width: 1366, sidebarOpen: false },
+  { width: 1440, sidebarOpen: false },
+  { width: 1440, sidebarOpen: true },
+  { width: 1920, sidebarOpen: false },
+]) {
+  test(`everything lines up at ${width}px, sidebar ${sidebarOpen ? "open" : "closed"}`, async ({ page }) => {
+    test.skip(test.info().project.name !== "desktop", "these rows are on the desktop dashboard");
+    await productionShape(page);
+    await manyClients(page);
+    await page.addInitScript((open) => localStorage.setItem("techi.sidebar.collapsed", String(!open)), sidebarOpen);
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto("/");
+    await expect(page.locator("section[aria-labelledby='system-status-title'] .th-status-row").first()).toBeVisible();
+    await expect(page.locator("section[aria-labelledby='agent-versions-title'] .th-cp-meter").first()).toBeVisible();
+    await expect(page.locator(".th-briefing-item")).toHaveCount(5);
+
+    const m = await page.evaluate(() => {
+      const box = (el: Element) => el.getBoundingClientRect();
+      const textLeft = (el: Element) => {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        return range.getBoundingClientRect().left;
+      };
+      const cards = [...document.querySelectorAll(".th-dash section.premium-card")];
+      const inset = (selector: string) =>
+        cards
+          .filter((card) => card.querySelector(selector))
+          .map((card) => Math.round(textLeft(card.querySelector(selector)!) - box(card).left));
+      const clipped = (selector: string) =>
+        [...document.querySelectorAll(selector)]
+          .filter((el) => el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1)
+          .map((el) => el.textContent);
+      return {
+        pillLines: new Set([...document.querySelectorAll(".th-briefing-item")].map((el) => Math.round(box(el).top)))
+          .size,
+        headHeights: [
+          ...new Set([...document.querySelectorAll(".th-dash .th-panel-head")].map((el) => Math.round(box(el).height))),
+        ],
+        radii: [...new Set(cards.map((card) => getComputedStyle(card).borderRadius))],
+        titleInsets: [...new Set(inset(".th-panel-head h2"))],
+        subheadInsets: [...new Set(inset(".th-cp-subhead"))],
+        headerHeights: [
+          ...new Set(
+            [...document.querySelectorAll(".th-dash .th-select, .th-dash .th-status-chip.\\!h-8")].map((el) =>
+              Math.round(box(el).height),
+            ),
+          ),
+        ],
+        kpiHeights: [
+          ...new Set([...document.querySelectorAll(".th-dash-kpi")].map((el) => Math.round(box(el).height))),
+        ],
+        kpiHintHeights: [
+          ...new Set(
+            [...document.querySelectorAll(".th-dash-kpi .th-kpi-hint")].map((el) => Math.round(box(el).height)),
+          ),
+        ],
+        clippedLabels: clipped(".th-cp-meter-name > .truncate"),
+        clippedCaptions: clipped(".th-dscore-caption"),
+      };
+    });
+
+    expect(m.pillLines, "the five briefing pills sit on one line").toBe(1);
+    expect(m.headHeights, "every card header is the same height").toHaveLength(1);
+    expect(m.radii, "every card has the same corners").toEqual(["14px"]);
+    expect(m.titleInsets, "every card title starts at the same inset").toHaveLength(1);
+    expect(m.subheadInsets, "subheads start where the card titles do").toEqual(m.titleInsets);
+    expect(m.headerHeights, "header controls are the same height").toEqual([32]);
+    expect(m.kpiHintHeights, "no KPI hint wraps").toHaveLength(1);
+    expect(m.kpiHeights).toHaveLength(1);
+    expect(m.clippedLabels, "no meter label is cut off").toEqual([]);
+    expect(m.clippedCaptions, "no scorecard caption is cut off").toEqual([]);
+
+    // The other clients' bar shows their real status, like every client above it.
+    const others = page.locator(".th-client-row", { hasText: "2 more clients" });
+    await expect(others).toHaveAttribute("title", /75 online · 0 stale · 25 offline/);
+    await expect(others).toContainText("75% online");
+  });
+}
+
+test("between 1024 and 1279px no row is left half empty", async ({ page }) => {
+  test.skip(test.info().project.name !== "desktop", "these rows are on the desktop dashboard");
+  await productionShape(page);
+  await page.setViewportSize({ width: 1100, height: 1000 });
+  await page.goto("/");
+  await expect(page.locator("section[aria-labelledby='operators-title']").getByText("Klevis T")).toBeVisible();
+
+  const rightEdges = await page.evaluate(() => {
+    const right = (el: Element) => Math.round(el.getBoundingClientRect().right);
+    const scores = [...document.querySelectorAll(".th-dscore")];
+    return {
+      dash: right(document.querySelector(".th-dash-hero")!),
+      lastScore: right(scores[scores.length - 1]),
+      operators: right(document.querySelector("section[aria-labelledby='operators-title']")!),
+    };
+  });
+  expect(rightEdges.lastScore).toBe(rightEdges.dash);
+  expect(rightEdges.operators).toBe(rightEdges.dash);
+});

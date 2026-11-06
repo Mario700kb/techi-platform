@@ -237,7 +237,7 @@ export default function SystemStatusCard({ compact = false }: { compact?: boolea
 
   if (compact) {
     return (
-      <section className="premium-card flex h-full flex-col p-0" aria-labelledby="system-status-title">
+      <section className="premium-card th-dash-card flex h-full flex-col p-0" aria-labelledby="system-status-title">
         <div className="th-panel-head">
           <h2 id="system-status-title">System status</h2>
           <span className="sys-overall" data-state={overall} role="status">

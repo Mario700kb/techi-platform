@@ -117,6 +117,16 @@ html.light .th-dash-hero {
     border-left: 1px solid var(--th-border-subtle);
   }
 }
+/* What to look at first: one line across the hero, below its three columns. */
+.th-dash-hero > .th-dash-hero-brief {
+  grid-column: 1 / -1;
+  padding: 12px 24px;
+  border-top: 1px solid var(--th-border-subtle);
+  border-left: 0;
+}
+.th-dash-hero-brief .th-briefing {
+  margin-top: 0;
+}
 .th-dash-hero-health {
   display: flex;
   align-items: center;
@@ -355,6 +365,25 @@ html.light .th-dash-hero {
 }
 
 /* ── Scorecard ── */
+/* Five tiles: 3 + 2 fill both rows until they fit on one. */
+.th-dash-scores {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+.th-dash-scores > * {
+  grid-column: span 2;
+}
+.th-dash-scores > :nth-last-child(-n + 2) {
+  grid-column: span 3;
+}
+@media (min-width: 1280px) {
+  .th-dash-scores {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .th-dash-scores > *,
+  .th-dash-scores > :nth-last-child(-n + 2) {
+    grid-column: auto;
+  }
+}
 .th-dscore {
   display: flex;
   align-items: center;
@@ -399,9 +428,6 @@ html.light .th-dash-hero {
 }
 .th-dscore-caption {
   display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-size: 11.5px;
   color: var(--th-text-faint);
 }
@@ -470,9 +496,18 @@ html.light .th-dash-hero {
   }
 }
 
-/* ── Client picker in the header ── */
-.th-dash-client-picker {
+/* ── Client picker in the header: as tall as the chips and button beside it ── */
+.th-dash .th-dash-client-picker {
   min-width: 200px;
+  height: 32px;
+}
+
+/* ── System status chip: as tall as the other card headers' chips ── */
+.th-dash .sys-overall {
+  height: 26px;
+  padding: 0 10px;
+  gap: 6px;
+  font-weight: 500;
 }
 
 /* ── SLA at risk ── */
@@ -519,6 +554,13 @@ html.light .th-dash-hero {
 }
 
 /* ── Security & risk ── */
+/* The list already sits 8px in, so subheads line up with the title and the rows. */
+.th-risk-groups .th-cp-subhead {
+  padding-inline: 12px;
+}
+.th-risk-groups > * + * {
+  margin-top: 10px;
+}
 .th-risk-row {
   display: flex;
   width: 100%;

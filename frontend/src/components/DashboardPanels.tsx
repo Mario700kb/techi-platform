@@ -219,7 +219,7 @@ export function SecurityRiskCard({
       ) : !risk ? (
         <SkeletonRows rows={6} />
       ) : (
-        <div className="flex-1 px-2 pb-2">
+        <div className="th-risk-groups flex-1 px-2 pb-2">
           {groups.map(({ group, checks }, g) => (
             <div key={group}>
               <SubHead>
