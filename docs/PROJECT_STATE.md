@@ -26,9 +26,9 @@
 
 | Component | Running | Since | Rollback | Evidence |
 |---|---|---|---|---|
-| Backend | `5a82cb5` | 2026-11-06 00:53 | image `pre-update-progress-9549d57`; dump `pre-update-progress-20261106-003855.sql.gz` | `UPDATE-PROGRESS-2026-11-06` |
-| Frontend | `bbf54e1` | 2026-11-06 20:27 | image `pre-mobile-modern-db0a61d` | `MOBILE-MODERN-2026-11-06` |
-| Database schema | Alembic `b6c7d8e9f0a1` (single head; repository head matches) | 2026-10-26 22:49 | `alembic downgrade a5b6c7d8e9f0` | `DEVICES-HOT-2026-10-26` |
+| Backend | `944a710` | 2026-11-06 21:19 | image `pre-gpu-linux-6ecdc5b` after `alembic downgrade b6c7d8e9f0a1`; dump `pre-gpu-linux-20261106-211327.sql.gz` | `GPU-LINUX-2026-11-06` |
+| Frontend | `944a710` | 2026-11-06 21:20 | image `pre-gpu-linux-6ecdc5b` | `GPU-LINUX-2026-11-06` |
+| Database schema | Alembic `e4f6a8c0b2d1` (single head; repository head matches) | 2026-11-06 21:19 | `alembic downgrade b6c7d8e9f0a1` | `GPU-LINUX-2026-11-06` |
 | Repository path | `/opt/techi/techi-platform` | — | — | — |
 
 Release identity is the Git SHA. Backend `1.0.0` and frontend `0.1.0` are package metadata only.
@@ -39,10 +39,10 @@ Activating a package updates no device; only a `self_update` command (single or 
 
 | Package | Active | Since | Kept inactive | Evidence |
 |---|---|---|---|---|
-| Windows agent binary | `2.1.46` (`fbd60d78…`) | 2026-10-25 00:48 | 2.1.45 | `EMPTY-LIST-REASONS-2026-10-25` |
-| Windows Endpoint MSI | `2.1.46` (`de4c3c46…`) | 2026-10-25 00:48 | 2.1.45 | `EMPTY-LIST-REASONS-2026-10-25` |
-| Agent Update Bridge MSI (agents < 2.1.1 only) | `2.1.46` (`ba2ffb8f…`) | 2026-10-25 00:48 | 2.1.45 | `EMPTY-LIST-REASONS-2026-10-25` |
-| Linux amd64 / arm64 / armhf | `2.1.39` | 2026-10-23 13:22 | 2.1.33 (amd64), 2.1.38 (armhf) | `LINUX-2139-PACKAGES-2026-10-23` |
+| Windows agent binary | `2.1.48` (`db23b6d9…`) | 2026-11-06 21:32 | 2.1.47 | `GPU-LINUX-2026-11-06` |
+| Windows Endpoint MSI | `2.1.48` (`fbeaeb5c…`) | 2026-11-06 21:32 | 2.1.47 | `GPU-LINUX-2026-11-06` |
+| Agent Update Bridge MSI (agents < 2.1.1 only) | `2.1.48` (`e28c88a7…`) | 2026-11-06 21:32 | 2.1.47 | `GPU-LINUX-2026-11-06` |
+| Linux amd64 / arm64 / armhf | `2.1.48` (`93221ae5…` / `c92aeca4…` / `649808d6…`) | 2026-11-06 21:32 | 2.1.47 | `GPU-LINUX-2026-11-06` |
 | Remote Support MSI | `1.4.6.0` | — | — | Provenance conflict, see RISK-SUPPLY-001 |
 
 ## 5. Fleet
@@ -63,7 +63,7 @@ Measured 2026-10-22 (`SELFUPDATE-AUDIT-2026-10-22`).
 | Area | Value |
 |---|---|
 | Host | Linode, 1 vCPU, 2 GB RAM, 25 GB disk. Owner decision: the host stays this size |
-| Disk | 1.3 GB free (95%) on 2026-10-24 after the COLLECT-SOFTWARE builds and dump. Each frontend build needs ~0.3 GB and stalls the host for minutes |
+| Disk | 2.4 GB free (90%) on 2026-11-06 after the GPU-LINUX builds and dump. Each frontend build needs ~0.3 GB and stalls the host for minutes |
 | Compose | Three projects, one compose file each: `/opt/techi/techi-platform`, `/opt/techi/rustdesk-server`, `/root/nginx-proxy-manager` |
 | Backend process | uvicorn, 1 worker; `HeartbeatGuard` sheds heartbeats with 503 above 24 in flight; ws ping 20 s / 20 s |
 | PostgreSQL | 15, loopback only; `max_connections` 100, `jit` off, `shared_buffers` 256 MB, `pg_stat_statements`; must stay UTC |

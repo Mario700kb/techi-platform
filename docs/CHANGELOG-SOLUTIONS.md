@@ -5,6 +5,43 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-11-06] GPU-LINUX-2026-11-06 — `944a710`: GPU monitoring, Linux reports what Windows reports, agent 2.1.48 active
+
+**Owner: "ktu nuk monitorojme gpu", "ok ne rregull beji", "agjenti duhet te jete
+dhe per linux per te gjitha versionet njelloj", then "po" to the other monitors,
+then "po" to deploy, pilot and smartmontools.**
+- **GPU (Windows and Linux):** chart, memory and a Peak GPU column; no alert yet.
+  Windows PDH counters; Linux fdinfo, amdgpu sysfs, nvidia-smi. No reading stays
+  null, never 0%. Not yet seen on a real GPU.
+- **Linux now reports** disk activity, gateway quality, disk health, pending
+  restart, kernel and service events, security posture and stopped services. Run
+  as root on Ubuntu 24.04 before release. No antivirus costs nothing on Linux,
+  BitLocker reads as disk encryption (LUKS), no UAC; worst Linux score is 70, so
+  the "below 70" alert stays quiet. Dashboard row renamed "Disk encryption off
+  (BitLocker, LUKS)".
+- **Chart axis labels** no longer lose their first digit (`PAD.left` 58).
+- **Installer** adds smartmontools, without recommends, never failing the install.
+  Machines already installed are not touched: their disk health stays unknown.
+- **Migration `e4f6a8c0b2d1`:** GPU columns; Linux roles appended to the Servers
+  policy (version +1). Tried up, down and up on PostgreSQL 15 first.
+- Tests: Go passed on Linux in CI (vet + test) and on Windows; pytest 1843, Vitest
+  495, Playwright 304 passed, 248 skipped. Frontend CI has been red on the INP test
+  (`motion.spec.ts:61`) for several commits, on slower runners; it passes locally.
+- Deploy 21:19–21:20: dump `pre-gpu-linux-20261106-211327.sql.gz` (251 MB, gzip -t
+  OK); rollback images `pre-gpu-linux-6ecdc5b` (backend + frontend, need `alembic
+  downgrade b6c7d8e9f0a1` first); both images built before any restart; migration
+  run with the new image while the old backend served; backend ready in 14 s,
+  frontend healthy in 10 s; guard + smoke passed; 0 5xx; telemetry uploads 200.
+- **Packages (21:32, CI 42287649098 Windows, 42287649135 Linux, checksums verified):**
+  2.1.48 active on agent binary `db23b6d9…`, Endpoint MSI `fbeaeb5c…`, Update Bridge
+  `e28c88a7…`, Linux amd64 `93221ae5…`, arm64 `c92aeca4…`, armhf `649808d6…`; 2.1.47
+  kept inactive as rollback. Manifest backup `manifest.json.bak-pre-2.1.48-20261106-213235`.
+  No device updated.
+- **Open:** pilot not started (creating the batch was refused by the permission
+  check; it needs the owner's word or "Update agent" in the UI): 12, 781, 985, Pi
+  993, debian3xc 812 (the only Linux amd64). 983 is offline since 5 Nov. A Linux
+  server enrolled as Client PC gets no service monitor (RISK-ENROL-002).
+
 ## [2026-11-06] MOBILE-MODERN-2026-11-06 — frontend `bbf54e1`: every phone screen restructured
 
 **Owner: "versioni mobile duhet te ristrukturohet dhe te behet supermoderne",
