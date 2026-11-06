@@ -5,6 +5,33 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-11-06] DASHBOARD-ALIGN-2026-11-06 — frontend `b9ff159`: dashboard lined up after a measured review
+
+**Owner: "lexo md files dhe analizo dashboard nqs vizualisht eshte ne rregull
+dhe ne nje linje", then "rregulloi", then "po" to the deploy.** Card edges and
+row heights were already exact; eight smaller drifts were fixed, no analysis
+removed:
+- Briefing pills sit on one line across the hero (stacked in five rows up to
+  1440 px; hero 312 → 262 px there, 225 → 262 px at 1920 px).
+- System status: same header height (54.7 → 52 px) and corners (8 → 14 px);
+  Operators: same corners.
+- Client picker 36 → 32 px, like the controls beside it.
+- Security & risk subheads start at the title's inset, with space between groups.
+- Long meter labels take a second line instead of an ellipsis; shorter scorecard
+  captions and Stale hint, so KPI tiles stay 101 px at 1280 px.
+- "N more clients" shows those clients' real status; bars without status use the
+  info colour, never a status colour.
+- No half-empty row between 1024 and 1279 px (Operators, scorecard 3 + 2).
+- Tests: Vitest 491, Playwright 251 passed, 195 skipped; six new checks in
+  `e2e/dashboard-breakdown.spec.ts`.
+- Deploy 19:30: frontend only, no dump; rollback image
+  `pre-dashboard-align-ebfb674`; built under `nice`; `nginx -t` in the new image;
+  healthy in 10 s; guard + smoke passed; 0 5xx. Build cache not pruned. Disk
+  1.4 GB free (95%).
+- **Open:** at 1280 px with the sidebar open (992 px wide) the three-card rows are
+  too narrow: ring legends are cut and some card titles wrap, because the `xl`
+  breakpoint follows the window, not the space left by the sidebar.
+
 ## [2026-11-06] SLA-LINES-2026-11-06 — frontend `2f91c95`: SLA at risk rows without the side line
 
 **Owner: "hiqi vijat anash", then "deploy".** The red line on overdue rows is

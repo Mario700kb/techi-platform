@@ -27,7 +27,7 @@
 | Component | Running | Since | Rollback | Evidence |
 |---|---|---|---|---|
 | Backend | `5a82cb5` | 2026-11-06 00:53 | image `pre-update-progress-9549d57`; dump `pre-update-progress-20261106-003855.sql.gz` | `UPDATE-PROGRESS-2026-11-06` |
-| Frontend | `2f91c95` | 2026-11-06 01:02 | image `pre-sla-lines-5f2ccc0` | `SLA-LINES-2026-11-06` |
+| Frontend | `b9ff159` | 2026-11-06 19:30 | image `pre-dashboard-align-ebfb674` | `DASHBOARD-ALIGN-2026-11-06` |
 | Database schema | Alembic `b6c7d8e9f0a1` (single head; repository head matches) | 2026-10-26 22:49 | `alembic downgrade a5b6c7d8e9f0` | `DEVICES-HOT-2026-10-26` |
 | Repository path | `/opt/techi/techi-platform` | — | — | — |
 
