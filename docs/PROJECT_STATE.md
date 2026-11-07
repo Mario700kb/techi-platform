@@ -26,8 +26,8 @@
 
 | Component | Running | Since | Rollback | Evidence |
 |---|---|---|---|---|
-| Backend | `944a710` | 2026-11-06 21:19 | image `pre-gpu-linux-6ecdc5b` after `alembic downgrade b6c7d8e9f0a1`; dump `pre-gpu-linux-20261106-211327.sql.gz` | `GPU-LINUX-2026-11-06` |
-| Frontend | `32a6063` | 2026-11-06 21:51 | image `pre-gpu-panel-1d968a3` | `GPU-PANEL-2026-11-06` |
+| Backend | `3be4fe6` | 2026-11-07 15:14 | image `pre-alert-sort-e5b972d`; dump `pre-alert-sort-20261107-150919.sql.gz` | `ALERT-SORT-2026-11-07` |
+| Frontend | `3be4fe6` | 2026-11-07 15:15 | image `pre-alert-sort-e5b972d` | `ALERT-SORT-2026-11-07` |
 | Database schema | Alembic `e4f6a8c0b2d1` (single head; repository head matches) | 2026-11-06 21:19 | `alembic downgrade b6c7d8e9f0a1` | `GPU-LINUX-2026-11-06` |
 | Repository path | `/opt/techi/techi-platform` | — | — | — |
 
@@ -63,7 +63,7 @@ Measured 2026-10-22 (`SELFUPDATE-AUDIT-2026-10-22`).
 | Area | Value |
 |---|---|
 | Host | Linode, 1 vCPU, 2 GB RAM, 25 GB disk. Owner decision: the host stays this size |
-| Disk | 2.2 GB free (91%) on 2026-11-06 after the GPU-PANEL build. Each frontend build needs ~0.3 GB and stalls the host for minutes |
+| Disk | 2.0 GB free (92%) on 2026-11-07 after the ALERT-SORT dump and builds. Each frontend build needs ~0.3 GB and stalls the host for minutes |
 | Compose | Three projects, one compose file each: `/opt/techi/techi-platform`, `/opt/techi/rustdesk-server`, `/root/nginx-proxy-manager` |
 | Backend process | uvicorn, 1 worker; `HeartbeatGuard` sheds heartbeats with 503 above 24 in flight; ws ping 20 s / 20 s |
 | PostgreSQL | 15, loopback only; `max_connections` 100, `jit` off, `shared_buffers` 256 MB, `pg_stat_statements`; must stay UTC |

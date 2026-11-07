@@ -5,6 +5,21 @@
 > Për gjendjen aktuale lexoni vetëm: [docs/PROJECT_STATE.md](PROJECT_STATE.md).
 > Mos vendosni gjendjen aktuale këtu.
 
+## [2026-11-07] ALERT-SORT-2026-11-07 — `3be4fe6`: alerts sorted by time, newest or oldest first
+
+**Owner: "shto dhe nje filter sipas kohes nga me e reja tek me e vjetra", then
+"deploy".** Beside Group by on the Alerts list: most urgent first (default, as
+before), newest first, oldest first. By time means when the alert opened (when it
+was resolved, in Resolved); the server sorts (`/alerts/queue?sort=`), so every page
+agrees, and the time column then reads "Opened". Site outages lead only the urgent
+order. Tests: pytest 1845, Vitest 499, Playwright alerts + accessibility on desktop
+21 passed.
+- Deploy 15:14–15:15: dump `pre-alert-sort-20261107-150919.sql.gz` (239 MB, gzip -t
+  OK); rollback images `pre-alert-sort-e5b972d` (backend + frontend); both images
+  built before any restart; backend ready in 15 s, frontend healthy in 5 s; guard +
+  smoke passed; 0 5xx. Disk 2.0 GB free (92%).
+- Not changed: the Group by buttons are 30 px beside 32 px selects (offered, not asked).
+
 ## [2026-11-06] GPU-PANEL-2026-11-06 — frontend `32a6063`: the GPU panel says why a device shows no GPU
 
 **Owner: "nuk me shfaqet gpu ne monitor", "PO", then "deploy".** The panel hid
