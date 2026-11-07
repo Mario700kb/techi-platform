@@ -476,10 +476,15 @@ class AlertQueueRepository(AlertRepository):
         return query
 
     def queue(self, scope, *, view: str = "open", operator_id: Optional[int] = None, limit: int = 50, offset: int = 0,
-              **filters) -> Tuple[List[QueueRow], int]:
+              sort: str = "urgency", **filters) -> Tuple[List[QueueRow], int]:
         query = self._filter(self._base(scope), view=view, operator_id=operator_id, **filters)
         total = query.with_entities(func.count(DeviceAlert.id)).order_by(None).scalar() or 0
-        if view == "resolved":
+        if sort in ("newest", "oldest"):
+            # By time: when the alert opened, or when it was resolved in that view.
+            moment = DeviceAlert.resolved_at if view == "resolved" else DeviceAlert.created_at
+            order = ((moment.desc(), DeviceAlert.id.desc()) if sort == "newest"
+                     else (moment.asc(), DeviceAlert.id.asc()))
+        elif view == "resolved":
             order = (DeviceAlert.resolved_at.desc(), DeviceAlert.id.desc())
         else:
             # Most urgent first: priority, then the deadline closest (or most

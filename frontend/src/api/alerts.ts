@@ -92,7 +92,11 @@ export interface QueueParams {
   search?: string;
   limit?: number;
   offset?: number;
+  /** "urgency" (the default) or by time: when opened, or resolved in that view. */
+  sort?: AlertSort;
 }
+
+export type AlertSort = "urgency" | "newest" | "oldest";
 
 export function getAlertQueue(p: QueueParams): Promise<AlertPage> {
   return fetchJson<AlertPage>(
@@ -107,6 +111,7 @@ export function getAlertQueue(p: QueueParams): Promise<AlertPage> {
       search: p.search?.trim(),
       limit: p.limit,
       offset: p.offset,
+      sort: p.sort && p.sort !== "urgency" ? p.sort : undefined,
     })}`,
   );
 }

@@ -89,6 +89,28 @@ describe("AlertsDesktop", () => {
     await waitFor(() => expect(within(tabs).getByRole("tab", { name: /All open/ })).toHaveTextContent("41"));
   });
 
+  it("sorts by time on the server, newest or oldest first, and shows when each opened", async () => {
+    const queue = vi.spyOn(alertsApi, "getAlertQueue").mockResolvedValue({ items: [service, shutdown], total: 2 });
+    vi.spyOn(alertsApi, "getAlertCount").mockResolvedValue(counts);
+    render(
+      <MemoryRouter>
+        <AlertsDesktop />
+      </MemoryRouter>,
+    );
+    await screen.findByText("Service stopped · Veeam");
+    expect(queue).toHaveBeenLastCalledWith(expect.objectContaining({ sort: "urgency" }));
+    expect(screen.getByRole("columnheader", { name: "Last seen" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("combobox", { name: "Sort alerts" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Newest first" }));
+    await waitFor(() => expect(queue).toHaveBeenLastCalledWith(expect.objectContaining({ sort: "newest", offset: 0 })));
+    expect(screen.getByRole("columnheader", { name: "Opened" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("combobox", { name: "Sort alerts" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Oldest first" }));
+    await waitFor(() => expect(queue).toHaveBeenLastCalledWith(expect.objectContaining({ sort: "oldest" })));
+  });
+
   it("switches views on the server", async () => {
     const queue = vi.spyOn(alertsApi, "getAlertQueue").mockResolvedValue({ items: [service], total: 1 });
     renderPage();

@@ -30,6 +30,7 @@ import RemoteSupportIdsView from "../components/alerts/RemoteSupportIdsView";
 import { AnimatedNumber, Button, EmptyState, Modal, PageHeader, Select, TablePagination } from "../components/ui";
 import { useAppData } from "../contexts/AppDataContext";
 import { useCachedQuery } from "../hooks/useCachedQuery";
+import type { AlertSort } from "../api/alerts";
 import { useNow } from "../hooks/useNow";
 import { useTabIndicator } from "../hooks/useTabIndicator";
 import type { Alert, AlertAnalysis, AlertCount, AlertGroup, AlertKind, AlertPage, AlertView } from "../types/alert";
@@ -82,6 +83,7 @@ export default function AlertsDesktop() {
   const [tab, setTab] = useState<Tab>("needs_action");
   const [handoverOpen, setHandoverOpen] = useState(false);
   const [groupBy, setGroupBy] = useState<GroupBy>("none");
+  const [sort, setSort] = useState<AlertSort>("urgency");
   const [kind, setKind] = useState<string>("all");
   const [filter, setFilter] = useState<Filter | null>(null);
   const [searchInput, setSearchInput] = useState("");
@@ -118,18 +120,20 @@ export default function AlertsDesktop() {
       search: search || undefined,
       limit: pageSize,
       offset: (page - 1) * pageSize,
+      sort,
     }),
-    [view, kind, filter, search, page, pageSize],
+    [view, kind, filter, search, page, pageSize, sort],
   );
 
   useEffect(() => {
     setPage(1);
-  }, [view, kind, filter, search, pageSize]);
+  }, [view, kind, filter, search, pageSize, sort]);
   useEffect(() => {
     setSelected(new Set());
   }, [tab, filter, kind]);
 
   const listing = isQueue && groupBy === "none";
+  const byTime = sort !== "urgency";
   const { data, loading, refreshing, error, reload, setData } = useCachedQuery<QueueView>(
     listing ? `page.alerts.queue:${JSON.stringify(request)}` : null,
     async () => {
@@ -363,6 +367,20 @@ export default function AlertsDesktop() {
               </div>
               {groupBy === "none" && (
                 <Select
+                  id="alerts-sort"
+                  aria-label="Sort alerts"
+                  className="!h-8 w-[170px]"
+                  value={sort}
+                  onChange={(value) => setSort(value as AlertSort)}
+                  options={[
+                    { value: "urgency", label: "Most urgent first" },
+                    { value: "newest", label: "Newest first" },
+                    { value: "oldest", label: "Oldest first" },
+                  ]}
+                />
+              )}
+              {groupBy === "none" && (
+                <Select
                   id="alerts-kind"
                   aria-label="Filter by alert type"
                   className="!h-8 w-[220px]"
@@ -520,7 +538,7 @@ export default function AlertsDesktop() {
                   <th>Device</th>
                   <th className="text-right">Value</th>
                   <th>Owner</th>
-                  <th className="text-right">{tab === "resolved" ? "Resolved" : "Last seen"}</th>
+                  <th className="text-right">{tab === "resolved" ? "Resolved" : byTime ? "Opened" : "Last seen"}</th>
                   <th className="text-right">Actions</th>
                 </tr>
               </thead>
@@ -532,7 +550,13 @@ export default function AlertsDesktop() {
                   const { title, summary, value } = describeAlert(alert);
                   const deviceName =
                     alert.device_name ?? (alert.device_id != null ? `Device #${alert.device_id}` : "Enrollment tokens");
-                  const seen = tab === "resolved" ? alert.resolved_at : (alert.last_seen_at ?? alert.created_at);
+                  // Sorted by time, the column shows the time the list is sorted by.
+                  const seen =
+                    tab === "resolved"
+                      ? alert.resolved_at
+                      : byTime
+                        ? alert.created_at
+                        : (alert.last_seen_at ?? alert.created_at);
                   const snoozed = alert.snoozed_until && new Date(alert.snoozed_until).getTime() > Date.now();
                   const deadline = snoozed ? null : alertDeadline(alert);
                   const toTake = !alert.assigned_to_id || (alert.assigned_to_id === user?.id && !alert.acknowledged_at);

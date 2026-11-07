@@ -10,7 +10,7 @@ import app.models  # noqa: F401
 from app.db.base import Base
 from app.models.alert import AlertKind, AlertSeverity, AlertState, DeviceAlert
 from app.models.device import Device, DeviceStatus, DeviceType
-from app.repositories.alert_repository import AlertRepository
+from app.repositories.alert_repository import AlertQueueRepository, AlertRepository
 
 T0 = datetime(2026, 10, 12, 12, 0)
 
@@ -52,3 +52,36 @@ def test_open_alerts_newest_opened_first(db):
     newer = _alert(db, opened_hours_ago=1)
     ids = [a.id for a in AlertRepository(db).get_by_device(device_id=1, state="open")]
     assert ids == [newer, older]
+
+
+def _set(db, alert_id, **values):
+    alert = db.get(DeviceAlert, alert_id)
+    for key, value in values.items():
+        setattr(alert, key, value)
+    db.commit()
+
+
+def test_the_alerts_page_sorts_by_when_an_alert_opened(db):
+    old_urgent = _alert(db, opened_hours_ago=30)
+    middle = _alert(db, opened_hours_ago=10)
+    new_minor = _alert(db, opened_hours_ago=1)
+    _set(db, old_urgent, priority=1)
+    _set(db, middle, priority=3, last_seen_at=T0)  # seen just now, opened long ago
+    _set(db, new_minor, priority=4)
+    repo = AlertQueueRepository(db)
+
+    def ids(**kw):
+        return [row[0].id for row in repo.queue(None, view="open", **kw)[0]]
+
+    assert ids() == [old_urgent, middle, new_minor]  # most urgent first, as before
+    assert ids(sort="newest") == [new_minor, middle, old_urgent]
+    assert ids(sort="oldest") == [old_urgent, middle, new_minor]
+
+
+def test_resolved_alerts_sort_by_when_they_were_resolved(db):
+    first = _alert(db, opened_hours_ago=5, resolved_hours_ago=4)
+    last = _alert(db, opened_hours_ago=50, resolved_hours_ago=1)
+    repo = AlertQueueRepository(db)
+    newest = [row[0].id for row in repo.queue(None, view="resolved", sort="newest")[0]]
+    oldest = [row[0].id for row in repo.queue(None, view="resolved", sort="oldest")[0]]
+    assert newest == [last, first] and oldest == [first, last]

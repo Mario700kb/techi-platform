@@ -184,21 +184,23 @@ def alert_queue(
     search: Optional[str] = Query(default=None, max_length=100),
     limit: int = Query(default=20, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    sort: str = Query(default="urgency", pattern="^(urgency|newest|oldest)$"),
 ):
-    """The Alerts page: most urgent first. "needs_action" is P1–P2 nobody else
-    owns; a site that went offline as a whole leads it, above its devices."""
+    """The Alerts page: most urgent first, or by time when asked. "needs_action"
+    is P1–P2 nobody else owns; a site that went offline as a whole leads it,
+    above its devices, in the urgent order."""
     assert view in QUEUE_VIEWS
     repo = AlertQueueRepository(db)
     rows, total = repo.queue(
         scope, view=view, operator_id=operator.id, limit=limit, offset=offset, severity=severity, priority=priority,
-        kind=kind, issue=issue, client_id=client_id, device_id=device_id, search=search,
+        kind=kind, issue=issue, client_id=client_id, device_id=device_id, search=search, sort=sort,
     )
     items = [alert_out(*row) for row in rows]
     followers = follower_counts(db, [item.id for item in items])
     for item in items:
         item.followers = followers.get(item.id, 0)
-    if offset == 0 and view in ("needs_action", "open") and not (kind or issue or device_id or search or severity) \
-            and priority in (None, 1):
+    if offset == 0 and sort == "urgency" and view in ("needs_action", "open") \
+            and not (kind or issue or device_id or search or severity) and priority in (None, 1):
         outages = [o for o in AlertCenterService(db).site_outages(scope) if client_id is None or o.client_id == client_id]
         items = outages + items
         total += len(outages)
